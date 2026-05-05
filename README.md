@@ -76,6 +76,13 @@ Technical Requirement: Because of the high data throughput required, this system
 - Mode-specific exceptions for high-signal 1-character RPG/SoL/school terms
 - Better signal-to-noise for multilingual retrieval
 
+### 🔀 Smarter Two-Search Recall (Qdrant)
+- VectHarePlus can run **two searches at the same time**: one from important keywords, and one from full message meaning
+- It then combines both result lists and keeps the better match when duplicates appear
+- If one search has a problem, the other search still works so memory recall does not fully fail
+
+> ℹ️ **Simple speed note:** This is safe to run in parallel. On some local model setups it may still feel sequential, while cloud providers usually show better parallel speed gains.
+
 ### 🧹 Numerous bug fixes
 
 ---

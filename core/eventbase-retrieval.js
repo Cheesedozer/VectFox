@@ -161,19 +161,22 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     }
 
     // 2. Keyword boost — honour the same Core-tab settings as the legacy pipeline.
-    //    Keywords are extracted from effectiveKeywordQuery (the user's last message when
-    //    provided) rather than the full searchText, so the user's intent dominates over
-    //    the much longer AI response that typically follows it in the query blob.
-    //    The vector search above still uses the full searchText for richer semantic context.
+    //    Use the full searchText (user + AI messages) for term matching so that keywords
+    //    mentioned in the AI reply also boost matching events. Term-level keyword matching
+    //    doesn't suffer from the "AI text dominates embedding" problem that the vector query
+    //    had, so the full context is strictly better here.
+    //    The effectiveKeywordQuery (user's last message) is still used as a fallback guard
+    //    when searchText is absent.
+    const boostText = searchText || effectiveKeywordQuery;
     const extractionLevel = settings.keyword_extraction_level || 'balanced';
     const baseWeight = settings.keyword_boost_base_weight || 1.5;
-    const queryKeywords = extractChatKeywords(effectiveKeywordQuery, { level: extractionLevel, baseWeight });
+    const queryKeywords = extractChatKeywords(boostText, { level: extractionLevel, baseWeight });
     let boostedCandidates = rawCandidates;
     if (queryKeywords.length > 0) {
-        boostedCandidates = applyKeywordBoost(rawCandidates, effectiveKeywordQuery, { diminishingReturns: true, perKeywordCap: true });
+        boostedCandidates = applyKeywordBoost(rawCandidates, boostText, { diminishingReturns: true, perKeywordCap: true });
         if (debugLog) {
             const boostedCount = boostedCandidates.filter(c => c.keywordBoosted).length;
-            console.log(`[EventBase] Keyword boost: ${queryKeywords.length} keyword(s) from "${effectiveKeywordQuery.slice(0, 60)}...", ${boostedCount}/${boostedCandidates.length} events boosted`);
+            console.log(`[EventBase] Keyword boost: ${queryKeywords.length} keyword(s) from full context, ${boostedCount}/${boostedCandidates.length} events boosted`);
         }
     }
 
