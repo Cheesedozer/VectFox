@@ -11,7 +11,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
-import { parseRegistryKey } from './collection-ids.js';
+import { parseRegistryKey, COLLECTION_PREFIXES } from './collection-ids.js';
 
 // ============================================================================
 // COLLECTION METADATA CRUD
@@ -915,13 +915,21 @@ export async function shouldCollectionActivate(collectionId, context) {
         return false;
     }
 
-    // Priority 1.3: If the user has explicitly saved lock settings (lockedToChatIds is present)
-    // and the current chat is NOT in the list, block activation.
-    // An empty array means the user opened settings and unchecked "Active for current chat".
-    // Absence of the property means the user has never configured it → unrestricted.
-    if (currentChatId && Array.isArray(meta.lockedToChatIds) && !isCollectionLockedToChat(collectionId, currentChatId)) {
-        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ NOT_LOCKED_TO_CURRENT_CHAT`);
-        return false;
+    // Priority 1.3: "Active for current chat" enforcement.
+    // If lockedToChatIds is set explicitly and current chat is not in it → block.
+    // For chat-scoped collections (vecthare_chat_*), absence of the property is also
+    // treated as not-active, since the UI checkbox displays "unchecked" in that case.
+    if (currentChatId) {
+        const targetParsed = parseRegistryKey(collectionId);
+        const plainId = targetParsed.collectionId || collectionId;
+        const isChatScoped = plainId?.startsWith(COLLECTION_PREFIXES.VECTHARE_CHAT);
+        const hasExplicitLockField = Array.isArray(meta.lockedToChatIds);
+        const lockedToThisChat = isCollectionLockedToChat(collectionId, currentChatId);
+
+        if ((hasExplicitLockField || isChatScoped) && !lockedToThisChat) {
+            console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ NOT_LOCKED_TO_CURRENT_CHAT`);
+            return false;
+        }
     }
 
     // Priority 2: Check if locked to current chat (overrides other conditions)
