@@ -911,6 +911,12 @@ export async function shouldCollectionActivate(collectionId, context) {
     const currentChatId = context?.currentChatId;
     const currentChatCollectionId = context?.currentChatCollectionId;
 
+    // Priority 0: alwaysActive flag bypasses all trigger/condition logic
+    if (meta.alwaysActive === true) {
+        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ ALWAYS_ACTIVE`);
+        return true;
+    }
+
     // Priority 1.5: Current chat collection should always be eligible for activation.
     // Supports plain IDs and registry-key variants (backend:source:collectionId).
     if (currentChatCollectionId) {
@@ -977,10 +983,10 @@ export async function shouldCollectionActivate(collectionId, context) {
         return conditionsPass;
     }
 
-    // Priority 5: No triggers AND no conditions = do not activate.
-    // Collections must be locked to chat/character, or configure triggers/conditions.
-    console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ NO_TRIGGERS_OR_CONDITIONS`);
-    return false;
+    // Priority 5: No triggers AND no conditions → auto-activate (backwards compatible).
+    // An enabled collection with no filtering rules is assumed to always be relevant.
+    console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ NO_TRIGGERS_OR_CONDITIONS (auto-activate)`);
+    return true;
 }
 
 /**
