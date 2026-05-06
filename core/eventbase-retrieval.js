@@ -108,8 +108,13 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     // Falls back to full searchText if not provided.
     const effectiveKeywordQuery = keywordQuery || searchText;
 
+    // Hybrid search flag: when true, queryEvents() routes through hybridSearch() internally
+    // (native Qdrant/Milvus hybrid or client-side BM25+fusion fallback). Keyword boost is
+    // skipped in this branch since BM25 fusion already ran inside queryCollection().
+    const useHybrid = settings.hybrid_search_enabled ?? false;
+
     if (debugLog) {
-        console.log(`[EventBase] Retrieval start — topK overfetch=${topK}, minImportance=${minImportance}`);
+        console.log(`[EventBase] Retrieval start — topK overfetch=${topK}, minImportance=${minImportance}, hybrid=${useHybrid}`);
     }
 
     // 1. Dual vector query — fire both in parallel (each is an independent HTTP fetch).
@@ -172,12 +177,16 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     const baseWeight = settings.keyword_boost_base_weight || 1.5;
     const queryKeywords = extractChatKeywords(boostText, { level: extractionLevel, baseWeight });
     let boostedCandidates = rawCandidates;
-    if (queryKeywords.length > 0) {
+    if (!useHybrid && queryKeywords.length > 0) {
+        // Non-hybrid path: apply term-level keyword boost on top of raw cosine results.
+        // Skipped when hybrid_search_enabled — BM25 fusion already ran inside queryCollection().
         boostedCandidates = applyKeywordBoost(rawCandidates, boostText, { diminishingReturns: true, perKeywordCap: true });
         if (debugLog) {
             const boostedCount = boostedCandidates.filter(c => c.keywordBoosted).length;
             console.log(`[EventBase] Keyword boost: ${queryKeywords.length} keyword(s) from full context, ${boostedCount}/${boostedCandidates.length} events boosted`);
         }
+    } else if (useHybrid && debugLog) {
+        console.log(`[EventBase] Keyword boost skipped — hybrid search (${settings.hybrid_fusion_method || 'rrf'}) already includes BM25 scoring`);
     }
 
     // 3. Filter by minimum importance
@@ -201,7 +210,12 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
 
     // 4. Re-rank
     const scored = importanceFiltered.map(meta => {
-        const cosineScore = typeof meta.score === 'number' ? meta.score : 0;
+        // When hybrid is active, metadata carries vectorScore (raw cosine) separately from
+        // the fusion score stored in .score. Prefer vectorScore so the re-ranker's cosine
+        // weight retains its correct semantic meaning regardless of fusion method.
+        const cosineScore = typeof meta.vectorScore === 'number'
+            ? meta.vectorScore
+            : (typeof meta.score === 'number' ? meta.score : 0);
         const importanceNorm = (meta.importance ?? 5) / 10;
         const persistBonus = meta.should_persist === true ? 1 : 0;
         const recencyBonus = _recencyBonus(meta, chatLength);
@@ -267,6 +281,8 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
         events: finalEvents,
         debug: {
             dualQuery,
+            hybridUsed: useHybrid,
+            fusionMethod: useHybrid ? (settings.hybrid_fusion_method || 'rrf') : undefined,
             rawCount: rawCandidates.length,
             keywordsBoosted: boostedCandidates.filter(c => c.keywordBoosted).length,
             queryKeywords: queryKeywords.map(k => k.text),
