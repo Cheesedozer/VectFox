@@ -759,7 +759,7 @@ export class QdrantBackend extends VectorBackend {
                 textWeight,
                 fusionMethod,
                 rrfK,
-                eventbaseDebug: !!settings.eventbase_debug_hdrant_backend,
+                eventbaseDebug: !!settings.eventbase_debug_qdrant_backend,
             },
         };
 
