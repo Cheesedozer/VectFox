@@ -6,14 +6,14 @@ eventbase-workflow.js:331 [EventBase] Keyword query (user last message, 28 chars
 eventbase-retrieval.js:117 [EventBase] Retrieval start — topK overfetch=16, minImportance=1, hybrid=true
 core-vector-api.js:863 [VectHare] Hybrid search enabled, dispatching to hybrid search module
 hybrid-search.js:47 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:776 [EventBase] Native hybrid request payload: backend=qdrant, collection=vecthare_eventbase_qdrant_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0, source=openrouter, model=qwen/qwen3-embedding-8b, topK=16, threshold=0, vectorWeight=0.5, textWeight=0.5, fusion=rrf, rrfK=60, searchTextLen=4452, searchTextPreview="我對 Mayla 説 "你記得我當時怎樣為你贖身的嗎?" 好，來仔細思考一下這次的劇情！ - 回顧當前情況 * 時間：20:15，晚上 * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia） * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話 - 當前劇情的主線是？暗線是？ * 主線：Critblade安撫Mayla"
+qdrant.js:777 [EventBase] Native hybrid request payload: backend=qdrant, collection=vecthare_eventbase_qdrant_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0, source=openrouter, model=qwen/qwen3-embedding-8b, topK=16, threshold=0, vectorWeight=0.5, textWeight=0.5, fusion=rrf, rrfK=60, searchTextLen=4452, searchTextPreview="我對 Mayla 説 "你記得我當時怎樣為你贖身的嗎?" 好，來仔細思考一下這次的劇情！ - 回顧當前情況 * 時間：20:15，晚上 * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia） * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話 - 當前劇情的主線是？暗線是？ * 主線：Critblade安撫Mayla"
 core-vector-api.js:863 [VectHare] Hybrid search enabled, dispatching to hybrid search module
 hybrid-search.js:47 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:776 [EventBase] Native hybrid request payload: backend=qdrant, collection=vecthare_eventbase_qdrant_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0, source=openrouter, model=qwen/qwen3-embedding-8b, topK=16, threshold=0, vectorWeight=0.5, textWeight=0.5, fusion=rrf, rrfK=60, searchTextLen=28, searchTextPreview="我對 Mayla 説 "你記得我當時怎樣為你贖身的嗎?""
-qdrant.js:789 [Qdrant] Native hybrid search returned 16 results
-core-vector-api.js:873 [EventBase] Hybrid search (RRF) response: 16 result(s) in 661ms, scores=[0.0148, 0.0142, 0.0136, 0.0134, 0.0133, 0.0132, 0.0130, 0.0129, 0.0125, 0.0123, 0.0122, 0.0120, 0.0118, 0.0117, 0.0114, 0.0112]
-qdrant.js:789 [Qdrant] Native hybrid search returned 16 results
-core-vector-api.js:873 [EventBase] Hybrid search (RRF) response: 16 result(s) in 1126ms, scores=[0.0137, 0.0136, 0.0135, 0.0131, 0.0125, 0.0122, 0.0118, 0.0118, 0.0116, 0.0115, 0.0115, 0.0109, 0.0109, 0.0108, 0.0108, 0.0108]
+qdrant.js:777 [EventBase] Native hybrid request payload: backend=qdrant, collection=vecthare_eventbase_qdrant_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0, source=openrouter, model=qwen/qwen3-embedding-8b, topK=16, threshold=0, vectorWeight=0.5, textWeight=0.5, fusion=rrf, rrfK=60, searchTextLen=28, searchTextPreview="我對 Mayla 説 "你記得我當時怎樣為你贖身的嗎?""
+qdrant.js:790 [Qdrant] Native hybrid search returned 16 results
+core-vector-api.js:873 [EventBase] Hybrid search (RRF) response: 16 result(s) in 1067ms, scores=[0.0137, 0.0137, 0.0134, 0.0131, 0.0125, 0.0121, 0.0118, 0.0118, 0.0117, 0.0115, 0.0115, 0.0109, 0.0109, 0.0108, 0.0108, 0.0108]
+qdrant.js:790 [Qdrant] Native hybrid search returned 16 results
+core-vector-api.js:873 [EventBase] Hybrid search (RRF) response: 16 result(s) in 934ms, scores=[0.0148, 0.0142, 0.0136, 0.0134, 0.0133, 0.0132, 0.0131, 0.0129, 0.0125, 0.0123, 0.0122, 0.0120, 0.0118, 0.0117, 0.0114, 0.0112]
 eventbase-retrieval.js:153 [EventBase] Dual-query: user=16 + context=16 → merged=26 unique events
 eventbase-retrieval.js:190 [EventBase] Keyword boost skipped — hybrid search (rrf) already includes BM25 scoring
 eventbase-retrieval.js:191 [EventBase] Hybrid keyword debug — extracted 8 keyword(s) from boostText: mayla, critblade, kashier, fern, engni, lia, valerie, master
@@ -21,17 +21,17 @@ eventbase-retrieval.js:201 [EventBase] After importance filter (>=1): 26 candida
 eventbase-retrieval.js:276 [EventBase] Final events after dedup + trim: 8
 eventbase-retrieval.js:278   [0] type=relationship_change imp=10 score=0.790 persist=true
 eventbase-retrieval.js:278   [1] type=promise_or_oath imp=9 score=0.786 persist=true
-eventbase-retrieval.js:278   [2] type=relationship_change imp=9 score=0.772 persist=true
-eventbase-retrieval.js:278   [3] type=revelation imp=9 score=0.770 persist=true
+eventbase-retrieval.js:278   [2] type=relationship_change imp=9 score=0.771 persist=true
+eventbase-retrieval.js:278   [3] type=revelation imp=9 score=0.769 persist=true
 eventbase-retrieval.js:278   [4] type=character_state_change imp=9 score=0.747 persist=true
 eventbase-retrieval.js:278   [5] type=revelation imp=10 score=0.744 persist=true
 eventbase-retrieval.js:278   [6] type=promise_or_oath imp=9 score=0.727 persist=true
-eventbase-retrieval.js:278   [7] type=promise_or_oath imp=9 score=0.727 persist=true
+eventbase-retrieval.js:278   [7] type=promise_or_oath imp=9 score=0.726 persist=true
 eventbase-workflow.js:343 [EventBase] Retrieval debug: {dualQuery: true, hybridUsed: true, fusionMethod: 'rrf', rawCount: 26, keywordsBoosted: 0, …}
 eventbase-workflow.js:377 [EventBase] Injected 8 event(s) (requested 8), text length: 4202
 eventbase-workflow.js:378 [EventBase] setExtensionPrompt tag="3_vecthare_eventbase" position=0 depth=2
 eventbase-workflow.js:381 [EventBase] Slot verification — key exists: true, value type: string, length: 4202
-eventbase-workflow.js:382 [EventBase] extension_prompts keys: (6) ['1_memory', '2_floating_prompt', 'QUIET_PROMPT', 'DEPTH_PROMPT', '3_vecthare', '3_vecthare_eventbase']
+eventbase-workflow.js:382 [EventBase] extension_prompts keys: (11) ['1_memory', '2_floating_prompt', 'QUIET_PROMPT', 'customDepthWI_0_0', 'customDepthWI_0_1', 'customDepthWI_0_2', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'DEPTH_PROMPT', '3_vecthare', '3_vecthare_eventbase']
 eventbase-workflow.js:383 [EventBase] Injection preview: <VectHareMemory>
 # Event 1
 event_type: relationship_change
