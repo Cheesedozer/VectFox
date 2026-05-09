@@ -898,17 +898,20 @@ export async function queryCollection(collectionId, searchText, topK, settings) 
     // VEC-18: Track query latency for health dashboard
     const queryStart = Date.now();
     let rawResults;
+    // Derive the actual backend name from the collection's registry key prefix,
+    // falling back to settings.vector_backend so metrics go to the right backend.
+    const actualBackendName = parsed.backend || settings?.vector_backend || 'standard';
     try {
         rawResults = await backend.queryCollection(collectionId, searchText, overfetchAmount, settings, queryVector);
         const queryLatency = Date.now() - queryStart;
-        recordQuery(settings?.vector_backend || 'standard', queryLatency);
+        recordQuery(actualBackendName, queryLatency);
         if (settings.eventbase_debug_logging) {
             const scores = (rawResults.metadata || []).map(m => (m.score ?? 0).toFixed(4));
             console.log(`[EventBase] Embedding search response: ${rawResults.hashes?.length ?? 0} result(s) in ${queryLatency}ms, scores=[${scores.join(', ')}]`);
         }
     } catch (error) {
         // VEC-18: Record query error
-        recordError(settings?.vector_backend || 'standard', error);
+        recordError(actualBackendName, error);
         throw error;
     }
 

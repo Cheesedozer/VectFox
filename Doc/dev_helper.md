@@ -74,25 +74,34 @@ There are **two independent toggles** for collection activity. They store data i
 - **Writes:** `setCollectionLock(collectionId, chatId)` / `removeCollectionLock(collectionId, chatId)` → stores chat IDs in `{ lockedToChatIds: [...] }` under the **plain collection ID** entry in metadata
 - **Key format:** Plain collection ID (`state.collectionId` which is `collection.id`, not `collection.registryKey`)
 - **Read:** `isCollectionLockedToChat(collectionId, chatId)` in `core/collection-metadata.js` line 626
-- **Gating logic:** Only applies when `lockedToChatIds` exists as an own property in stored metadata (meaning the user has saved the settings panel at least once). If the key is absent, the collection is unrestricted by default.
+- **Role:** This is a **fallback activation** — not a gate. A collection locked to the current chat activates even with no triggers/conditions. A collection NOT locked can still activate if its triggers or conditions match.
 
-### Where EventBase Retrieval Checks Both
-File: `core/eventbase-workflow.js`, function `runEventBaseRetrieval`
+### Activation Priority (in `shouldCollectionActivate`, `core/collection-metadata.js`)
 
-```javascript
-// Gate A: card pause toggle
-const disabledKey = candidateKeys.find(key => key && !isCollectionEnabled(key));
-if (disabledKey) return;
-
-// Gate B: "Active for current chat" checkbox
-const storedMeta = extension_settings?.vecthareplus?.collections?.[collectionId];
-if (storedMeta && Object.prototype.hasOwnProperty.call(storedMeta, 'lockedToChatIds')) {
-    if (!isCollectionLockedToChat(collectionId, currentChatId)) return;
-}
+```
+1. Pause button (enabled=false)     → BLOCKED always, nothing else checked
+2. Activation Triggers match        → ACTIVE  (regardless of lock state)
+3. Advanced Conditions pass         → ACTIVE  (regardless of lock state)
+4. "Active for current chat" locked → ACTIVE  (manual always-on fallback)
+5. Nothing matched                  → BLOCKED
 ```
 
+Behaviour matrix:
+
+| Checkbox | Triggers/Conditions | Result |
+|---|---|---|
+| ✗ unchecked | keywords match | ✓ ACTIVE (triggers win) |
+| ✓ checked | empty | ✓ ACTIVE (lock fallback) |
+| ✓ checked | keywords match | ✓ ACTIVE (triggers win) |
+| ✓ checked | set but no match | ✓ ACTIVE (lock fallback) |
+| ✗ unchecked | set but no match | ✗ BLOCKED |
+| ✗ unchecked | empty | ✗ BLOCKED |
+| any | Pause button on | ✗ BLOCKED always |
+
+> **Old Priority 1.3 is removed.** Previously there was a blocking gate (`NOT_LOCKED_TO_CURRENT_CHAT`) that prevented collections with a `lockedToChatIds` field from activating in other chats. This gate is gone — the lock is now purely additive (activation fallback), not restrictive.
+
 ### Key files
-- `core/collection-metadata.js` — `isCollectionEnabled`, `setCollectionEnabled`, `isCollectionLockedToChat`, `setCollectionLock`, `removeCollectionLock`, `getCollectionLocks`
+- `core/collection-metadata.js` — `shouldCollectionActivate`, `isCollectionEnabled`, `setCollectionEnabled`, `isCollectionLockedToChat`, `setCollectionLock`, `removeCollectionLock`, `getCollectionLocks`
 - `ui/database-browser.js` line ~1055 — card toggle handler (`vecthare-action-toggle`)
 - `ui/database-browser.js` function `saveActivation` — "Active for current chat" save handler
 - `ui/database-browser.js` function `openActivationEditor` — reads lock state to populate checkbox

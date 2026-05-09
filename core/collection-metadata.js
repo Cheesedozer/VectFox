@@ -881,13 +881,11 @@ async function evaluateAdvancedConditions(meta, context, collectionId) {
  * Checks if a collection should activate based on triggers and conditions
  *
  * ACTIVATION PRIORITY:
- * 1. Disabled (enabled=false) → Never activate
- * 2. Always Active → Always activate (ignores triggers and conditions)
- * 2.5. Locked to current chat → Activate (overrides triggers/conditions)
- * 2.6. Locked to current character → Activate (overrides triggers/conditions)
- * 3. Triggers match → Activate (primary method)
- * 4. Advanced conditions pass → Activate (secondary method)
- * 5. No triggers AND no conditions → Auto-activate (backwards compatible)
+ * 1. Pause button (enabled=false) → Never activate (global disable)
+ * 2. Activation Triggers match → Activate (PRIMARY, content-driven)
+ * 3. Advanced Conditions pass → Activate (SECONDARY, content-driven)
+ * 4. "Active for current chat" checkbox / character lock → Activate (manual always-on)
+ * 5. Nothing matched → Do not activate
  *
  * @param {string} collectionId Collection identifier
  * @param {object} context Search context (from buildSearchContext)
@@ -898,40 +896,10 @@ export async function shouldCollectionActivate(collectionId, context) {
     const currentChatId = context?.currentChatId;
     const currentChatCollectionId = context?.currentChatCollectionId;
 
-    // Priority 1: Check if collection is disabled entirely
+    // Priority 1: Pause button — global disable, blocks everything
     if (meta.enabled === false) {
         console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ DISABLED`);
         return false;
-    }
-
-    // Priority 1.3: "Active for current chat" enforcement.
-    // If lockedToChatIds is set explicitly and current chat is not in it → block.
-    // For chat-scoped collections (vecthare_chat_*), absence of the property is also
-    // treated as not-active, since the UI checkbox displays "unchecked" in that case.
-    if (currentChatId) {
-        const targetParsed = parseRegistryKey(collectionId);
-        const plainId = targetParsed.collectionId || collectionId;
-        const isChatScoped = plainId?.startsWith(COLLECTION_PREFIXES.VECTHARE_CHAT);
-        const hasExplicitLockField = Array.isArray(meta.lockedToChatIds);
-        const lockedToThisChat = isCollectionLockedToChat(collectionId, currentChatId);
-
-        if ((hasExplicitLockField || isChatScoped) && !lockedToThisChat) {
-            console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ NOT_LOCKED_TO_CURRENT_CHAT`);
-            return false;
-        }
-    }
-
-    // Priority 2: Check if locked to current chat (overrides other conditions)
-    if (currentChatId && isCollectionLockedToChat(collectionId, currentChatId)) {
-        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ LOCKED_TO_CURRENT_CHAT (${currentChatId})`);
-        return true;
-    }
-
-    // Priority 2.5: Check if locked to current character (overrides other conditions)
-    const currentCharacterId = context?.currentCharacterId;
-    if (currentCharacterId && isCollectionLockedToCharacter(collectionId, currentCharacterId)) {
-        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ LOCKED_TO_CURRENT_CHARACTER (${currentCharacterId})`);
-        return true;
     }
 
     const hasTriggers = meta.triggers && meta.triggers.length > 0;
@@ -939,37 +907,43 @@ export async function shouldCollectionActivate(collectionId, context) {
 
     console.log(`[VectHare Activation Filter] Collection ${collectionId}: hasTriggers=${hasTriggers}, hasConditions=${hasConditions}`);
 
-    // Priority 3: Check activation triggers (PRIMARY method)
+    // Priority 2: Activation Triggers (PRIMARY) — keyword match activates regardless of lock state
     if (hasTriggers) {
         const triggersMatch = checkTriggers(meta.triggers, context, {
             matchMode: meta.triggerMatchMode || 'any',
             caseSensitive: meta.triggerCaseSensitive || false,
             scanDepth: meta.triggerScanDepth || 5,
         });
-
         if (triggersMatch) {
             console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ TRIGGERS_MATCHED (${meta.triggers.join(', ')})`);
             return true;
         }
-
-        // Triggers set but didn't match - check if we should fall through to conditions
-        if (!hasConditions) {
-            console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ TRIGGERS_NOT_MATCHED (no conditions to fallthrough)`);
-            return false;
-        }
+        console.log(`[VectHare Activation Filter] Collection ${collectionId}: triggers set but not matched`);
     }
 
-    // Priority 4: Check advanced conditions (SECONDARY method)
+    // Priority 3: Advanced Conditions (SECONDARY) — condition pass activates regardless of lock state
     if (hasConditions) {
         const conditionsPass = await evaluateAdvancedConditions(meta, context, collectionId);
         console.log(`[VectHare Activation Filter] Collection ${collectionId}: ${conditionsPass ? '✓' : '✗'} CONDITIONS_${conditionsPass ? 'PASS' : 'FAIL'}`);
-        return conditionsPass;
+        if (conditionsPass) return true;
+        console.log(`[VectHare Activation Filter] Collection ${collectionId}: conditions failed`);
     }
 
-    // Priority 5: No triggers AND no conditions → auto-activate (backwards compatible).
-    // An enabled collection with no filtering rules is assumed to always be relevant.
-    console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ NO_TRIGGERS_OR_CONDITIONS (auto-activate)`);
-    return true;
+    // Priority 4: "Active for current chat" checkbox / character lock — manual always-on fallback
+    if (currentChatId && isCollectionLockedToChat(collectionId, currentChatId)) {
+        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ LOCKED_TO_CURRENT_CHAT (${currentChatId})`);
+        return true;
+    }
+
+    const currentCharacterId = context?.currentCharacterId;
+    if (currentCharacterId && isCollectionLockedToCharacter(collectionId, currentCharacterId)) {
+        console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✓ LOCKED_TO_CURRENT_CHARACTER (${currentCharacterId})`);
+        return true;
+    }
+
+    // Priority 5: Nothing activated it
+    console.log(`[VectHare Activation Filter] Collection ${collectionId}: ✗ NOT_ACTIVATED (no trigger match, no condition pass, not locked)`);
+    return false;
 }
 
 /**
