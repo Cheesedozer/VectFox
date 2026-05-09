@@ -17,7 +17,7 @@ import {
 } from './core-vector-api.js';
 import { getCurrentChatId, chat_metadata, saveSettingsDebounced } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
-import { getChatUUID, buildEventBaseCollectionId } from './collection-ids.js';
+import { getChatUUID, buildEventBaseCollectionId, getRegistryBackend } from './collection-ids.js';
 import { registerCollection } from './collection-loader.js';
 import { setCollectionLock } from './collection-metadata.js';
 import { buildEmbedText } from './eventbase-schema.js';
@@ -95,8 +95,12 @@ export async function insertEvents(events, settings, abortSignal = null) {
 
     await insertVectorItems(collectionId, items, settings, null, abortSignal);
 
-    // Register collection so it appears in the registry / DB browser
-    await registerCollection(collectionId, settings);
+    // Register collection so it appears in the registry / DB browser.
+    // Use backend:collectionId format so the key survives plugin-based discovery
+    // (which only knows about vectra/standard collections, not qdrant).
+    const registryBackend = getRegistryBackend(settings?.vector_backend);
+    const registryKey = `${registryBackend}:${collectionId}`;
+    registerCollection(registryKey);
 
     // Mirror legacy chat collection behavior: EventBase chat collections should
     // automatically become active for the current chat after first successful insert.

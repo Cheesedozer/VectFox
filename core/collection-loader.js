@@ -35,6 +35,7 @@ import {
     matchesPatterns,
     parseRegistryKey,
     COLLECTION_PREFIXES,
+    getRegistryBackend,
 } from './collection-ids.js';
 
 // Plugin detection state
@@ -454,9 +455,18 @@ async function discoverViaPlugin(settings) {
             console.debug(`   Current registry has ${currentRegistry.length} entries`);
             console.debug(`   Plugin discovered ${uniqueKeys.length} collections`);
 
-            // Remove entries that no longer exist on disk
+            // Remove entries that no longer exist on disk.
+            // Only remove entries for plugin-managed backends (vectra/standard).
+            // Qdrant collections are stored in a separate service not visible to the
+            // Similharity plugin, so they must NOT be treated as stale here.
             const updatedRegistry = getCollectionRegistry();
-            const staleEntries = updatedRegistry.filter(key => !pluginKeySet.has(key));
+            const staleEntries = updatedRegistry.filter(key => {
+                if (pluginKeySet.has(key)) return false;
+                const parsed = parseRegistryKey(key);
+                const kb = parsed.backend;
+                // Preserve qdrant entries (and any future non-plugin backends)
+                return kb !== 'qdrant';
+            });
             if (staleEntries.length > 0) {
                 console.debug(`   🗑️  Removing ${staleEntries.length} stale registry entries:`);
                 for (const staleKey of staleEntries) {
@@ -890,7 +900,7 @@ export async function loadAllCollections(settings, autoDiscover = true) {
             let models = [];
 
             // If plugin is available, use chunk count, source, and backend from plugin cache
-            // Cache key is "backend:source:collectionId"
+            // Cache key is "backend:collectionId" (same as registryKey for plugin-managed collections)
             const cacheKey = registryKey;
             if (hasPlugin && pluginCollectionData && pluginCollectionData[cacheKey]) {
                 console.log(`VectHare:   Using plugin mode - getting data from cache`);
@@ -917,18 +927,19 @@ export async function loadAllCollections(settings, autoDiscover = true) {
 
                 console.log(`VectHare:   Plugin reported ${chunkCount} chunks (backend: ${backend}, source: ${source}, models: ${models.length})`);
             } else {
-                // Fallback mode: we don't know which backend the collection was created with
-                // Try 'standard' first (most common), only try configured backend if standard fails
-                console.log(`VectHare:   Using fallback mode - trying standard backend first`);
-                const standardSettings = { ...settings, vector_backend: 'standard' };
+                // Fallback mode: registry key tells us the backend. If it's qdrant, query
+                // qdrant directly. Otherwise try standard first.
+                const registryBk = registryBackend || settings.vector_backend || 'standard';
+                console.log(`VectHare:   Using fallback mode - backend from registry: ${registryBk}`);
+                const fallbackSettings = { ...settings, vector_backend: registryBk };
                 try {
-                    hashes = await getSavedHashes(collectionId, standardSettings);
+                    hashes = await getSavedHashes(collectionId, fallbackSettings);
                     chunkCount = hashes?.length || 0;
-                    console.log(`VectHare:   Found ${chunkCount} hashes via standard backend`);
+                    console.log(`VectHare:   Found ${chunkCount} hashes via ${registryBk} backend`);
                 } catch (standardError) {
-                    // Standard failed, try the configured backend if different
-                    if (settings.vector_backend && settings.vector_backend !== 'standard') {
-                        console.log(`VectHare:   Standard backend failed, trying ${settings.vector_backend}`);
+                    // Try the currently-configured backend if different
+                    if (settings.vector_backend && settings.vector_backend !== registryBk) {
+                        console.log(`VectHare:   ${registryBk} backend failed, trying ${settings.vector_backend}`);
                         try {
                             hashes = await getSavedHashes(collectionId, settings);
                             chunkCount = hashes?.length || 0;
@@ -938,7 +949,7 @@ export async function loadAllCollections(settings, autoDiscover = true) {
                             chunkCount = 0;
                         }
                     } else {
-                        console.warn(`VectHare:   Standard backend failed for ${collectionId}`);
+                        console.warn(`VectHare:   ${registryBk} backend failed for ${collectionId}`);
                         chunkCount = 0;
                     }
                 }
@@ -955,9 +966,10 @@ export async function loadAllCollections(settings, autoDiscover = true) {
             const displayName = getCollectionDisplayName(collectionId, metadata);
             console.log(`VectHare:   Display name: ${displayName}`);
 
-            // Use registryKey (source:id) for internal tracking to keep collections unique
+            // Metadata is stored under the bare collectionId (no prefix) so it stays
+            // consistent with setCollectionLock and the cleanupOrphanedMeta check.
             const enabled = isCollectionEnabled(registryKey);
-            ensureCollectionMeta(registryKey, { scope: metadata.scope });
+            ensureCollectionMeta(collectionId, { scope: metadata.scope });
 
             collections.push({
                 id: collectionId,           // Original collection ID (for API calls)

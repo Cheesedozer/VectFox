@@ -13,7 +13,7 @@
 
 import { setExtensionPrompt, extension_prompts, getCurrentChatId, substituteParams } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
-import { getChatUUID, parseRegistryKey, COLLECTION_PREFIXES } from './collection-ids.js';
+import { getChatUUID, parseRegistryKey, COLLECTION_PREFIXES, getRegistryBackend } from './collection-ids.js';
 import { getCollectionRegistry } from './collection-loader.js';
 import { queryCollection } from './core-vector-api.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
@@ -58,7 +58,7 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     // Respect the global collection pause toggle before doing any extraction,
     // ingestion, or insertion work. Pause is a hard stop regardless of chat locks.
     const collectionId = buildEventBaseCollectionId(uuid, settings?.vector_backend);
-    const backend = settings?.vector_backend || 'standard';
+    const backend = getRegistryBackend(settings?.vector_backend);
     const candidateKeys = [
         `${backend}:${collectionId}`,
         collectionId,  // fallback for bare-ID entries written by older versions
@@ -345,7 +345,7 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     const debugLog = settings.eventbase_debug_logging;
     const uuid = chatUUID || getChatUUID();
     const currentChatId = getCurrentChatId();
-    const backend = settings?.vector_backend || 'standard';
+    const backend = getRegistryBackend(settings?.vector_backend);
 
     // --- Determine if the live EventBase collection should be queried ---
     const collectionId = buildEventBaseCollectionId(uuid, settings?.vector_backend);

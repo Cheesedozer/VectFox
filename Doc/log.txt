@@ -1,77 +1,55 @@
-Generate entered
-index.js:19 [QR2] calling {args: Array(3), functionToCall: ƒ}
-chat-vectorization.js:1844 🐰 VectHare: rearrangeChat called (type: normal, chat length: 14)
-eventbase-workflow.js:373 [EventBase] Live collection not locked to chat (異世界學校 - 2025-12-16@09h56m28s), lockedChats=[]
-eventbase-workflow.js:381 [EventBase] No live collection and no archive collections — skipping Phase A
-chat-vectorization.js:1908 VectHare: Will query 3 collections: (3) ['vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported', 'qdrant:openrouter:vecthare_eventbase_qdrant_critbl…artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0', 'vectra:openrouter:vecthare_lorebook_story1_1778254554854']
-chat-vectorization.js:1927 VectHare: Extracted 8 keywords from query: (8) ['cup', 'echidna', 'kamira', 'satella', 'vex', 'alpha', '阿爾法', '聽完']
-collection-metadata.js:951 [VectHare Activation Filter] Collection vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported: hasTriggers=false, hasConditions=false
-collection-metadata.js:982 [VectHare Activation Filter] Collection vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported: ✓ NO_TRIGGERS_OR_CONDITIONS (auto-activate)
-collection-metadata.js:930 [VectHare Activation Filter] Collection qdrant:openrouter:vecthare_eventbase_qdrant_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0: ✗ NOT_LOCKED_TO_CURRENT_CHAT
-collection-metadata.js:937 [VectHare Activation Filter] Collection vectra:openrouter:vecthare_lorebook_story1_1778254554854: ✓ LOCKED_TO_CURRENT_CHAT (異世界學校 - 2025-12-16@09h56m28s)
-collection-metadata.js:1002 [VectHare Activation Filter] Summary: 3 collections → 2 active
-collection-metadata.js:1004 [VectHare Activation Filter] Active collections: (2) ['vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported', 'vectra:openrouter:vecthare_lorebook_story1_1778254554854']
-chat-vectorization.js:1951 ✅ VectHare: 2 collections passed activation filters: (2) ['vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported', 'vectra:openrouter:vecthare_lorebook_story1_1778254554854']
-standard.js:365 [VectHare] queryCollection via plugin: collectionId=vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported, source=openrouter, model=qwen/qwen3-embedding-8b, topK=14, threshold=0.25, hasQueryVector=false
-standard.js:373 [VectHare] plugin query response: status=200 ok=true
-standard.js:382 [VectHare] plugin query result: count=0, results.length=0, error=none
-core-vector-api.js:903 [EventBase] Embedding search response: 0 result(s) in 725ms, scores=[]
-chat-vectorization.js:867 VectHare: Retrieved 0 chunks from vectra:openrouter:Your Wives - 2026-04-28@19h07m24s830ms imported
-standard.js:365 [VectHare] queryCollection via plugin: collectionId=vectra:openrouter:vecthare_lorebook_story1_1778254554854, source=openrouter, model=qwen/qwen3-embedding-8b, topK=14, threshold=0.25, hasQueryVector=false
-standard.js:373 [VectHare] plugin query response: status=200 ok=true
-standard.js:382 [VectHare] plugin query result: count=0, results.length=0, error=none
-core-vector-api.js:903 [EventBase] Embedding search response: 0 result(s) in 671ms, scores=[]
-chat-vectorization.js:867 VectHare: Retrieved 0 chunks from vectra:openrouter:vecthare_lorebook_story1_1778254554854
-chat-vectorization.js:2071 VectHare: Retrieved 0 total chunks from 2 collections
-chat-vectorization.js:2124 VectHare: Stored 0 chunks for visualizer
-chat-vectorization.js:2127 [VectHare Deduplication] Starting with 0 chunks before deduplication
-chat-vectorization.js:2128 [VectHare Deduplication] Current chat has 14 messages
-chat-vectorization.js:1496 [VectHare Dedup] Building hash set from 14 recent messages (depth: 50)
-chat-vectorization.js:1497 [VectHare Dedup] Total chat length: 14, checking duplicates in last 14 messages
-chat-vectorization.js:1523 [VectHare Dedup] Built hash set with 10 unique message hashes from recent context
-chat-vectorization.js:1561 [VectHare Dedup] FINAL: 0 will inject, 0 skipped as duplicates
-chat-vectorization.js:2132 [VectHare Deduplication] After deduplication: 0 to inject, 0 skipped
-chat-vectorization.js:2141 ℹ️ VectHare: All retrieved chunks already in context, nothing to inject
-chat-vectorization.js:2142    0 chunks were skipped (already in current chat)
-chat-vectorization.js:2143 [VectHare] Injection blocked: All retrieved chunks are already present in the current chat context. Adjust temporal decay or query depth if you want older messages.
-search-debug.js:148 VectHare Debug: Stored search debug data {query: '.\n阿爾法聽完關於「雪兔姬」的描述，那雙冰藍色的眸子微微收縮。她伸出食指，在虛空中輕點，幾條代表龍脈...', stages: {…}, historyCount: 1}
-script.js:4547 Core/all messages: 14/731
-world-info.js:5159 [WI] Adding 38 entries to prompt (38) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
-index.js:19 [QR2] calling {args: Array(1), functionToCall: ƒ}
-script.js:4606 skipWIAN not active, adding WIAN
-handler.ts:225 [Prompt Template] start generate after 37 messages
-handler.ts:395 [Prompt Template] processing 37 messages in 5ms
-index.js:1524 [shujuku_v91] ACU GENERATION_ENDED event for message_id: 731
-index.js:1524 [shujuku_v91] New message event (GENERATION_ENDED) detected for ACU, debouncing for 500ms...
-index.js:1524 [shujuku_v91] [剧情推进] [Plot] savePlotToLatestMessage_ACU 被调用
-index.js:1524 [shujuku_v91] [剧情推进] [Plot] planningGuard_ACU.inProgress: false
-index.js:1524 [shujuku_v91] [剧情推进] [Plot] planningGuard_ACU.ignoreNextGenerationEndedCount: 0
-index.js:1524 [shujuku_v91] [剧情推进] [Plot] tempPlotToSave_ACU: (空)
-index.js:1524 [shujuku_v91] [剧情推进] [Plot] tempPlotToSave_ACU 为空，无需保存
-onStopStreaming @ script.js:3789
-stopGeneration @ script.js:5551
-collectPrompts @ PromptViewer.vue:273
-(anonymous) @ PromptViewer.vue:367
-EventEmitter.emit @ eventemitter.js:146
-await in EventEmitter.emit
-sendOpenAIRequest @ openai.js:3052
-await in sendOpenAIRequest
-sendStreamingRequest @ script.js:6095
-finishGenerating @ script.js:5334
-await in finishGenerating
-Generate @ script.js:5394
-index.js:1524 [shujuku_v91] Debounced new message processing triggered for ACU.
-index.js:1524 [shujuku_v91] ACU Loaded 731 messages for: 異世界學校 - 2025-12-16@09h56m28s.
-index.js:1524 [shujuku_v91] ACU Auto-Trigger: Starting independent check...
-index.js:1524 [shujuku_v91] ACU: AI Message count increased (0 -> 366). Waiting 2000ms...
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 全局数据表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 主角信息, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 重要人物表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 主角技能表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 支援角色, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 背包物品表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 任务与事件表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 总结表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 总体大纲, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 选项表, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
-index.js:1524 [shujuku_v91] [Trigger Check] Table: 世界資訊, TotalAI: 366, Skip: 0, LastUpdated: 366, Unrecorded: 0, Freq: 1
+VectHare Database Browser: Closed
+collection-loader.js:728 VectHare: Using plugin for collection discovery
+collection-loader.js:386 ✅ VectHare: Plugin found 11 collections across all sources
+collection-loader.js:450    🛡️ Discovery filter skipped 2 corrupted + 0 ST-native file collection(s) — use Cleanup Corrupted to delete them from disk
+collection-loader.js:482    Final registry size: 9
+
+collection-loader.js:871 VectHare: Loading collection: Your Wives - 2026-04-28@19h07m24s830ms imported (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 1)
+collection-loader.js:871 VectHare: Loading collection: vecthare_chat_ArtificRealm創世域 - 2026-05-06@22h12m22s372ms (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 1)
+collection-loader.js:871 VectHare: Loading collection: vecthare_chat_critblade_artificrealm_41879811-a1ae-442b-bae0-d376b2ceda33 (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 2)
+collection-loader.js:871 VectHare: Loading collection: vecthare_chat_critblade_artificrealm_67d28099-167f-4c07-a7cb-1b62e44f43d0 (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 2)
+collection-loader.js:871 VectHare: Loading collection: vecthare_chat_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 2)
+collection-loader.js:871 VectHare: Loading collection: vecthare_chat_異世界學校 - 2025-12-16@09h56m28s (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: chat, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: openrouter, models: 1)
+collection-loader.js:871 VectHare: Loading collection: __vecthare_health_check__ (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: unknown, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 0 chunks (backend: vectra, source: transformers, models: 1)
+collection-loader.js:871 VectHare: Loading collection: vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: unknown, Scope: unknown (parsed from ID)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 8 chunks (backend: vectra, source: openrouter, models: 1)
+collection-loader.js:956 VectHare:   Display name: vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a
+collection-metadata.js:747 VectHare: Created metadata for new collection vectra:vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a (type: chat)
+collection-loader.js:977 VectHare:   ✓ Added to collections list
+collection-loader.js:871 VectHare: Loading collection: vecthare_lorebook_story1_1778288919954 (backend: vectra, source: unknown)
+collection-loader.js:883 VectHare:   Type: lorebook, Scope: global (from stored meta)
+collection-loader.js:896 VectHare:   Using plugin mode - getting data from cache
+collection-loader.js:918 VectHare:   Plugin reported 49 chunks (backend: vectra, source: openrouter, models: 1)
+collection-loader.js:956 VectHare:   Display name: 📚 Lorebook: story1_1778288919954
+collection-metadata.js:747 VectHare: Created metadata for new collection vectra:vecthare_lorebook_story1_1778288919954 (type: global)
+collection-loader.js:977 VectHare:   ✓ Added to collections list
+collection-loader.js:986 
+✅ VectHare: Loaded 2 non-empty collections for Database Browser
+collection-metadata.js:491 VectHare: Removed orphaned metadata for vectra:vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a
+collection-metadata.js:491 VectHare: Removed orphaned metadata for vectra:vecthare_lorebook_story1_1778288919954
+collection-metadata.js:496 VectHare: Cleaned up 2 orphaned metadata entries
+database-browser.js:665 VectHare: Cleaned up 2 orphaned metadata entries
+database-browser.js:172 VectHare Database Browser: Opened

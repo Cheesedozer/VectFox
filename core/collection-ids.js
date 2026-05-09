@@ -75,6 +75,19 @@ function normalizeBackendForId(backend) {
     return b === 'vectra' ? 'standard' : b;
 }
 
+/**
+ * Returns the storage backend label used in registry keys.
+ * The user-facing setting is 'standard' but the actual storage is Vectra,
+ * so we normalise 'standard' → 'vectra' to match what the Similharity plugin
+ * reports.  'qdrant' passes through unchanged.
+ * @param {string} vectorBackend Value from settings.vector_backend
+ * @returns {string} 'vectra' | 'qdrant' | ...
+ */
+export function getRegistryBackend(vectorBackend) {
+    const b = String(vectorBackend || 'standard').toLowerCase();
+    return b === 'standard' ? 'vectra' : b;
+}
+
 // ============================================================================
 // CHAT UUID UTILITIES
 // ============================================================================

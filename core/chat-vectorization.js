@@ -53,6 +53,7 @@ import {
     INTERNAL_COLLECTION_IDS,
     parseCollectionId,
     parseRegistryKey,
+    getRegistryBackend,
 } from './collection-ids.js';
 
 // Hash cache for performance
@@ -659,7 +660,7 @@ export async function synchronizeChat(settings, batchSize = 5) {
 
                     // Register on first successful insert (prevents ghost collections)
                     if (!isRegistered) {
-                        const backend = settings.vector_backend || 'standard';
+                        const backend = getRegistryBackend(settings.vector_backend);
                         const registryKey = `${backend}:${collectionId}`;
                         registerCollection(registryKey);
                         isRegistered = true;
