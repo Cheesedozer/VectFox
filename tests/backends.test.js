@@ -1,6 +1,6 @@
 /**
  * Backend Unit Tests
- * Tests for all four vector backends: Standard, LanceDB, Qdrant, Milvus
+ * Tests for Standard and Qdrant vector backends
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -71,9 +71,7 @@ vi.mock('../core/constants.js', () => ({
 
 // Import backends after mocks are set up
 import { StandardBackend } from '../backends/standard.js';
-import { LanceDBBackend } from '../backends/lancedb.js';
 import { QdrantBackend } from '../backends/qdrant.js';
-import { MilvusBackend } from '../backends/milvus.js';
 import { VectorBackend } from '../backends/backend-interface.js';
 
 // =============================================================================
@@ -457,148 +455,6 @@ describe('StandardBackend', () => {
     });
 });
 
-// =============================================================================
-// LANCEDB BACKEND TESTS
-// =============================================================================
-
-describe('LanceDBBackend', () => {
-    let backend;
-    let fetchMock;
-
-    beforeEach(() => {
-        backend = new LanceDBBackend();
-        fetchMock = vi.fn();
-        global.fetch = fetchMock;
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    describe('initialize', () => {
-        it('should initialize via plugin API', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            await backend.initialize(defaultSettings);
-
-            expect(fetchMock).toHaveBeenCalledWith(
-                '/api/plugins/similharity/backend/init/lancedb',
-                expect.objectContaining({ method: 'POST' })
-            );
-        });
-
-        it('should throw on initialization failure', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchError(500, 'Init failed'));
-
-            await expect(backend.initialize(defaultSettings))
-                .rejects.toThrow('Failed to initialize LanceDB');
-        });
-    });
-
-    describe('healthCheck', () => {
-        it('should return true when healthy', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({ healthy: true }));
-
-            const result = await backend.healthCheck();
-
-            expect(result).toBe(true);
-            expect(fetchMock).toHaveBeenCalledWith(
-                '/api/plugins/similharity/backend/health/lancedb',
-                expect.any(Object)
-            );
-        });
-
-        it('should return false when unhealthy', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({ healthy: false }));
-
-            const result = await backend.healthCheck();
-
-            expect(result).toBe(false);
-        });
-
-        it('should return false on error', async () => {
-            fetchMock.mockRejectedValueOnce(new Error('Network error'));
-
-            const result = await backend.healthCheck();
-
-            expect(result).toBe(false);
-        });
-    });
-
-    describe('_stripRegistryPrefix', () => {
-        it('should strip backend:source: prefix', () => {
-            expect(backend._stripRegistryPrefix('lancedb:transformers:my-collection'))
-                .toBe('my-collection');
-        });
-
-        it('should strip source: prefix (old format)', () => {
-            expect(backend._stripRegistryPrefix('transformers:my-collection'))
-                .toBe('my-collection');
-        });
-
-        it('should return plain collection ID unchanged', () => {
-            expect(backend._stripRegistryPrefix('my-collection'))
-                .toBe('my-collection');
-        });
-
-        it('should handle null/undefined', () => {
-            expect(backend._stripRegistryPrefix(null)).toBe(null);
-            expect(backend._stripRegistryPrefix(undefined)).toBe(undefined);
-        });
-    });
-
-    describe('getSavedHashes', () => {
-        it('should return hashes from response', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({
-                items: [{ hash: 12345 }, { hash: 67890 }],
-            }));
-
-            const result = await backend.getSavedHashes('test-collection', defaultSettings);
-
-            expect(result).toEqual([12345, 67890]);
-        });
-    });
-
-    describe('insertVectorItems', () => {
-        it('should insert items with metadata', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            const itemsWithMetadata = [
-                { hash: 12345, text: 'Test', index: 0, keywords: ['test'], importance: 0.8 },
-            ];
-
-            await backend.insertVectorItems('test-collection', itemsWithMetadata, defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.backend).toBe('lancedb');
-            expect(callBody.items[0].metadata.keywords).toEqual(['test']);
-            expect(callBody.items[0].metadata.importance).toBe(0.8);
-        });
-    });
-
-    describe('queryCollection', () => {
-        it('should query and return formatted results', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({
-                results: [
-                    { hash: 12345, text: 'Result 1', score: 0.9, metadata: { index: 0 } },
-                    { hash: 67890, text: 'Result 2', score: 0.8, metadata: { index: 1 } },
-                ],
-            }));
-
-            const result = await backend.queryCollection('test-collection', 'search', 5, defaultSettings);
-
-            expect(result.hashes).toEqual([12345, 67890]);
-            expect(result.metadata[0].score).toBe(0.9);
-            expect(result.metadata[0].text).toBe('Result 1');
-        });
-    });
-
-    describe('supportsHybridSearch', () => {
-        it('should return false (no native hybrid support)', () => {
-            expect(backend.supportsHybridSearch()).toBe(false);
-        });
-    });
-});
 
 // =============================================================================
 // QDRANT BACKEND TESTS
@@ -786,195 +642,6 @@ describe('QdrantBackend', () => {
     });
 });
 
-// =============================================================================
-// MILVUS BACKEND TESTS
-// =============================================================================
-
-describe('MilvusBackend', () => {
-    let backend;
-    let fetchMock;
-
-    beforeEach(() => {
-        backend = new MilvusBackend();
-        fetchMock = vi.fn();
-        global.fetch = fetchMock;
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    describe('initialize', () => {
-        it('should initialize with auto-detected dimensions', async () => {
-            fetchMock
-                .mockResolvedValueOnce(mockFetchResponse({
-                    success: true,
-                    embedding: new Array(384).fill(0),
-                }))
-                .mockResolvedValueOnce(mockFetchResponse({}));
-
-            await backend.initialize(defaultSettings);
-
-            const initCallBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-            expect(initCallBody.dimensions).toBe(384);
-        });
-
-        it('should use manual dimensions when provided', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            const settings = { ...defaultSettings, milvus_dimensions: 768 };
-            await backend.initialize(settings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.dimensions).toBe(768);
-        });
-
-        it('should initialize with connection settings', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            const settings = {
-                ...defaultSettings,
-                milvus_dimensions: 384,
-                milvus_host: 'milvus.example.com',
-                milvus_port: 19530,
-                milvus_username: 'user',
-                milvus_password: 'pass',
-                milvus_token: 'token123',
-            };
-
-            await backend.initialize(settings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.host).toBe('milvus.example.com');
-            expect(callBody.port).toBe(19530);
-            expect(callBody.username).toBe('user');
-            expect(callBody.password).toBe('pass');
-            expect(callBody.token).toBe('token123');
-        });
-    });
-
-    describe('healthCheck', () => {
-        it('should return true when healthy', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({ healthy: true }));
-
-            const result = await backend.healthCheck();
-
-            expect(result).toBe(true);
-            expect(fetchMock).toHaveBeenCalledWith(
-                '/api/plugins/similharity/backend/health/milvus',
-                expect.any(Object)
-            );
-        });
-    });
-
-    describe('_parseCollectionId', () => {
-        it('should parse new format (vh:type:id)', () => {
-            const result = backend._parseCollectionId('vh:lorebook:world_info_123');
-            expect(result.type).toBe('lorebook');
-            expect(result.sourceId).toBe('world_info_123');
-        });
-
-        it('should parse legacy format (vecthare_type_id)', () => {
-            const result = backend._parseCollectionId('vecthare_doc_char_456');
-            expect(result.type).toBe('doc');
-            expect(result.sourceId).toBe('char_456');
-        });
-
-        it('should handle unknown format with fallback', () => {
-            const result = backend._parseCollectionId('unknown_format');
-            expect(result.type).toBe('chat');
-            expect(result.sourceId).toBe('unknown_format');
-        });
-    });
-
-    describe('multitenancy', () => {
-        it('should always use vecthare_main collection', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({ items: [] }));
-
-            await backend.getSavedHashes('vh:chat:abc123', defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.collectionId).toBe('vecthare_main');
-            expect(callBody.filters.type).toBe('chat');
-            expect(callBody.filters.sourceId).toBe('abc123');
-        });
-    });
-
-    describe('insertVectorItems', () => {
-        it('should insert with filters for multitenancy', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            await backend.insertVectorItems('vh:chat:abc123', sampleItems, defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.collectionId).toBe('vecthare_main');
-            expect(callBody.filters.type).toBe('chat');
-            expect(callBody.filters.sourceId).toBe('abc123');
-        });
-    });
-
-    describe('queryCollection', () => {
-        it('should query with filters', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({
-                results: [{ hash: 12345, text: 'Result', score: 0.9 }],
-            }));
-
-            const result = await backend.queryCollection('vh:chat:abc123', 'search', 5, defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.filters.type).toBe('chat');
-            expect(result.hashes).toEqual([12345]);
-        });
-    });
-
-    describe('purgeVectorIndex', () => {
-        it('should purge with tenant filters', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            await backend.purgeVectorIndex('vh:chat:abc123', defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.collectionId).toBe('vecthare_main');
-            expect(callBody.filters.type).toBe('chat');
-        });
-    });
-
-    describe('purgeAllVectorIndexes', () => {
-        it('should purge without filters to clear everything', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
-
-            await backend.purgeAllVectorIndexes(defaultSettings);
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.collectionId).toBe('vecthare_main');
-            expect(callBody.filters).toBeUndefined();
-        });
-    });
-
-    describe('supportsHybridSearch', () => {
-        it('should return true', () => {
-            expect(backend.supportsHybridSearch()).toBe(true);
-        });
-    });
-
-    describe('hybridQuery', () => {
-        it('should call hybrid endpoint with filters', async () => {
-            fetchMock.mockResolvedValueOnce(mockFetchResponse({
-                results: [{ hash: 12345, text: 'Result', score: 0.9 }],
-            }));
-
-            await backend.hybridQuery('vh:chat:abc123', 'search', 5, defaultSettings, {
-                vectorWeight: 0.6,
-                textWeight: 0.4,
-            });
-
-            const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.filters.type).toBe('chat');
-            expect(callBody.hybrid).toBe(true);
-            expect(callBody.hybridOptions.vectorWeight).toBe(0.6);
-        });
-    });
-});
 
 // =============================================================================
 // CROSS-BACKEND CONSISTENCY TESTS
@@ -995,9 +662,7 @@ describe('Cross-Backend Consistency', () => {
     it('all backends should implement VectorBackend interface methods', () => {
         const backends = [
             new StandardBackend(),
-            new LanceDBBackend(),
             new QdrantBackend(),
-            new MilvusBackend(),
         ];
 
         const requiredMethods = [
@@ -1025,17 +690,13 @@ describe('Cross-Backend Consistency', () => {
     it('all backends should return consistent query result format', async () => {
         const backends = [
             new StandardBackend(),
-            new LanceDBBackend(),
             new QdrantBackend(),
-            new MilvusBackend(),
         ];
 
         // Standard backend returns slightly different format from native API
         const mockResponses = {
             StandardBackend: { hashes: [12345], metadata: [{ text: 'Test', score: 0.9 }] },
-            LanceDBBackend: { results: [{ hash: 12345, text: 'Test', score: 0.9, metadata: {} }] },
             QdrantBackend: { results: [{ hash: 12345, text: 'Test', score: 0.9, metadata: {} }] },
-            MilvusBackend: { results: [{ hash: 12345, text: 'Test', score: 0.9, metadata: {} }] },
         };
 
         for (const backend of backends) {
@@ -1051,15 +712,11 @@ describe('Cross-Backend Consistency', () => {
         }
     });
 
-    it('Qdrant and Milvus should support hybrid search', () => {
+    it('only Qdrant should support hybrid search', () => {
         const standardBackend = new StandardBackend();
-        const lancedbBackend = new LanceDBBackend();
         const qdrantBackend = new QdrantBackend();
-        const milvusBackend = new MilvusBackend();
 
         expect(standardBackend.supportsHybridSearch()).toBe(false);
-        expect(lancedbBackend.supportsHybridSearch()).toBe(false);
         expect(qdrantBackend.supportsHybridSearch()).toBe(true);
-        expect(milvusBackend.supportsHybridSearch()).toBe(true);
     });
 });

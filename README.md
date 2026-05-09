@@ -117,11 +117,7 @@ Technical Requirement: Because of the high data throughput required, this system
 
 ### 📦 Multiple Vector Backends
 - **Standard (Vectra)**: ST's built-in file-based storage (great for getting started)
-- **LanceDB**: Disk-based, handles millions of vectors, production-ready
-- **Milvus**: Legacy backend option kept for compatibility workflows
 - **Qdrant**: Enterprise-grade with HNSW indexing, cloud support, advanced filtering
-
-> ⚠️ **VectHarePlus backend status:** Only **Qdrant** is actively tested in VectHarePlus. **Vectra, LanceDB, and Milvus** are kept for backward compatibility with VectorHare and are not guaranteed to work in every setup.
 
 ### 📄 Multi-Content Vectorization
 - Chat conversations (with automatic chunking strategies)
@@ -196,12 +192,10 @@ Built-in diagnostic tool that checks everything and offers auto-fixes for common
 
 | Backend | Best For | Pros | Cons |
 |---------|----------|------|------|
-| **Standard (Vectra)** | Legacy compatibility / small datasets | No dependencies, works out of box | Legacy compatibility path in VectHarePlus; behavior not guaranteed |
-| **LanceDB** | Legacy compatibility / medium datasets | Fast local vector DB | Legacy compatibility path in VectHarePlus; behavior not guaranteed |
-| **Milvus** | Legacy compatibility / existing deployments | Familiar ecosystem for older setups | Legacy compatibility path in VectHarePlus; behavior not guaranteed |
+| **Standard (Vectra)** | Small datasets, getting started | No dependencies, works out of box | Limited scale |
 | **Qdrant** | Production, cloud deployments | Enterprise-grade, advanced filtering | Requires running Qdrant server |
 
-> 💡 **Need help choosing?** Use **Qdrant** for VectHarePlus if you want the tested path.
+> 💡 **Need help choosing?** Use **Qdrant** for production deployments.
 
 ---
 
@@ -303,7 +297,7 @@ Look for the update notification in the Extensions panel, or manually check with
 ### 🎛️ Core Settings
 | Setting | Description |
 |---------|-------------|
-| **Vector Backend** | Standard, LanceDB, or Qdrant |   (Only Qdrant is tested on VectHarePlus)
+| **Vector Backend** | Standard (Vectra) or Qdrant |
 | **Embedding Provider** | 15+ providers supported |
 | **Summary Provider** | 2 providers supported |
 | **API URL** | Custom endpoint for local providers |
@@ -398,7 +392,7 @@ Detailed docs available in the `/docs` folder:
 - **Embedding Provider** (one of 15+ supported)
 
 ### Optional
-- **Similharity Plugin** - For LanceDB/Qdrant backends
+- **Similharity Plugin** - For Qdrant backend
 - **Character Expressions** - For sprite-based emotion detection
 
 ---

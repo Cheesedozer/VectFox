@@ -170,7 +170,7 @@ export class QdrantBackend extends VectorBackend {
             return collectionId;
         }
 
-        const knownBackends = ['standard', 'lancedb', 'vectra', 'milvus', 'qdrant'];
+        const knownBackends = ['standard', 'vectra', 'qdrant'];
         const knownSources = ['transformers', 'openai', 'cohere', 'ollama', 'llamacpp',
             'vllm', 'koboldcpp', 'webllm', 'bananabread', 'openrouter'];
 

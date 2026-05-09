@@ -12,16 +12,12 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { StandardBackend } from './standard.js';
-import { LanceDBBackend } from './lancedb.js';
 import { QdrantBackend } from './qdrant.js';
-import { MilvusBackend } from './milvus.js';
 
 // Backend registry - add new backends here
 const BACKENDS = {
     standard: StandardBackend,
-    lancedb: LanceDBBackend,
     qdrant: QdrantBackend,
-    milvus: MilvusBackend,
 };
 
 // Backend name aliases (server uses 'vectra', we use 'standard')
@@ -262,7 +258,7 @@ function evictLRUBackendIfNeeded() {
 
 /**
  * Initialize a specific backend (caches instances for reuse)
- * @param {string} backendName - 'standard', 'lancedb', or 'qdrant'
+ * @param {string} backendName - 'standard' or 'qdrant'
  * @param {object} settings - VectHare settings
  * @param {boolean} throwOnFail - Whether to throw on health check failure (default: true)
  * @returns {Promise<VectorBackend|null>} The backend instance or null if failed and throwOnFail=false

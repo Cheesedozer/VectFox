@@ -18,7 +18,7 @@
 
 ## deps
 ```
-backends\backend-manager.js ← ../../../extensions, standard, lancedb, qdrant, milvus
+backends\backend-manager.js ← ../../../extensions, standard, qdrant
 core\emotion-classifier.js ← ../../../../script, ../../../extensions
 core\text-cleaning.js ← ../../../extensions, ../../../utils
 ui\health-dashboard.js ← backends/backend-manager, ../../../extensions
@@ -26,10 +26,8 @@ diagnostics\production-tests.js ← ../../../../script, ../../../textgen-setting
 diagnostics\infrastructure.js ← ../../../../script, ../../../secrets, ../../../textgen-settings, core/providers
 ui\chunk-visualizer.js ← core/collection-metadata, core/core-vector-api, ../../../utils, core/scenes, core/chunk-groups
 core\chunking.js ← constants
-backends\lancedb.js ← ../../../../script, backend-interface, core/providers, core/constants, ../../../textgen-settings
 ui\progress-tracker.js ← ../../../extensions
 core\eventbase-extractor.js ← ../../../secrets, eventbase-schema, text-cleaning
-backends\milvus.js ← ../../../../script, backend-interface, core/providers, core/constants, ../../../textgen-settings
 core\summarizer.js ← ../../../secrets
 core\keyword-boost.js ← bm25-scorer, ../../../../script
 core\bm25-scorer.js ← vendor/tiny-segmenter-0.2.0, stop-words
@@ -81,31 +79,6 @@ function isHealthCacheStale(backendName) → boolean
 function evictLRUBackendIfNeeded()
 ```
 
-### backends\lancedb.js
-```
-export class LanceDBBackend
-  if(!collectionId || typeof collectionId !== 'string')
-  async initialize(settings)
-  if(!response.ok)
-  async healthCheck()
-  async getSavedHashes(collectionId, settings)
-  if(!response.ok)
-  async insertVectorItems(collectionId, items, settings, abortSignal = null)
-function getModelFromSettings(settings)
-function getPluginProviderParams(settings)
-```
-
-### backends\milvus.js
-```
-export class MilvusBackend
-  if(response.ok)
-  async initialize(settings)
-  if(!response.ok)
-  async healthCheck()
-  if(!collectionId || typeof collectionId !== 'string')
-function getModelFromSettings(settings)
-function getPluginProviderParams(settings)
-```
 
 ### backends\standard.js
 ```
@@ -591,7 +564,6 @@ export async function checkVectorsExtension()
 export async function checkBackendEndpoints(settings)
 export async function checkServerPlugin()
 export async function checkPluginEndpoints()
-export async function checkLanceDBBackend(settings)
 export async function checkQdrantBackend(settings)
 export async function checkQdrantDimensionMatch(settings)
 export async function checkEmbeddingProvider(settings)

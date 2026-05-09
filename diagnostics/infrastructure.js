@@ -182,7 +182,7 @@ export async function checkBackendEndpoints(settings) {
 
 /**
  * Check: VectHare Server Plugin (similharity)
- * Provides advanced features: LanceDB, Qdrant, collection browser, full metadata
+ * Provides advanced features: Qdrant, collection browser, full metadata
  */
 export async function checkServerPlugin() {
     try {
@@ -195,7 +195,7 @@ export async function checkServerPlugin() {
             return {
                 name: 'VectHare Plugin',
                 status: 'warning',
-                message: 'Plugin not installed (optional - enables LanceDB, Qdrant, advanced features)',
+                message: 'Plugin not installed (optional - enables Qdrant, advanced features)',
                 fixable: false,
                 category: 'infrastructure'
             };
@@ -311,66 +311,6 @@ export async function checkPluginEndpoints() {
             name: 'Plugin API Endpoints',
             status: 'fail',
             message: `All failed: ${summary}`,
-            category: 'infrastructure'
-        };
-    }
-}
-
-/**
- * Check: LanceDB Backend (disk-based, scalable vector storage)
- * Requires VectHare plugin with vectordb package
- */
-export async function checkLanceDBBackend(settings) {
-    const backendName = 'LanceDB (Scalable)';
-
-    if (settings.vector_backend !== 'lancedb') {
-        return {
-            name: backendName,
-            status: 'skipped',
-            message: `Not selected (using: ${settings.vector_backend || 'standard'})`,
-            category: 'infrastructure'
-        };
-    }
-
-    try {
-        const healthResponse = await fetch('/api/plugins/similharity/backend/health/lancedb', {
-            method: 'GET',
-            headers: getRequestHeaders()
-        });
-
-        if (!healthResponse.ok) {
-            return {
-                name: backendName,
-                status: 'fail',
-                message: 'LanceDB plugin not installed. Run: cd plugins/similharity && npm install vectordb',
-                category: 'infrastructure',
-                fixable: true,
-                fixAction: 'install_lancedb'
-            };
-        }
-
-        const healthData = await healthResponse.json();
-
-        if (healthData.healthy) {
-            return {
-                name: backendName,
-                status: 'pass',
-                message: 'LanceDB ready - disk-based vector storage active',
-                category: 'infrastructure'
-            };
-        } else {
-            return {
-                name: backendName,
-                status: 'warning',
-                message: `LanceDB not initialized: ${healthData.message || 'Run "Vectorize All" to create tables'}`,
-                category: 'infrastructure'
-            };
-        }
-    } catch (error) {
-        return {
-            name: backendName,
-            status: 'fail',
-            message: `LanceDB unavailable: ${error.message}`,
             category: 'infrastructure'
         };
     }

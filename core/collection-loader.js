@@ -66,7 +66,7 @@ export function getCollectionFilterReason(collectionId) {
 
     // (2) Stacked-prefix corruption. Real collection IDs never start with a backend
     // name; backend is only used in the registry key with colon separators.
-    if (/^(vectra|qdrant|milvus|lancedb|standard)(?![:_])/i.test(collectionId)) {
+    if (/^(vectra|qdrant|standard)(?![:_])/i.test(collectionId)) {
         return 'corrupted-prefix-stacked';
     }
 
@@ -451,7 +451,7 @@ async function discoverViaPlugin(settings) {
                 pluginCollectionData[cacheKey] = collectionData;
                 uniqueKeys.push(cacheKey);
 
-                // Also cache by sanitized version (for LanceDB lookups)
+                // Also cache by sanitized version (for backend lookups)
                 const sanitized = collectionId.replace(/[^a-zA-Z0-9_.-]/g, '_');
                 if (sanitized !== collectionId) {
                     pluginCollectionData[`${backend}:${sanitized}`] = collectionData;

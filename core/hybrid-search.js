@@ -5,8 +5,8 @@
  * True hybrid search combining dense vector similarity with full-text (BM25)
  * search using Reciprocal Rank Fusion (RRF) or weighted linear combination.
  *
- * Supports both native backend hybrid search (Qdrant/Milvus) and client-side
- * fusion for backends without native support (Standard/LanceDB).
+ * Supports both native backend hybrid search (Qdrant) and client-side
+ * fusion for backends without native support (Standard).
  *
  * @version 1.0.0
  * ============================================================================

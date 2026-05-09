@@ -806,11 +806,10 @@ function renderCollectionCard(collection) {
     activationBadge = `<span class="vecthare-badge vecthare-badge-conditions" title="${activationSummary.conditionCount} condition(s)">⚡ ${activationSummary.conditionCount}</span>`;
   }
 
-  // Backend badge - shows vector database (Standard, LanceDB, Qdrant)
+  // Backend badge - shows vector database (Standard, Qdrant)
   const backendDisplayName =
     {
       standard: "Standard",
-      lancedb: "LanceDB",
       qdrant: "Qdrant",
     }[collection.backend] || collection.backend;
 

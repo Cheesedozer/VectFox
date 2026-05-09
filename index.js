@@ -50,19 +50,13 @@ const MODULE_NAME = 'VectHarePlus';
 const defaultSettings = {
     // Core vector settings
     source: 'transformers',
-    vector_backend: 'qdrant', // Backend: 'standard' (ST Vectra), 'lancedb', 'qdrant'
+    vector_backend: 'qdrant', // Backend: 'standard' (ST Vectra) | 'qdrant'
     qdrant_host: 'localhost',
     qdrant_port: 6333,
     qdrant_url: '',
     qdrant_api_key: '',
     qdrant_use_cloud: false,
     qdrant_multitenancy: false, // Use single collection with content_type field instead of separate collections
-    milvus_host: 'localhost',
-    milvus_port: 19530,
-    milvus_username: '',
-    milvus_password: '',
-    milvus_token: '',
-    milvus_address: '',
     alt_endpoint_url: '',
     use_alt_endpoint: false,
     rate_limit_calls: 5,
@@ -130,7 +124,7 @@ const defaultSettings = {
     hybrid_vector_weight: 0.5,          // Weight for vector scores (0-1) — used in weighted mode
     hybrid_text_weight: 0.5,            // Weight for text/BM25 scores (0-1) — used in weighted mode
     hybrid_rrf_k: 60,                   // RRF constant (higher = more weight to top results)
-    hybrid_native_prefer: true,         // Prefer native backend hybrid if available (Qdrant/Milvus default: A3)
+    hybrid_native_prefer: true,         // Prefer native backend hybrid if available (Qdrant default: A3)
 
     // Advanced features
     temporal_decay: getDefaultDecaySettings(),

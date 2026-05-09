@@ -127,7 +127,7 @@ export class VectorBackend {
      * database level; some backends may implement server-side keyword/text
      * matching plus plugin-side fusion instead.
      *
-     * Override in backends that support native hybrid search (e.g., Qdrant, Milvus)
+     * Override in backends that support native hybrid search (e.g., Qdrant)
      * @returns {boolean}
      */
     supportsHybridSearch() {

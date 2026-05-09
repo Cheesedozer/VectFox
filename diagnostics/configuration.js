@@ -680,7 +680,7 @@ export async function checkCollectionRegistryStatus(settings) {
     if (registryCount === 0) {
         // Try to determine if there SHOULD be collections by checking the backend
         // If the user has the plugin, we can check for actual collections
-        const hasPlugin = settings.vector_backend === 'lancedb' || settings.vector_backend === 'qdrant';
+        const hasPlugin = settings.vector_backend === 'qdrant';
 
         if (hasPlugin) {
             return {

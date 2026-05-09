@@ -15,7 +15,6 @@ import {
     checkBackendEndpoints,
     checkServerPlugin,
     checkPluginEndpoints,
-    checkLanceDBBackend,
     checkQdrantBackend,
     checkQdrantDimensionMatch,
     checkEmbeddingProvider,
@@ -136,7 +135,6 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
     categories.infrastructure.push(await checkBackendEndpoints(settings));
     categories.infrastructure.push(await checkServerPlugin());
     categories.infrastructure.push(await checkPluginEndpoints());
-    categories.infrastructure.push(await checkLanceDBBackend(settings));
     categories.infrastructure.push(await checkQdrantBackend(settings));
     categories.infrastructure.push(await checkQdrantDimensionMatch(settings));
     categories.infrastructure.push(await checkEmbeddingProvider(settings));
@@ -226,7 +224,7 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
         categories.production.push(await testTemporallyBlindChunks(settings));
         categories.production.push(await testChunkServerSync(settings));
         categories.production.push(await testDuplicateHashes(settings));
-        // Plugin-specific embedding generation test (LanceDB/Qdrant)
+        // Plugin-specific embedding generation test (Qdrant)
         categories.production.push(await testPluginEmbeddingGeneration(settings));
         
         // Hybrid search tests
@@ -297,9 +295,6 @@ export function getFixSuggestion(check) {
 
         case 'Settings Validation':
             return 'Review your VectHare settings and adjust the values within recommended ranges.';
-
-        case 'LanceDB Backend':
-            return 'Install the VectHare plugin and run: cd plugins/vecthare && npm install. Or switch to "Standard" backend in settings.';
 
         case 'Qdrant Backend':
             return 'Configure Qdrant settings in VectHare panel. For local: set host/port (default localhost:6333). Start Qdrant: docker run -p 6333:6333 qdrant/qdrant. Note: Qdrant Cloud may have connectivity issues - local instance recommended.';

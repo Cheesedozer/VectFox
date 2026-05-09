@@ -48,7 +48,7 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     const semanticEntries = [];
     // Lower threshold for hybrid retrieval since RRF/weighted fusion produces lower absolute scores
     const baseThreshold = settings.world_info_threshold || 0.3;
-    const supportsNativeHybrid = settings.vector_backend === 'qdrant' || settings.vector_backend === 'milvus';
+    const supportsNativeHybrid = settings.vector_backend === 'qdrant';
     const preferNative = settings.hybrid_native_prefer !== false;
     const hybridActive = (supportsNativeHybrid && preferNative) || settings.keyword_scoring_method === 'hybrid';
     const threshold = hybridActive ? baseThreshold * 0.8 : baseThreshold;

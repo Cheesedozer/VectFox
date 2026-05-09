@@ -3,7 +3,7 @@
  * CORE VECTOR API CLIENT
  * ============================================================================
  * Abstraction layer for vector operations.
- * Routes to different backends: ST's Vectra API, LanceDB, or Qdrant.
+ * Routes to different backends: ST's Vectra API (Standard) or Qdrant.
  *
  * Functions:
  * - getVectorsRequestBody() - Builds request body for embedding providers
@@ -863,7 +863,7 @@ export async function queryCollection(collectionId, searchText, topK, settings) 
     }
 
     // Three-case routing:
-    //   A3 — server-side hybrid (Qdrant/Milvus with prefer_native ON) — dense vector search +
+    //   A3 — server-side hybrid (Qdrant with prefer_native ON) — dense vector search +
     //         full-corpus payload/text keyword matching via Qdrant scroll, fused in plugin code
     //         (NOT Qdrant native dense+sparse-vector hybrid; no sparse vectors stored)
     //   A2 — client-side hybrid over ANN candidates (standard backend, method = 'hybrid')

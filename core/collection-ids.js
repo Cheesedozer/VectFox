@@ -507,7 +507,7 @@ export function parseRegistryKey(registryKey) {
     }
 
     // Known storage backends
-    const knownBackends = ['standard', 'lancedb', 'vectra', 'milvus', 'qdrant'];
+    const knownBackends = ['standard', 'vectra', 'qdrant'];
 
     const parts = registryKey.split(':');
 

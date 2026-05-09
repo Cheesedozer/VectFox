@@ -343,7 +343,7 @@ export class StandardBackend extends VectorBackend {
 
         // Registry keys arrive as "backend:collectionId". Strip the backend prefix
         // to get the bare ID the Similharity plugin expects.
-        const knownBackends = ['standard', 'lancedb', 'vectra', 'milvus', 'qdrant'];
+        const knownBackends = ['standard', 'vectra', 'qdrant'];
         const parts = collectionId.split(':');
         let bareCollectionId = collectionId;
         if (parts.length >= 2 && knownBackends.includes(parts[0])) {

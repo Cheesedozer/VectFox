@@ -89,10 +89,8 @@ describe('Backend Manager', () => {
             const backends = getAvailableBackends();
 
             expect(backends).toContain('standard');
-            expect(backends).toContain('lancedb');
             expect(backends).toContain('qdrant');
-            expect(backends).toContain('milvus');
-            expect(backends).toHaveLength(4);
+            expect(backends).toHaveLength(2);
         });
     });
 
@@ -207,29 +205,29 @@ describe('Backend Metrics Tracking', () => {
 
     describe('recordDelete', () => {
         it('should increment delete count', () => {
-            recordDelete('milvus', 5);
-            recordDelete('milvus', 3);
+            recordDelete('qdrant', 5);
+            recordDelete('qdrant', 3);
 
             const metrics = getBackendMetrics();
-            const milvusMetrics = metrics.backends.find(b => b.name === 'milvus');
+            const qdrantMetrics = metrics.backends.find(b => b.name === 'qdrant');
 
-            expect(milvusMetrics).toBeDefined();
-            expect(milvusMetrics.deletes).toBeGreaterThanOrEqual(8);
+            expect(qdrantMetrics).toBeDefined();
+            expect(qdrantMetrics.deletes).toBeGreaterThanOrEqual(8);
         });
     });
 
     describe('recordError', () => {
         it('should record error with message', () => {
             const error = new Error('Connection failed');
-            recordError('lancedb', error);
+            recordError('qdrant', error);
 
             const metrics = getBackendMetrics();
-            const lanceMetrics = metrics.backends.find(b => b.name === 'lancedb');
+            const qdrantMetrics = metrics.backends.find(b => b.name === 'qdrant');
 
-            expect(lanceMetrics).toBeDefined();
-            expect(lanceMetrics.errors).toBeGreaterThanOrEqual(1);
-            expect(lanceMetrics.lastError.message).toBe('Connection failed');
-            expect(lanceMetrics.lastError.timestamp).toBeDefined();
+            expect(qdrantMetrics).toBeDefined();
+            expect(qdrantMetrics.errors).toBeGreaterThanOrEqual(1);
+            expect(qdrantMetrics.lastError.message).toBe('Connection failed');
+            expect(qdrantMetrics.lastError.timestamp).toBeDefined();
         });
 
         it('should record string errors', () => {
@@ -243,7 +241,7 @@ describe('Backend Metrics Tracking', () => {
 
         it('should track global last error', () => {
             recordError('standard', 'First error');
-            recordError('lancedb', 'Second error');
+            recordError('qdrant', 'Second error');
 
             const metrics = getBackendMetrics();
             expect(metrics.lastError.message).toBe('Second error');
@@ -253,20 +251,20 @@ describe('Backend Metrics Tracking', () => {
     describe('recordHealthCheck', () => {
         it('should record health check results', () => {
             const beforeMetrics = getBackendMetrics();
-            const milvusBefore = beforeMetrics.backends.find(b => b.name === 'milvus');
-            const passedBefore = milvusBefore?.healthChecksPassed || 0;
-            const failedBefore = milvusBefore?.healthChecksFailed || 0;
+            const qdrantBefore = beforeMetrics.backends.find(b => b.name === 'qdrant');
+            const passedBefore = qdrantBefore?.healthChecksPassed || 0;
+            const failedBefore = qdrantBefore?.healthChecksFailed || 0;
 
-            recordHealthCheck('milvus', true);
-            recordHealthCheck('milvus', true);
-            recordHealthCheck('milvus', false);
+            recordHealthCheck('qdrant', true);
+            recordHealthCheck('qdrant', true);
+            recordHealthCheck('qdrant', false);
 
             const afterMetrics = getBackendMetrics();
-            const milvusAfter = afterMetrics.backends.find(b => b.name === 'milvus');
+            const qdrantAfter = afterMetrics.backends.find(b => b.name === 'qdrant');
 
-            expect(milvusAfter.healthChecksPassed).toBe(passedBefore + 2);
-            expect(milvusAfter.healthChecksFailed).toBe(failedBefore + 1);
-            expect(milvusAfter.lastHealthCheck).toBeDefined();
+            expect(qdrantAfter.healthChecksPassed).toBe(passedBefore + 2);
+            expect(qdrantAfter.healthChecksFailed).toBe(failedBefore + 1);
+            expect(qdrantAfter.lastHealthCheck).toBeDefined();
         });
     });
 
