@@ -1,20 +1,21 @@
-# 🐰 VectHarePlus - Advanced RAG for SillyTavern
+# 🐰 VectHarePlus — Advanced RAG for SillyTavern
 
-> *It's like having a perfect memory for your roleplay conversations.* VectHarePlus brings intelligent context retrieval to SillyTavern with temporal decay, conditional activation, and multiple vector backends.
+> *Perfect memory for your roleplay conversations.* VectHarePlus brings LLM-extracted chat events, native sparse-vector hybrid search, and smart memory decay to SillyTavern.
 
-![Version](https://img.shields.io/badge/version-2.3.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Status](https://img.shields.io/badge/status-Active-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Status](https://img.shields.io/badge/status-Active-brightgreen)
 
 ---
 
 ## 🎯 What is VectHarePlus?
+
 Branched from the original VectHare project, VectHarePlus is an **advanced Retrieval-Augmented Generation (RAG) system** for SillyTavern, now featuring newly added, optimized support for Japanese, Traditional Chinese, and Simplified Chinese.
 
 I branched the original VectHare to handle the massive scale of my personal MVU Game Maker projects, which feature:
 - **Extreme scale: 2,000+ replies per story, with 1,000+ words per reply. Summary retrieval returns in less than 3 seconds**
-- Non-English language support (Japanese, Traditional/Simplified Chinese).  It supports English by default.
+- Non-English language support (Japanese, Traditional/Simplified Chinese). It supports English by default.
 - Strip out all functional tag from MVU Game Maker.
 
-Ordinary SillyTavern memory extensions completely buckle under this load, especially when there are a lot of functional tags reside inside the story used by MVU Game Maker, which is useless for memory lookup.  So, I need something that is able to clean up all these functional tags while maintain high speed vectorization on extreme scale.
+Ordinary SillyTavern memory extensions completely buckle under this load, especially when there are a lot of functional tags reside inside the story used by MVU Game Maker, which is useless for memory lookup. So, I need something that is able to clean up all these functional tags while maintain high speed vectorization on extreme scale.
 
 Technical Requirement: Because of the high data throughput required, this system relies on a separate Qdrant vector database running via Docker.
 
@@ -25,224 +26,190 @@ Technical Requirement: Because of the high data throughput required, this system
 - 💸 Long conversations choke your token budget with irrelevant history
 - ✍️ You manually edit context to remind characters of key events
 
-**VectHarePlus Solution:** Automatically extract relevant memories from your entire chat history using semantic search, with smart temporal decay that lets older memories fade naturally, and conditional rules to control exactly when memories activate.
+**VectHarePlus Solution:** Automatically pull the right memories out of your entire chat history using meaning-based search combined with keyword matching, with smart decay so older memories fade naturally, and rules to control exactly when memories activate.
 
 ---
 
-## ➕ VectHarePlus Features
+## 🧠 How It Works 
 
-### 🌏 Better CJK Language Support
-- **Japanese mode** with TinySegmenter-aware extraction behavior
-- **Traditional Chinese mode** with Jieba WASM + Traditional dictionary lazy loading
-- **Simplified Chinese mode** with Jieba WASM support
-- **English, Korean and other Latin language mode** with Intl.Segmenter
-- Language-aware keyword filtering with cleaner CJK token handling
+Vector search is like a really smart "find" function. Instead of matching exact words, it matches **meaning** — type "I'm hungry" and it can find a message that said "let's grab lunch" because the *meaning* is similar.
 
-### 📝 Summarize Before Store
-- Optional summarization before vector storage to reduce noise and improve retrieval density
-- Supports OpenRouter and local vLLM-compatible endpoints
-- Configurable prompt template so you can tune summary style for your RP format
+VectHarePlus splits content into two pipelines:
 
-### ⏯️ Better Vectorization Controls
-- **Stop button** in progress flow to halt long-running vectorization tasks
-- **Pause/continue style control** for vector content processing workflows
-- Improved control over long chat ingestion sessions without restarting everything
+| Pipeline | What it handles |
+|---|---|
+| **EventBase** | Your **chat history** (live chat + uploaded `.jsonl` archives) |
+| **Standard (Chunk)** | Everything else: Lorebook, Character Cards, URLs, documents, wiki pages, YouTube transcripts |
 
-### 🔒 Per-Chat Collection Scoping
-- Collections are now **scoped to the chat they were vectorized in** — no bleed between different games or characters
-- All new vectorizations **auto-activate for the current chat** with no manual setup required
-- "Active for current chat" checkbox in Collection Settings directly controls the chat lock (what you see is what you get)
-- Lock button in the Database Browser clarifies whether a lock belongs to **this chat** or **another chat**
+They never see each other's content — so the same chat message can't get retrieved twice.
 
-### 📡 Smarter Status Indicators
-- **Auto-Sync card** now shows initialization status: whether the current chat has been vectorized and how many chunks exist
-- Auto-Sync guides you to the **Vectorize Content panel** if the chat has not been initialized yet
-- **World Info card** shows which lorebooks are currently vectorized by name
-- World Info guides you to the lorebook vectorizer if no vectorized lorebooks are found
+### What is EventBase? 
 
-### 🗂️ Tabbed Interface
-- Settings are organized into a clean tabbed layout for easier navigation
-- Tabs group related controls together — General, Chat, Retrieval, Collections, Advanced, and more
-- Reduces visual clutter compared to a single long settings panel
+Old way: chat gets cut into raw message chunks. The AI searches over the raw text.
 
-### ⚡ Message Group Batch Vectorization
-- Groups N messages into a batch and summarizes all of them in a **single LLM call**, returning one summary per message
-- Batch requests run in **parallel**, making ingestion significantly faster on large chats
-- Configurable batch size to balance throughput and LLM context usage
-- Ideal for rapid vectorization of long conversations without sacrificing summary quality
+EventBase way: an LLM periodically reads recent messages and **summarizes them into structured events** with metadata like importance and who was involved.
 
-### 🧹 Keyword Quality Improvements
-- Better single-character filtering defaults for CJK keywords
-- Mode-specific exceptions for high-signal 1-character RPG/SoL/school terms
-- Better signal-to-noise for multilingual retrieval
-
-### 🔀 Smarter Two-Search Recall (Qdrant)
-- VectHarePlus runs **two independent searches**: one using dense vector similarity (semantic meaning), and one using keyword matching against Qdrant payload text and keyword indexes
-- It then combines both result lists using RRF or weighted fusion and keeps the best match when duplicates appear
-- The keyword search retrieves **every document matching ≥1 query keyword** via Qdrant payload indexes (full corpus scan, no candidate cap — not just the ANN top-K), so keyword-relevant results can surface even with low vector similarity
-- If one search returns no results, the other still contributes — memory recall does not fully fail
-
-> ℹ️ **Architecture note:** This is server-side hybrid search implemented in the Similharity plugin, not Qdrant's native dense+sparse-vector hybrid API. No sparse vectors are stored in Qdrant. Keyword matching uses Qdrant payload text indexes and keyword arrays, with RRF/weighted fusion computed in plugin JavaScript.
-
-### 🧹 Numerous bug fixes
-
----
-
-## ✨ Original Key Features from VectHare
-
-### 🧠 Intelligent Context Retrieval
-- **Semantic search** through your entire chat history
-- Find relevant messages even from hundreds of messages ago
-- Replace manual memory management with automatic retrieval
-- Works with any embedding model (local or cloud-based)
-
-### ⏰ Temporal Decay System
-- **Memories naturally fade** over time, just like humans
-- Exponential or linear decay modes
-- Set custom half-life for how quickly memories decay
-- Protect important scenes from fading (temporally blind)
-- Optional feature—disable if you want permanent memory
-
-### 🎭 Conditional Activation Rules
-- Activate memory chunks based on **character emotions** (happy, sad, angry, etc.)
-- Trigger on **conversation topics** or keywords
-- Smart recency checks (activate only for recent events)
-- Character Expressions integration for sprite-based emotion detection
-- Fallback to keyword-based emotions if no expressions extension
-
-### 🎬 Scene Management
-- **Mark scenes** in your chat to group related messages
-- Scene chunks are treated as single units for retrieval
-- Perfect for story arcs, major events, or important character moments
-
-### 📦 Multiple Vector Backends
-- **Standard (Vectra)**: ST's built-in file-based storage (great for getting started)
-- **Qdrant**: Enterprise-grade with HNSW indexing, cloud support, advanced filtering
-
-### 📄 Multi-Content Vectorization
-- Chat conversations (with automatic chunking strategies)
-- Lorebook entries (preserve structure with per-entry chunks)
-- Character definitions and personality
-- Custom content types
-
-### 🔍 Advanced Chunking Strategies
-- **Per Message**: Each message = one chunk (best for chat recall)
-- **Conversation Turns**: Group by speaker turns
-- **Message Batch**: Groups N messages together into a single chunk. Configurable batch size
-- **Message Group Batch**: Groups N messages into a batch and summarizes them all in one LLM call, producing one summary per message. Supports parallel batch processing for fast large-scale ingestion
-- **Per Scene**: Scene-marked groups become chunks
-
-### 🗃️ Database Browser
-- Browse all vector collections (chat, lorebook, character)
-- View chunk counts and metadata
-- Enable/disable collections on the fly
-- Export and import collections for backup/sharing
-
-### 🔎 Chunk Visualizer
-- View all chunks in a collection
-- Edit chunk text and metadata
-- Mark chunks as temporally blind (immune to decay)
-- Search and filter chunks
-
-### 🚨 Comprehensive Diagnostics
-Built-in diagnostic tool that checks everything and offers auto-fixes for common issues.
-
----
-
-## 🚀 How It Works
-
-### The RAG Pipeline
+If your character had a long shopping trip with Astarion across 50 messages with conversations and other noise that do not help on searching, EventBase might extract one event:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  1. VECTORIZATION                                           │
-│  ─────────────────                                          │
-│  Chat messages are chunked and embedded into vectors        │
-│  Each chunk stores: text, metadata, keywords, source        │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. SEARCH & RETRIEVAL                                      │
-│  ──────────────────────                                     │
-│  When generating a response, recent messages are queried    │
-│  against the vector database to find semantically similar   │
-│  chunks from your chat history                              │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. FILTERING & SCORING                                     │
-│  ─────────────────────                                      │
-│  • Apply temporal decay (older = lower score)               │
-│  • Evaluate conditional activation rules                    │
-│  • Boost by keywords                                        │
-│  • Re-rank by relevance                                     │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. CONTEXT INJECTION                                       │
-│  ───────────────────                                        │
-│  Top-scoring chunks are formatted and injected into the     │
-│  prompt before generation                                   │
-└─────────────────────────────────────────────────────────────┘
+{
+  description: "Tav and Astarion shopped for armor in Baldur's Gate.
+                Astarion mocked the prices. Tav bought a leather chestpiece for 80gp.",
+  importance: 0.6,
+  source_window: [msg 142 → 154]
+}
 ```
 
----
-
-## 🗄️ Backend Comparison
-
-| Backend | Best For | Pros | Cons |
-|---------|----------|------|------|
-| **Standard (Vectra)** | Small datasets, getting started | No dependencies, works out of box | Limited scale |
-| **Qdrant** | Production, cloud deployments | Enterprise-grade, advanced filtering | Requires running Qdrant server |
-
-> 💡 **Need help choosing?** Use **Qdrant** for production deployments.
+Later when you mention "remember the shopping trip?", VectHarePlus retrieves **the event**, not 50 raw messages. That gives the AI a clean, dense summary instead of a noisy wall of dialogue. Re-running vectorization never re-extracts the same window twice (fingerprint cache).
 
 ---
 
-## ⏳ Temporal Decay System
+## 🔍 Hybrid Search: A1 vs A2 vs A3 
 
-Memories don't stick around forever. VectHarePlus implements intelligent temporal decay that makes memories naturally fade over time.
+VectHarePlus combines **two signals** to find the best results:
 
-### How It Works
+- **Signal 1 - Vector similarity** — meaning-based ("hungry" matches "let's grab lunch")
+- **Signal 2 - BM25 keyword score** — exact word match ("Astarion" matches "Astarion")
 
-**Exponential Decay** (default):
+There are three paths for combining them, depending on backend and settings:  (From lower end computer to dedicated vector database on a docker)
+
+### A1 — Standard backend + BM25
+Browser does a vector search to get the top ~100 candidates, then computes BM25 keyword scores on just those candidates. Simple weighted sum: `α × vectorScore + β × bm25Score`.
+
+**Tradeoff:** Fast and lightweight for slower computer, but if a perfect keyword match was outside the top 100 vector results, it's invisible.
+
+### A2 — Standard backend + Hybrid
+Same as A1, but adds:
+- **RRF (Reciprocal Rank Fusion)** — combines results by *position* instead of raw score
+- **Dual-signal bonus** — results that appear in *both* lists get up to +8% boost
+
+**Example:** Searching "Astarion drinks blood." An event matched by both vector ("vampires/hunger") *and* BM25 (literal "Astarion" + "blood") gets ranked higher than events in only one list.
+
+**Tradeoff:** Better fusion, but still limited to the vector top-K 100 candidate pool.
+
+### A3 — Qdrant native sparse + server-side RRF (best)
+Both searches run **inside Qdrant vector database in a single API call**. Each stored point has two vectors: a dense one (meaning) and a sparse one (keyword frequencies). Qdrant computes BM25 weights across the **full corpus** (true IDF, not biased), then fuses with native RRF. The keyword side isn't capped at the dense search's top results — if an event contains your query words, it's eligible, even if its meaning vector wasn't a close match. And the BM25 word-importance weights are calculated using statistics from every event in the database (not just a top-100 sample), so rare words get scored correctly.
+
+**Example:** Searching "I cast Fireball at the dragon." Qdrant searches its dense index (for spell/attack meanings) and sparse index (for the literal words "Fireball" and "dragon") at the same time, fuses server-side, returns one ranked list.
+
+**Tradeoff:** Best accuracy, fastest at scale.
+
+| Backend setting | Path you get |
+|---|---|
+| Standard (Vectra - standard SillyTavern vector format) + BM25 | A1 |
+| Standard (Vectra  - standard SillyTavern vector format) + Hybrid | A2 |
+| Qdrant (Dedicated Vector DB on a docker) | A3 |
+
+---
+
+## ✨ Features
+
+### 🧬 EventBase — LLM-extracted chat memory
+LLM summarizes chat into structured events with importance/recency/persistence weights. A 4-weight re-ranker decides what gets injected. Built-in dedup suppresses events already visible in recent messages.
+
+Each event is a structured record, not raw text. Example of what the LLM produces from the Astarion shopping window:
+
+```
+event_type:    item_acquired
+importance:    6
+text:          Tav and Astarion shopped for armor in Baldur's Gate. Astarion mocked the prices.
+               Tav bought a leather chestpiece for 80gp.
+DateTime:      1492-08-15T14:00:00
+cause:         Tav needed better armor before the Gauntlet of Shar expedition
+result:        Tav now wears the leather chestpiece; 80gp spent from party funds
+characters:    [Tav, Astarion]
+locations:     [Baldur's Gate, Sorcerous Sundries district]
+factions:      []
+items:         [leather chestpiece, 80gp]
+concepts:      [armor shopping, party economy]
+keywords:      [armor, leather, chestpiece, gold, shopping]
+open_threads:  [Gauntlet of Shar preparation]
+should_persist: false
+```
+
+Both signals (meaning + keywords) operate over this rich field set, so a query like "armor for the dungeon" hits via concepts/open_threads, while "Astarion 80gp" hits via characters/items/keywords.
+
+### 🌏 CJK language support (Japanese, Traditional/Simplified Chinese)
+- Jieba WASM (Simplified + Traditional Chinese), TinySegmenter (Japanese), Intl.Segmenter (English/Latin/Korean)
+- CJK tokenizer mode is **locked per Qdrant collection** at upsert — switching modes shows a warning modal
+
+### 🔍 Native sparse-vector hybrid search (Qdrant)
+A3 path described above — server-side RRF with globally-accurate BM25 IDF. Single round-trip per query.
+
+### 📝 Summarize before store
+Mandatory LLM summarization before vector storage. Supports OpenRouter and local vLLM-compatible endpoints. Configurable prompt template.
+
+### ⏯️ Better vectorization controls
+Stop button, pause/resume, fingerprint cache that survives Chrome restarts mid-run.
+
+### 🔒 Per-chat collection scoping
+New collections auto-activate for the current chat. "Active for current chat" checkbox controls the chat lock. Lock button in the Database Browser shows whether a lock is for *this* chat or another.
+
+### 📡 Smarter status indicators
+Auto-Sync card shows whether the current chat is vectorized and how many events exist. World Info card shows vectorized lorebooks by name. Both link to the right vectorizer if something's missing.
+
+### 🗂️ Tabbed interface
+Settings split into **Core** (backend, embedding, hybrid), **EventBase** (chat hsitory/archive chat file .jsonl), **ChunkBase** (lorebook/docs/URLs/wiki), **Action** (diagnostics, dev tools).
+
+### ⚡ Parallel Windows — Vectorization Speedup
+Vectorizing a long chat normally processes one window at a time: send window 1 to the LLM → wait → embed → send window 2 → wait → embed → ... For a 2000-message chat that's a lot of serialized waiting.
+
+The **Parallel Windows** slider (Chunking Strategy section in Vectorize Content) lets you spawn up to **8 LLM extraction + embedding calls at the same time**. Window 1 is being extracted while windows 2–8 are also in flight, dramatically cutting total ingestion time.
+
+| Slider value | Behavior |
+|---|---|
+| **1 (safe)** | One window at a time. Lowest provider load, no risk of rate limits, slowest. |
+| **2–4** | Mild parallelism. Good middle ground for most providers. |
+| **5–8 (fast)** | Aggressive parallelism. Best for cloud providers with high rate limits (OpenRouter, OpenAI, Cohere). May trip rate limits on free tiers. |
+
+Use **1** if you're on a strict rate-limited free tier or a single local GPU. Crank to **8** if you're on a paid cloud provider and want a 2000-message chat ingested in minutes instead of an hour.
+
+### 🧹 Multilingual keyword quality
+Better single-character filtering for CJK, mode-specific exceptions for high-signal 1-character RPG/Slice of Life/school terms.
+
+### 🧹 Major cleanup
+Scene support was a chunk-based-chat-era feature and has been removed from original VectHare because event base recording have no use of it. Numerous bug fixes around mixed-backend search, handle ID filtering, and diagnostics.
+
+---
+
+## 🎭 Activation Rules
+
+Each collection card has an Activation panel. The priority chain is:
+
+1. **Disabled** (pause button) → never queries
+2. **Triggers** → keywords match recent messages → activates
+3. **Advanced Conditions** → if triggers empty/no match, evaluate condition rules → activates 
+4. **Active for current chat / Character lock** → manual always-on fallback
+5. **Nothing matched** → does not activate
+
+Conditions support emotion (via Character Expressions sprite detection), keywords, message/turn count, and combined AND/OR rules. 
+
+> ⚠️ **CJK note:** Triggers and emotion/keyword conditions are **English-only** — the keyword dictionary is English and regex `\b` word boundaries don't fire between CJK characters. For Chinese/Japanese/Korean stories, use **"Active for current chat" / Character lock** instead. Message Count / Turn Count conditions are numeric and work fine for any language.
+
+---
+
+## ⏳ Temporal Decay
+
+Older content gets a lower score so it only surfaces when really relevant.
+
 ```
 relevance = original_score × (0.5 ^ (message_age / half_life))
 ```
 
-For example, with half-life = 50:
-| Messages Ago | Relevance |
-|--------------|-----------|
-| 0 | 100% |
-| 50 | 50% |
-| 100 | 25% |
-| 150 | 12.5% |
+With half-life = 50: a message 50 ago is at 50% relevance, 100 ago at 25%, 150 ago at 12.5%. Floor (default 0.3) prevents complete forgetting. Mark important chunks **temporally blind** to make them immune.
 
-### Configuration Options
-- **Enabled**: Toggle decay on/off (default: OFF)
-- **Mode**: Exponential or Linear
-- **Half-life**: Messages until 50% relevance (default: 50)
-- **Floor**: Minimum relevance, prevents complete forgetting (default: 0.3)
-- **Temporally Blind**: Mark important chunks to be immune to decay
-
-> 💡 **Pro Tip:** Set a high floor (0.5+) to keep important memories accessible even when old. Mark character introductions as temporally blind!
+> **EventBase note:** EventBase has its own built-in recency bonus in the 4-weight re-ranker. The standalone decay setting only affects non-chat content (lorebook, documents).
 
 ---
 
-## 🎭 Conditional Activation Rules
+## 📦 Backends
 
-Control precisely **when** chunks activate using intelligent rules.
+| Backend | Best for | Notes |
+|---|---|---|
+| **Standard (Vectra - SillyTavern default vector format)** | Small datasets, multilingual, getting started | No dependencies. Limited to A1/A2 hybrid. |
+| **Qdrant** | Large chats, multilingual, production | A3 hybrid (best accuracy). Requires Qdrant + Similharity plugin (installation below). |
 
-### Rule Types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| 🎬 **Emotion** | Activate when character feels specific emotion | Activate sad memories when character is sad |
-| 🔑 **Keyword** | Activate when keywords appear in chat | Activate "treasure" memories when discussing treasure |
-| 📍 **Recency** | Activate only for recent messages | Only use memories from last 10 messages |
-| 🎯 **Combined** | Mix multiple conditions with AND/OR | Emotion=happy AND keyword contains "party" |
-
-Supports 28 emotion types with Character Expressions integration!
+Use **Qdrant vector database** for any ultra fast and accurate delopment — A3 is materially more accurate than A1/A2, especially for CJK, and it is free and opensource.  2000+ events in the database takes 1.5 seconds round trip search.
 
 ---
 
@@ -261,10 +228,13 @@ Supports 28 emotion types with Character Expressions integration!
 
 That's it! VectHarePlus will be downloaded and enabled automatically.
 
-### Step 2: Configure Embedding Provider
-1. Open **VectHarePlus Settings** (🐰 icon in the extensions panel)
-2. Select your embedding provider (Transformers, OpenAI, Ollama, BananaBread, etc.)
-3. Configure API keys if using cloud providers
+### Step 2: Configure VectHarePlus
+1. Open **VectHarePlus Settings** (Core tab in the extensions panel)
+2. Choose your vector storage (Standard or Qdrant)
+3. Select your embedding provider (Transformers, OpenAI, Ollama, BananaBread, etc.)
+4. Select your summaizer LLM (Openrouter or vLLM)
+5. Configure API keys if using cloud providers
+6. Most settings using default should be good, but feel free to tweak it.
 
 ### Step 3: (Needed for Qdrant backends) Install Similharity Plugin
 
@@ -292,142 +262,45 @@ Look for the update notification in the Extensions panel, or manually check with
 
 ---
 
-## ⚙️ Settings Overview
+## ❓ FAQ
 
-### 🎛️ Core Settings
-| Setting | Description |
-|---------|-------------|
-| **Vector Backend** | Standard (Vectra) or Qdrant |
-| **Embedding Provider** | 15+ providers supported |
-| **Summary Provider** | 2 providers supported |
-| **API URL** | Custom endpoint for local providers |
+**Can I change the CJK Tokenizer Mode mid-chat?**
+No — don't do it. The CJK Tokenizer Mode is **locked into each Qdrant collection at upsert time** via a sentinel point. Switching modes after you've already vectorized content will trigger a "Tokenizer mismatch" warning modal on the next query, and your only real options are:
+1. **Revert** to the original mode (preserve existing vectors), or
+2. **Re-vectorize the collection from scratch** with the new mode (throw away all extracted events and start over).
 
-### 💬 Chat Vectorization
-| Setting | Description |
-|---------|-------------|
-| **Enable Auto-Sync** | Automatically vectorize new messages |
-| **Chunking Strategy** | Per Message, Conversation Turns, Message Batch, Message Group Batch, Per Scene |
-| **Score Threshold** | Minimum similarity to include chunk (0.0-1.0) |
-| **Query Depth** | How many chunks to retrieve |
-| **Insert Count** | How many chunks to inject into prompt |
+Pick your tokenizer mode *before* you start vectorizing a chat and stick with it. There's no in-place migration — sparse vectors were tokenized with the original mode, so they're incompatible with a different tokenizer's output.
 
-### ⏰ Temporal Decay
-| Setting | Description |
-|---------|-------------|
-| **Enabled** | Toggle decay system |
-| **Mode** | Exponential or Linear |
-| **Half-life** | Messages until 50% relevance |
-| **Floor** | Minimum relevance multiplier |
+**Why is EventBase ignoring my temporal decay setting?**
+EventBase has its own built-in recency bonus baked into the 4-weight re-ranker. The standalone temporal decay setting only applies to non-chat content (lorebook, documents). This is intentional — applying both would double-decay chat events.
 
----
+**Can I use triggers/emotion conditions on Chinese/Japanese/Korean chats?**
+Not reliably. The keyword dictionary is English-only and regex `\b` word boundaries don't fire between CJK characters. Use "Active for current chat" / Character lock instead, or numeric Message Count / Turn Count conditions.
 
-## 🎯 Pro Tips & Best Practices
-
-### 🧠 Memory Quality
-- **Per Message chunks work best** for dialogue-heavy chats
-- **Mark scenes for major events** to keep them cohesive
-- **Set temporally blind on character intros** so your AI never forgets who people are
-
-### 🚀 Performance
-- **Large chats (10k+ messages)?** Use the **Message Group Batch** strategy for fast parallel summarization during ingestion
-- **Lower score threshold** if memories aren't being retrieved (try 0.3)
-
-### 🎭 Conditional Activation
-- **Pair emotions with Character Expressions** for sprite-based detection
-- **Add topic keywords** to make memories context-aware
-- **Use recency rules** for time-sensitive information
-
-### 💾 Data Management
-- **Export collections regularly** as backups
-- **Run diagnostics** if something feels off
-- **Check the Database Browser** to see what's actually stored
+**Why are some of my old "scene" settings being ignored?**
+Scene support was removed (it was a chunk-based-chat-era feature, and chat now runs through EventBase). Saved `isScene` / `sceneAware` fields are silently ignored — no migration needed, they'll rot out as you re-vectorize.
 
 ---
 
 ## 🐛 Troubleshooting
 
-### "No embeddings available"
-1. Enable Vectors extension in main ST settings
-2. Select embedding provider in VectHarePlus settings
-3. Add API key if using cloud provider
-4. Run Diagnostics to verify connectivity
+**"No embeddings available"** — Enable Vectors extension in main ST settings, select an embedding provider, add API key if needed, run Diagnostics.
 
-### Chunks not being retrieved
-1. Click "Vectorize" button to index current chat
-2. Lower score threshold (try 0.3)
-3. Check Chunk Visualizer to verify chunks exist
-4. Run Diagnostics for detailed health check
+**Events/chunks not retrieved** — Click Vectorize to index, lower the score threshold (try 0.3), confirm the collection is "Active for current chat" or has matching triggers.
 
-### "Backend health check failed"
-1. Run Diagnostics to see which backend failed
-2. **Qdrant**: Ensure the Qdrant server is running and the Similharity plugin is installed
+**"Backend health check failed"** — On Qdrant, make sure the Qdrant server is running and the Similharity plugin is installed.
 
-### Slow performance
-1. Switch to the **Message Group Batch** chunking strategy for faster parallel ingestion
-2. Increase chunk size (fewer, larger chunks)
-3. Reduce query depth and insert count
+**Slow performance** — Switch to Qdrant + A3 (single round-trip, server-side fusion). Reduce EventBase Top K. Use API embedding providers (parallel) instead of local GPU (sequential).
 
-### Memory forgetting important details
-1. Mark important chunks as **temporally blind**
-2. Increase the decay floor value
-3. Lower score threshold
-4. Add conditional activation rules for topic-specific recall
-
----
-
-## 📖 Documentation
-
-Detailed docs available in the `/docs` folder:
-- `ARCHITECTURE.md` - System design
-- `PLUGGABLE_BACKENDS.md` - Backend implementation
-- `METADATA_ARCHITECTURE.md` - Chunk metadata system
-- `TEMPORAL_DECAY.md` - Decay formulas and tuning
-
----
-
-## 🔗 Requirements
-
-### Required
-- **SillyTavern** (latest version)
-- **Embedding Provider** (one of 15+ supported)
-
-### Optional
-- **Similharity Plugin** - For Qdrant backend
-- **Character Expressions** - For sprite-based emotion detection
-
----
-
-## 🤝 Contributing
-
-Found a bug? Have an idea? Contributions welcome!
-
-- 🐛 **Issues**: Report bugs on GitHub
-- 💡 **Features**: Open a discussion first
-- 🔧 **PRs**: Follow the code standards in `CLAUDE.md`
-
----
-
-## 📜 License
-
-MIT License - See LICENSE file for details.
+**Memory forgetting important details** — Mark important chunks temporally blind, raise the decay floor, add trigger keywords (English content only).
 
 ---
 
 ## 🙏 Credits
 
-**VectHarePlus** is branched from VectHare which is created by **Coneja Chibi** 
+**VectHarePlus** is branched from VectHare, originally created by **Coneja Chibi**. Thanks to the SillyTavern community for feedback and testing.
 
-Special thanks to the SillyTavern community for feedback and testing!
-
----
-
-## 🌟 Support
-
-If VectHarePlus helps your roleplay:
-- ⭐ Star the repo on GitHub
-- 💬 Share your experience
-- 🐛 Report bugs to help improve it
-- 📚 Contribute docs or examples
+MIT License — see LICENSE.
 
 ---
 

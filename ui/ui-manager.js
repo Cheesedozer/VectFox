@@ -438,9 +438,15 @@ export function renderSettings(containerId, settings, callbacks) {
                                     <label for="vecthare_summarize_model">
                                         <small>Summarization / EventBase Model</small>
                                     </label>
-                                    <input type="text" id="vecthare_summarize_model" class="vecthare-input"
-                                        placeholder="e.g. google/gemini-flash-1.5-8b" />
-                                    <small class="vecthare_hint">Model ID used for EventBase extraction (separate from embedding model). Required.</small>
+                                    <div style="display: flex; gap: 6px; align-items: stretch;">
+                                        <input type="text" id="vecthare_summarize_model" class="vecthare-input" style="flex: 1;"
+                                            placeholder="e.g. google/gemini-flash-1.5-8b" />
+                                        <button id="vecthare_summarize_model_choose" class="menu_button" type="button" title="Fetch available models from the configured provider">
+                                            <i class="fa-solid fa-list"></i> Choose
+                                        </button>
+                                    </div>
+                                    <select id="vecthare_summarize_model_list" class="vecthare-select" style="display:none; margin-top:6px;"></select>
+                                    <small class="vecthare_hint">Model ID used for EventBase extraction (separate from embedding model). Required. Click <b>Choose</b> to browse the provider's model list.</small>
 
                                 </div>
                             </div>
@@ -2093,6 +2099,74 @@ function bindSettingsEvents(settings, callbacks) {
             Object.assign(extension_settings.vecthareplus, settings);
             saveSettingsDebounced();
         });
+
+    // "Choose" button — fetches model list from the configured provider and populates a dropdown
+    $('#vecthare_summarize_model_choose').on('click', async function() {
+        const $btn = $(this);
+        const $list = $('#vecthare_summarize_model_list');
+        const $input = $('#vecthare_summarize_model');
+        const provider = settings.summarize_provider || 'openrouter';
+
+        const originalHtml = $btn.html();
+        $btn.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Loading…');
+
+        try {
+            let models = [];
+
+            if (provider === 'openrouter') {
+                // OpenRouter /models is a public endpoint — no auth required for listing
+                const resp = await fetch('https://openrouter.ai/api/v1/models', { method: 'GET' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                models = (data?.data || []).map(m => ({ id: m.id, label: m.name ? `${m.id} — ${m.name}` : m.id }));
+            } else if (provider === 'vllm') {
+                const baseUrl = (settings.summarize_vllm_url || '').replace(/\/$/, '');
+                if (!baseUrl) {
+                    toastr.error('Set the vLLM Base URL first.', 'vLLM not configured');
+                    return;
+                }
+                const headers = {};
+                const apiKey = settings.summarize_vllm_api_key;
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+                const resp = await fetch(`${baseUrl}/v1/models`, { method: 'GET', headers });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                models = (data?.data || []).map(m => ({ id: m.id, label: m.id }));
+            } else {
+                toastr.warning(`Choose is not supported for provider "${provider}".`);
+                return;
+            }
+
+            if (!models.length) {
+                toastr.warning('Provider returned no models.');
+                return;
+            }
+
+            models.sort((a, b) => a.id.localeCompare(b.id));
+
+            const currentValue = String($input.val() || '').trim();
+            const options = ['<option value="">— Select a model —</option>']
+                .concat(models.map(m => {
+                    const selected = m.id === currentValue ? ' selected' : '';
+                    return `<option value="${$('<div>').text(m.id).html()}"${selected}>${$('<div>').text(m.label).html()}</option>`;
+                }));
+
+            $list.html(options.join('')).show();
+            toastr.success(`Loaded ${models.length} models from ${provider}.`);
+        } catch (err) {
+            console.error('[VectHare] Model list fetch failed:', err);
+            toastr.error(`Could not fetch model list: ${err?.message || err}`);
+        } finally {
+            $btn.prop('disabled', false).html(originalHtml);
+        }
+    });
+
+    $('#vecthare_summarize_model_list').on('change', function() {
+        const value = String($(this).val() || '').trim();
+        if (!value) return;
+        $('#vecthare_summarize_model').val(value).trigger('change');
+        $(this).hide();
+    });
 
     $('#vecthare_summarize_vllm_url')
         .val(settings.summarize_vllm_url || '')

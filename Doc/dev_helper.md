@@ -417,3 +417,29 @@ A3 leverages **all four** of Qdrant's relevant server-side features:
 - Sparse encoder: [core/sparse-vector-encoder.js](../core/sparse-vector-encoder.js).
 - Tokenizer lock + mismatch modal: [core/tokenizer-lock.js](../core/tokenizer-lock.js).
 - EventBase invocation: `queryEvents()` at [core/eventbase-store.js](../core/eventbase-store.js) and direct `queryCollection` calls in [core/eventbase-retrieval.js](../core/eventbase-retrieval.js), [core/eventbase-workflow.js](../core/eventbase-workflow.js).
+
+---
+
+## 9) Trigger / Condition Activation — English Only
+
+Activation Triggers and Advanced Conditions (Collection Settings → Activation panel) are **English-only**. They do not work reliably for CJK (Chinese / Japanese / Korean) stories.
+
+### Why
+
+**Triggers** match keywords against recent messages using JavaScript `String.includes()` and `/\b.../` regex anchors. `\b` is an ASCII word-boundary — it does not fire between CJK characters, so regex triggers will never match CJK text. Plain-string triggers (`includes()`) technically match substrings, but CJK chat messages lack the whitespace separators that make keyword matching useful, so hit rates are extremely low.
+
+**Advanced Conditions → Emotion** relies on two detection paths, both English-only:
+
+1. **Character Expressions classifier (primary)**: The sprite classification model bundled with the Character Expressions SillyTavern extension is trained on English text. CJK input produces unreliable or random emotion labels.
+2. **`EMOTION_KEYWORDS` fallback (secondary)**: Defined in `core/conditional-activation.js` → `EMOTION_KEYWORDS`. Every entry is an English word or English regex pattern (e.g. `joy: ['joy', 'happy', 'smile', '/\\b(grin|beam)\\w*/i']`). Zero CJK coverage.
+
+**Advanced Conditions → Message Contains / Pattern** also use `includes()` / regex with `\b` anchors — same limitation as Triggers.
+
+### What works for CJK
+
+- **Active for current chat / Character lock** (manual always-on) — no language dependency.
+- **Advanced Conditions → Message Count / Turn Count** — purely numeric, language-independent.
+
+### If CJK keyword matching is needed
+
+Add CJK terms to `EMOTION_KEYWORDS` in `core/conditional-activation.js`, or extend `matchesEmotionPatterns()` to use `\p{L}` Unicode word boundaries (requires the `u` flag on the regex). Neither is implemented as of 2026-05-11.

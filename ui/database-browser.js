@@ -2155,10 +2155,11 @@ function createActivationEditorModal() {
                     <div class="vecthare-activation-info">
                         <strong>Activation Priority:</strong>
                         <ol>
-                            <li><strong>Always Active</strong> → Collection always queries</li>
-                            <li><strong>Triggers</strong> → Match keywords in recent messages</li>
-                            <li><strong>Advanced Conditions</strong> → Evaluated if triggers empty/don't match</li>
-                            <li><strong>No config</strong> → Auto-activates (backwards compatible)</li>
+                            <li><strong>Disabled</strong> → Collection never queries (pause kills all activation)</li>
+                            <li><strong>Triggers</strong> → Match keywords in recent messages → activates</li>
+                            <li><strong>Advanced Conditions</strong> → Evaluated if triggers empty/don't match → activates</li>
+                            <li><strong>Active for current chat / Character lock</strong> → Manual always-on</li>
+                            <li><strong>Nothing configured</strong> → Collection does not activate</li>
                         </ol>
                     </div>
                 </div>
