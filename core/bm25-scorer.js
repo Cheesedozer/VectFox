@@ -295,6 +295,7 @@ function porterStemmer(word) {
  * @param {boolean} options.stem - Apply Porter stemming (default: true)
  * @param {boolean} options.removeStopWords - Remove stop words (default: true)
  * @param {number} options.minLength - Minimum token length (default: 2)
+ * @param {boolean} options.dedupe - Deduplicate tokens (default: true). Set to false to preserve term frequency for sparse-vector encoding.
  * @returns {string[]} Array of processed tokens
  */
 function tokenize(text, options = {}) {
@@ -303,7 +304,8 @@ function tokenize(text, options = {}) {
     const {
         stem = true,
         removeStopWords = true,
-        minLength = 2
+        minLength = 2,
+        dedupe = true
     } = options;
 
     // Extract CJK word tokens using Intl.Segmenter (falls back to character-level)
@@ -339,8 +341,8 @@ function tokenize(text, options = {}) {
         });
     }
 
-    // Deduplicate (preserve order)
-    return [...new Set(tokens)];
+    // Deduplicate (preserve order). Skip when caller needs raw TF (sparse-vector encoder).
+    return dedupe ? [...new Set(tokens)] : tokens;
 }
 
 /**

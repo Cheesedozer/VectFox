@@ -605,6 +605,28 @@ export function renderSettings(containerId, settings, callbacks) {
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- ABC-DELETE: Qdrant native sparse vectors + A/B/C fusion mode (Phase 3) -->
+                                <div style="margin-top: 16px; padding: 12px; background: rgba(120,0,180,0.1); border-radius: 8px; border: 1px solid rgba(120,0,180,0.25);">
+                                    <div style="font-weight: 600; margin-bottom: 8px;">Qdrant Native Sparse Vectors (experimental)</div>
+                                    <label class="checkbox_label" for="vecthare_qdrant_native_sparse_enabled">
+                                        <input id="vecthare_qdrant_native_sparse_enabled" type="checkbox" />
+                                        <span>Enable native sparse vectors (requires Qdrant 1.10+)</span>
+                                    </label>
+                                    <small class="vecthare_hint">Existing collections must be migrated via Action → Dev Tools.</small>
+
+                                    <div id="vecthare_hybrid_fusion_mode_wrapper" style="margin-top: 12px;">
+                                        <label>
+                                            <small>Hybrid Fusion Mode (A/B/C — pick one for production)</small>
+                                        </label>
+                                        <select id="vecthare_hybrid_fusion_mode" class="vecthare-select">
+                                            <option value="legacy">Legacy (plugin-side BM25 + bonuses)</option>
+                                            <option value="native_sparse_legacy_fusion">Native sparse + legacy fusion (best of both)</option>
+                                            <option value="native_rrf">Native sparse + native RRF (cleanest)</option>
+                                        </select>
+                                        <small class="vecthare_hint">Legacy works without sparse vectors. The two native modes require sparse vectors enabled and a migrated collection.</small>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- ═══════════════════════════════════════════════════════ -->
@@ -955,6 +977,21 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <span>Debug Qdrant backend</span>
                             </label>
                             <small class="vecthare_hint">Log native hybrid backend keyword/fusion diagnostics from the Similharity Qdrant backend. Turn this off when not actively debugging to avoid noisy console output.</small>
+
+                            <!-- MIGRATE-DELETE: Dev-only sparse-vector migration block. Remove this entire div once migration is no longer needed. -->
+                            <div style="margin-top: 24px; padding: 12px; background: rgba(180,80,0,0.1); border-radius: 8px; border: 1px solid rgba(180,80,0,0.3);">
+                                <div style="font-weight: 700; margin-bottom: 6px;">Dev Tools (Remove Before Release)</div>
+                                <p style="margin: 4px 0 8px;">Re-tokenize an existing Qdrant collection into native sparse vectors. <strong>Does not re-embed</strong> — dense vectors are kept as-is, only the BM25 sparse representation is computed. Locks the active CJK tokenizer mode into the collection.</p>
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                    <input type="text" id="vecthare_migrate_sparse_collection" placeholder="Collection name (e.g. vecthare_main)" class="vecthare-input" style="flex:1; min-width:240px;" />
+                                    <button id="vecthare_migrate_sparse_run" class="vecthare-action-btn vecthare-btn-secondary">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                        <span>Upgrade Collection to Native Sparse Vectors</span>
+                                    </button>
+                                </div>
+                                <div id="vecthare_migrate_sparse_status" style="margin-top: 8px; font-family: monospace; font-size: 12px; color: var(--SmartThemeBodyColor);"></div>
+                            </div>
+                            <!-- /MIGRATE-DELETE -->
 
                         </div>
                     </div>
@@ -2468,6 +2505,25 @@ function bindSettingsEvents(settings, callbacks) {
     // Initialize native-hybrid-dependent visibility
     updateNativeHybridUI();
 
+    // ABC-DELETE: Qdrant native sparse vectors enable toggle
+    $('#vecthare_qdrant_native_sparse_enabled')
+        .prop('checked', !!settings.qdrant_native_sparse_enabled)
+        .on('change', function() {
+            settings.qdrant_native_sparse_enabled = $(this).prop('checked');
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+
+    // ABC-DELETE: hybrid fusion mode (A/B/C — pick winner, delete losers + this block)
+    $('#vecthare_hybrid_fusion_mode')
+        .val(settings.hybrid_fusion_mode || 'legacy')
+        .on('change', function() {
+            settings.hybrid_fusion_mode = String($(this).val());
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+            console.log(`VectHare: hybrid_fusion_mode = ${settings.hybrid_fusion_mode}`);
+        });
+
     // Query depth (how many recent messages to include in search query)
     $('#vecthare_query_depth')
         .val(settings.query || 2)
@@ -3304,6 +3360,43 @@ function bindSettingsEvents(settings, callbacks) {
     $('#vecthare_reopen_progress').on('click', () => {
         if (!progressTracker.reopen()) {
             toastr.info('No active progress to show', 'VectHare');
+        }
+    });
+
+    // MIGRATE-DELETE: Dev-only sparse-vector migration handler
+    $('#vecthare_migrate_sparse_run').on('click', async () => {
+        const $status = $('#vecthare_migrate_sparse_status');
+        const collection = String($('#vecthare_migrate_sparse_collection').val() || '').trim();
+        if (!collection) {
+            $status.text('Enter a collection name first.');
+            return;
+        }
+        const cjkMode = settings.cjk_tokenizer_mode || 'intl';
+        const confirmed = confirm(
+            `Migrate "${collection}" to native sparse vectors?\n\n` +
+            `Tokenizer mode "${cjkMode}" will be locked into this collection. ` +
+            `Dense vectors are kept (no re-embed). Original collection will be dropped and an alias created.`
+        );
+        if (!confirmed) {
+            $status.text('Cancelled.');
+            return;
+        }
+        $status.text('Starting...');
+        try {
+            const { migrateCollectionToSparse } = await import('../core/migrate-to-sparse.js');
+            const result = await migrateCollectionToSparse({
+                sourceCollection: collection,
+                cjkTokenizerMode: cjkMode,
+                onProgress: ({ phase, done, total }) => {
+                    $status.text(`[${phase}] ${done}${total ? ' / ' + total : ''}`);
+                },
+            });
+            $status.text(`Done. Migrated ${result.totalMigrated} points. Alias "${collection}" → ${result.target}.`);
+            toastr.success(`Migrated ${result.totalMigrated} points to sparse vectors`, 'VectHare');
+        } catch (error) {
+            console.error('[VectHare] Sparse migration failed:', error);
+            $status.text(`FAILED: ${error.message}`);
+            toastr.error(error.message, 'Sparse migration failed');
         }
     });
 

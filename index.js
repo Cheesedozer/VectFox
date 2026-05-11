@@ -126,6 +126,12 @@ const defaultSettings = {
     hybrid_rrf_k: 60,                   // RRF constant (higher = more weight to top results)
     hybrid_native_prefer: true,         // Prefer native backend hybrid if available (Qdrant default: A3)
 
+    // Qdrant native sparse vectors (Phase 2+). Requires Qdrant 1.10+.
+    qdrant_native_sparse_enabled: false,        // Master switch for native sparse vector path
+    qdrant_sparse_query_limit_multiplier: 4,    // prefetch.limit = topK * this
+    hybrid_fusion_mode: 'legacy',               // ABC-DELETE: 'legacy' | 'native_sparse_legacy_fusion' | 'native_rrf'
+    qdrant_sparse_fusion: 'rrf',                // 'rrf' | 'dbsf' (only used when hybrid_fusion_mode == 'native_rrf')
+
     // Advanced features
     temporal_decay: getDefaultDecaySettings(),
 
