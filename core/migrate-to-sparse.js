@@ -59,27 +59,59 @@ export async function migrateCollectionToSparse({ sourceCollection, cjkTokenizer
     if (!cjkTokenizerMode) throw new Error('cjkTokenizerMode required');
 
     const report = (phase, done, total = null) => onProgress?.({ phase, done, total });
+    const target = `${sourceCollection}_v2`;
 
     // Step 1: discover vector size by reading a single point from the source.
+    // If the source is missing but the target exists, we're in a half-migrated state from a
+    // failed prior run — recover by running just the finalize step (server-side copy v2 → source).
     report('inspect', 0);
-    const probe = await postJSON('/api/plugins/similharity/chunks/migrate-to-sparse/scroll-source', {
-        sourceCollection,
-        limit: 1,
-    });
+    let probe;
+    let recoveryMode = false;
+    try {
+        probe = await postJSON('/api/plugins/similharity/chunks/migrate-to-sparse/scroll-source', {
+            sourceCollection,
+            limit: 1,
+        });
+    } catch (sourceErr) {
+        // Try the target — it might have all the data from a prior interrupted migration.
+        try {
+            probe = await postJSON('/api/plugins/similharity/chunks/migrate-to-sparse/scroll-source', {
+                sourceCollection: target,
+                limit: 1,
+            });
+            recoveryMode = true;
+            console.warn(`[Migrate] Source "${sourceCollection}" not found but "${target}" exists — entering recovery mode.`);
+        } catch (targetErr) {
+            throw new Error(`Neither "${sourceCollection}" nor "${target}" is readable: ${sourceErr.message}`);
+        }
+    }
     if (!probe.points || probe.points.length === 0) {
-        throw new Error(`Source collection "${sourceCollection}" is empty or unreadable`);
+        throw new Error(`Source collection is empty or unreadable`);
     }
     const firstVector = probe.points[0].vector;
-    // Source might be plain-array or named-vector form. We only support unnamed source today.
+    // Could be plain-array (legacy source) or named-vector form (target with sparse).
     const denseSample = Array.isArray(firstVector) ? firstVector : firstVector?.[''];
     if (!Array.isArray(denseSample) || denseSample.length === 0) {
-        throw new Error(`Could not determine dense vector size from "${sourceCollection}"`);
+        throw new Error(`Could not determine dense vector size`);
     }
     const vectorSize = denseSample.length;
 
+    // RECOVERY PATH: target already has tokenized data — skip straight to finalize.
+    if (recoveryMode) {
+        report('finalize', 0);
+        const result = await postJSON('/api/plugins/similharity/chunks/migrate-to-sparse/finalize', {
+            sourceCollection,
+            targetCollection: target,
+            cjkTokenizerMode,
+            vectorSize,
+        });
+        invalidateCollectionMetadata(sourceCollection);
+        report('done', result.copied || 0, result.copied || 0);
+        return { ok: true, totalMigrated: result.copied || 0, target: sourceCollection, recovered: true };
+    }
+
     // Step 2: create target.
     report('create-target', 0);
-    const target = `${sourceCollection}_v2`;
     await postJSON('/api/plugins/similharity/chunks/migrate-to-sparse/create-target', {
         sourceCollection,
         targetCollection: target,
