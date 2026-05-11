@@ -730,7 +730,7 @@ export async function synchronizeChat(settings, batchSize = 5) {
  * @returns {string[]} Array of collection IDs to query
  */
 function gatherCollectionsToQuery(settings) {
-    const chatCollectionId = getChatCollectionId();
+    const chatCollectionId = null; // DEAD-CHUNK-CHAT: always null, chunk-based chat removed
     const collectionsToQuery = [];
     const registry = getCollectionRegistry();
 
@@ -1922,7 +1922,7 @@ export async function rearrangeChat(chat, settings, type) {
             baseWeight: settings.keyword_boost_base_weight || 1.5
         });
         const queryKeywordTexts = queryKeywords.map(kw => kw.text.toLowerCase());
-        console.log(`VectHare: Extracted ${queryKeywords.length} keywords from query:`, queryKeywordTexts);
+        if (settings.eventbase_debug_logging) console.log(`VectHare: Extracted ${queryKeywords.length} keywords from query:`, queryKeywordTexts);
 
         // === STAGE 3: Filter by activation conditions ===
         let activeCollections = [];
@@ -1933,7 +1933,7 @@ export async function rearrangeChat(chat, settings, type) {
                 currentCharacter: getContext().name2 || null,
                 activeLorebookEntries: [],
                 currentChatId: getCurrentChatId(),
-                currentChatCollectionId: getChatCollectionId(),
+                currentChatCollectionId: null, // DEAD-CHUNK-CHAT: always null, chunk-based chat removed
                 currentCharacterId: getContext().characterId || null
             });
             activeCollections = await filterActiveCollections(collectionsToQuery, searchContext);

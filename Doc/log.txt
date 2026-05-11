@@ -1,39 +1,21 @@
 Generate entered
 index.js:19 [QR2] calling {args: Array(3), functionToCall: ƒ}
-chat-vectorization.js:1842 🐰 VectHare: rearrangeChat called (type: normal, chat length: 14)
-eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a
-eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_qdrant_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
-eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
-eventbase-workflow.js:394 [EventBase] Live retrieval: uuid=60d40b35-fa7a-4f30-8485-805303f4916a, lockedLiveCollections=0, ids=[]
-eventbase-workflow.js:320 [EventBase] Archive event collection skipped (not locked to chat): vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
-eventbase-workflow.js:401 [EventBase] No live collection and no archive collections — skipping Phase A
-chat-vectorization.js:1906 VectHare: Will query 1 collections: ['vectra:vecthare_lorebook_story1_1778288919954']
-chat-vectorization.js:1925 VectHare: Extracted 8 keywords from query: (8) ['cup', 'echidna', 'kamira', 'satella', 'vex', 'alpha', '阿爾法', '聽完']
-collection-metadata.js:908 [VectHare Activation Filter] Collection vectra:vecthare_lorebook_story1_1778288919954: hasTriggers=false, hasConditions=false
-collection-metadata.js:934 [VectHare Activation Filter] Collection vectra:vecthare_lorebook_story1_1778288919954: ✓ LOCKED_TO_CURRENT_CHAT (異世界學校 - 2025-12-16@09h56m28s)
-collection-metadata.js:965 [VectHare Activation Filter] Summary: 1 collections → 1 active
-collection-metadata.js:967 [VectHare Activation Filter] Active collections: ['vectra:vecthare_lorebook_story1_1778288919954']
-chat-vectorization.js:1957 ✅ VectHare: 1 collections passed activation filters: ['vectra:vecthare_lorebook_story1_1778288919954']
-backend-manager.js:316 VectHare: Initializing standard backend (from alias: vectra)...
-standard.js:112 VectHare DEBUG: Checking plugin availability...
-standard.js:115 VectHare DEBUG: Plugin health check response: 200 true
-standard.js:123 VectHare: Standard backend initialized (plugin available)
-backend-manager.js:341 VectHare: Successfully initialized standard backend
-core-vector-api.js:878 [VectHare] Hybrid search (client-side), dispatching to hybrid search module
-backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:824 [EventBase] Hybrid request: collection=vecthare_lorebook_story1_1778288919954, topK=7, sparse=492 tokens, preview=". 阿爾法聽完關於「雪兔姬」的描述，那雙冰藍色的眸子微微收縮。她伸出食指，在虛空中輕點，幾條代表龍脈能量的數據線在魔導圖譜上重新排列，試圖將「守護神」這個變量納入她那精密的計算公式中。「……守護神嗎？如果五龍族的龍脈是這台機器的硬體核心，那麼這位『雪兔姬』可能就是最初的底層代碼守護者。」她低聲自語，隨即看向勇希，神情依舊冷淡，但語氣中多了一分認同，「既然如此，與其在這裡盲目推算，獲取她的情報確實是目前最優的選擇。我會將這個目標標註為『關鍵轉折點』。」 客廳內的緊張氣氛隨著勇希決定休息的命令而逐漸消解。長桌上的魔法燈光被輕輕調暗，落地窗外，校園都市西邊的草"
-character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
-(anonymous) @ character.ts:107
-hybridQuery @ qdrant.js:830
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryCollection @ core-vector-api.js:882
-await in queryCollection
-queryAndMergeCollections @ chat-vectorization.js:849
-rearrangeChat @ chat-vectorization.js:1988
+chat-vectorization.js:1842 🐰 VectHare: rearrangeChat called (type: normal, chat length: 2116)
+2backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
+qdrant.js:839 [Qdrant timing] total=812.1ms, results=20
+qdrant.js:839 [Qdrant timing] total=926.4ms, results=20
+collection-ids.js:137 VectHare: buildChatCollectionId() called but chunk-based chat is disabled (use EventBase). Returning null. Stack: Error
+    at buildChatCollectionId (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/collection-ids.js:137:135)
+    at getChatCollectionId (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/chat-vectorization.js:85:12)
+    at gatherCollectionsToQuery (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/chat-vectorization.js:733:30)
+    at rearrangeChat (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/chat-vectorization.js:1895:36)
+    at async vecthare_rearrangeChat (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/index.js:204:5)
+    at async runGenerationInterceptors (https://st.sduteam.com/scripts/extensions.js:2028:17)
+    at async Generate (https://st.sduteam.com/script.js:4505:25)
+buildChatCollectionId @ collection-ids.js:137
+getChatCollectionId @ chat-vectorization.js:85
+gatherCollectionsToQuery @ chat-vectorization.js:733
+rearrangeChat @ chat-vectorization.js:1895
 await in rearrangeChat
 vecthare_rearrangeChat @ index.js:204
 runGenerationInterceptors @ extensions.js:2028
@@ -96,15 +78,18 @@ value @ reactivity.esm-bundler.js:1540
 callWithErrorHandling @ runtime-core.esm-bundler.js:199
 callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
 (anonymous) @ runtime-dom.esm-bundler.js:745
-qdrant.js:859 [Qdrant timing] FAILED after 5777.4ms (HTTP 500), falling back to vector-only. Server said: {"error":"Qdrant POST /collections/vecthare_lorebook_story1_1778288919954/points/query failed: 404 Not found: Collection `vecthare_lorebook_story1_1778288919954` doesn't exist!"}
-hybridQuery @ qdrant.js:859
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryCollection @ core-vector-api.js:882
-await in queryCollection
-queryAndMergeCollections @ chat-vectorization.js:849
-rearrangeChat @ chat-vectorization.js:1988
+chat-vectorization.js:1906 VectHare: Will query 1 collections: ['qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106']
+chat-vectorization.js:1925 VectHare: Extracted 8 keywords from query: (8) ['mayla', 'critblade', 'kashier', 'fern', 'engni', 'lia', 'valerie', 'master']
+collection-ids.js:137 VectHare: buildChatCollectionId() called but chunk-based chat is disabled (use EventBase). Returning null. Stack: Error
+    at buildChatCollectionId (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/collection-ids.js:137:135)
+    at getChatCollectionId (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/chat-vectorization.js:85:12)
+    at rearrangeChat (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/core/chat-vectorization.js:1936:42)
+    at async vecthare_rearrangeChat (https://st.sduteam.com/scripts/extensions/third-party/VectHarePlus/index.js:204:5)
+    at async runGenerationInterceptors (https://st.sduteam.com/scripts/extensions.js:2028:17)
+    at async Generate (https://st.sduteam.com/script.js:4505:25)
+buildChatCollectionId @ collection-ids.js:137
+getChatCollectionId @ chat-vectorization.js:85
+rearrangeChat @ chat-vectorization.js:1936
 await in rearrangeChat
 vecthare_rearrangeChat @ index.js:204
 runGenerationInterceptors @ extensions.js:2028
@@ -167,24 +152,30 @@ value @ reactivity.esm-bundler.js:1540
 callWithErrorHandling @ runtime-core.esm-bundler.js:199
 callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
 (anonymous) @ runtime-dom.esm-bundler.js:745
-core-vector-api.js:888 [VectHare] Hybrid search (RRF) response: 0 result(s) in 10231ms, scores=[]
-chat-vectorization.js:864 VectHare: Retrieved 0 chunks from vectra:vecthare_lorebook_story1_1778288919954
-chat-vectorization.js:2077 VectHare: Retrieved 0 total chunks from 1 collections
-chat-vectorization.js:2130 VectHare: Stored 0 chunks for visualizer
-chat-vectorization.js:2133 [VectHare Deduplication] Starting with 0 chunks before deduplication
-chat-vectorization.js:2134 [VectHare Deduplication] Current chat has 14 messages
-chat-vectorization.js:1494 [VectHare Dedup] Building hash set from 14 recent messages (depth: 50)
-chat-vectorization.js:1495 [VectHare Dedup] Total chat length: 14, checking duplicates in last 14 messages
-chat-vectorization.js:1521 [VectHare Dedup] Built hash set with 10 unique message hashes from recent context
-chat-vectorization.js:1559 [VectHare Dedup] FINAL: 0 will inject, 0 skipped as duplicates
-chat-vectorization.js:2138 [VectHare Deduplication] After deduplication: 0 to inject, 0 skipped
-chat-vectorization.js:2147 ℹ️ VectHare: All retrieved chunks already in context, nothing to inject
-chat-vectorization.js:2148    0 chunks were skipped (already in current chat)
-chat-vectorization.js:2149 [VectHare] Injection blocked: All retrieved chunks are already present in the current chat context. Adjust temporal decay or query depth if you want older messages.
-search-debug.js:148 VectHare Debug: Stored search debug data {query: '.\n阿爾法聽完關於「雪兔姬」的描述，那雙冰藍色的眸子微微收縮。她伸出食指，在虛空中輕點，幾條代表龍脈...', stages: {…}, historyCount: 1}
-script.js:4547 Core/all messages: 14/731
+collection-metadata.js:908 [VectHare Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: hasTriggers=false, hasConditions=false
+collection-metadata.js:945 [VectHare Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: ✗ NOT_ACTIVATED (no trigger match, no condition pass, not locked)
+collection-metadata.js:965 [VectHare Activation Filter] Summary: 1 collections → 0 active
+chat-vectorization.js:1952 ⚠️ VectHare: No collections passed activation conditions and World Info disabled - chunks cannot be injected!
+chat-vectorization.js:1953    💡 Check your collection activation conditions in VectHare settings
+script.js:4547 Core/all messages: 2116/2116
+world-info.js:623 [WI] Processing sticky entry ArtificRealm創世域.42 {hash: 5608283655957508, start: 2116, end: 2117, protected: false}
+world-info.js:627 [WI] Removing sticky entry ArtificRealm創世域.42 from timedWorldInfo: chat not advanced {hash: 5608283655957508, start: 2116, end: 2117, protected: false}
+world-info.js:722 [WI] Adding sticky entry ArtificRealm創世域.42: start=2116, end=2117, protected=false
 world-info.js:5159 [WI] Adding 56 entries to prompt (56) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
 index.js:19 [QR2] calling {args: Array(1), functionToCall: ƒ}
 script.js:4606 skipWIAN not active, adding WIAN
 handler.ts:225 [Prompt Template] start generate after 20 messages
-handler.ts:395 [Prompt Template] processing 20 messages in 8ms
+handler.ts:395 [Prompt Template] processing 20 messages in 17ms
+onStopStreaming @ script.js:3789
+stopGeneration @ script.js:5551
+collectPrompts @ PromptViewer.vue:273
+(anonymous) @ PromptViewer.vue:367
+EventEmitter.emit @ eventemitter.js:146
+await in EventEmitter.emit
+sendOpenAIRequest @ openai.js:3052
+await in sendOpenAIRequest
+sendStreamingRequest @ script.js:6095
+finishGenerating @ script.js:5334
+await in finishGenerating
+Generate @ script.js:5394
+prompts.ts:72 [Prompt Template] processing send result: 157030 tokens and 286207 chars
