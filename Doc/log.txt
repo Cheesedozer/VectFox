@@ -1,182 +1,190 @@
-[VectHare] LLM config check (start-vectorization): {provider: 'openrouter', model: 'x-ai/grok-4.1-fast', hasOpenRouterKey: true, hasVllmUrl: false}
-content-vectorizer.js:2736 [EventBase] _runEventBaseBackfill: starting...
-content-vectorizer.js:2765 [EventBase] Archive upload route — collection: vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750, messages: 602
-content-vectorizer.js:2797 [EventBase] Filtered messages: 602
-content-vectorizer.js:2798 [EventBase] Starting ingestion with settings: {eventbase_window_size: 2, eventbase_window_overlap: 0, eventbase_debug_logging: true, legacy_progress_strategy: 'per_message', legacy_total_chunks: 602}
-eventbase-workflow.js:122 [EventBase] Ingestion: 602 messages → 301 windows (size=2, overlap=0)
-progress-tracker.js:196 [ProgressTracker] updateEmbeddingProgress: 0/602
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-eventbase-extractor.js:444 [EventBase] Extracting events — window=0, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=1, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=2, provider=openrouter, messages=2
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=2): []
-eventbase-extractor.js:112 [EventBase] Parser window=2: raw length=2, preview: []
-eventbase-extractor.js:222 [EventBase] Parser window=2: 2 candidate array(s) found: (2) ['[0] len=0 firstType=undefined keys/val=undefined', '[1] len=0 firstType=undefined keys/val=undefined']
-eventbase-extractor.js:261 [EventBase] Parser window=2: chose candidate[0] len=0
-eventbase-extractor.js:476 [EventBase] Window 2: parsed 0 event candidate(s)
-eventbase-extractor.js:481 [EventBase] Window 2: LLM returned no events (valid skip)
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=1): []
-eventbase-extractor.js:112 [EventBase] Parser window=1: raw length=2, preview: []
-eventbase-extractor.js:222 [EventBase] Parser window=1: 2 candidate array(s) found: (2) ['[0] len=0 firstType=undefined keys/val=undefined', '[1] len=0 firstType=undefined keys/val=undefined']
-eventbase-extractor.js:261 [EventBase] Parser window=1: chose candidate[0] len=0
-eventbase-extractor.js:476 [EventBase] Window 1: parsed 0 event candidate(s)
-eventbase-extractor.js:481 [EventBase] Window 1: LLM returned no events (valid skip)
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=0): [{"event_type":"character_introduction","importance":8,"summary":"勇希從2025年穿越到異世界，成為異世界大學中唯一的男性學生，所有學生住在校園內的宿舍。","cause":"","result":"他被召喚來讓女性懷有孩子，可在任何地方任何時間向女生要求性交，但女生有各自性格反應。","characters":["勇希"],"locations":["異世界的大學","校園內的宿舍"],"factions":[],"DateTime":null,"items":[],"concepts":["異世界","女性種族"],"keywords":["勇希","穿越","2025年","異世界大學","唯一男性","夢魔","貓娘","九尾狐女","狐狸娘","牛娘","宿舍","性交要求","懷有孩子"],"open_threads":[],"should_persist":true},{"event_type":"revelation","importance":9,"summary":"第3次異世界大戰後9成男生死亡，導
-eventbase-extractor.js:112 [EventBase] Parser window=0: raw length=819, preview: [{"event_type":"character_introduction","importance":8,"summary":"勇希從2025年穿越到異世界，成為異世界大學中唯一的男性學生，所有學生住在校園內的宿舍。","cause":"","result":"他被召喚來讓女性懷有孩子，可在任何
-eventbase-extractor.js:222 [EventBase] Parser window=0: 17 candidate array(s) found: (17) ['[0] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[1] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[2] len=1 firstType=string keys/val="勇希"', '[3] len=2 firstType=string keys/val="異世界的大學"', '[4] len=0 firstType=undefined keys/val=undefined', '[5] len=0 firstType=undefined keys/val=undefined', '[6] len=2 firstType=string keys/val="異世界"', '[7] len=13 firstType=string keys/val="勇希"', '[8] len=0 firstType=undefined keys/val=undefined', '[9] len=1 firstType=string keys/val="勇希"', '[10] len=1 firstType=string keys/val="異世界學校"', '[11] len=0 firstType=undefined keys/val=undefined', '[12] len=0 firstType=undefined keys/val=undefined', '[13] len=3 firstType=string keys/val="第3次異世界大戰"', '[14] len=10 firstType=string keys/val="異世界大戰"', '[15] len=0 firstType=undefined keys/val=undefined', '[16] len=2 firstType=object keys/val=event_type,importance,summary,cause,result']
-eventbase-extractor.js:261 [EventBase] Parser window=0: chose candidate[0] len=2
-eventbase-extractor.js:476 [EventBase] Window 0: parsed 2 event candidate(s)
-eventbase-extractor.js:486 [EventBase] Parsed array (window=0): 2 items, types: [object, object]
-eventbase-extractor.js:544 [EventBase] Window 0: extracted 2 valid events
-eventbase-store.js:101 [EventBase] Inserting 2 event(s) into collection "vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750"
+Generate entered
+index.js:19 [QR2] calling {args: Array(3), functionToCall: ƒ}
+chat-vectorization.js:1842 🐰 VectHare: rearrangeChat called (type: normal, chat length: 14)
+eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_qdrant_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
+eventbase-workflow.js:361 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:394 [EventBase] Live retrieval: uuid=60d40b35-fa7a-4f30-8485-805303f4916a, lockedLiveCollections=0, ids=[]
+eventbase-workflow.js:320 [EventBase] Archive event collection skipped (not locked to chat): vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
+eventbase-workflow.js:401 [EventBase] No live collection and no archive collections — skipping Phase A
+chat-vectorization.js:1906 VectHare: Will query 1 collections: ['vectra:vecthare_lorebook_story1_1778288919954']
+chat-vectorization.js:1925 VectHare: Extracted 8 keywords from query: (8) ['cup', 'echidna', 'kamira', 'satella', 'vex', 'alpha', '阿爾法', '聽完']
+collection-metadata.js:908 [VectHare Activation Filter] Collection vectra:vecthare_lorebook_story1_1778288919954: hasTriggers=false, hasConditions=false
+collection-metadata.js:934 [VectHare Activation Filter] Collection vectra:vecthare_lorebook_story1_1778288919954: ✓ LOCKED_TO_CURRENT_CHAT (異世界學校 - 2025-12-16@09h56m28s)
+collection-metadata.js:965 [VectHare Activation Filter] Summary: 1 collections → 1 active
+collection-metadata.js:967 [VectHare Activation Filter] Active collections: ['vectra:vecthare_lorebook_story1_1778288919954']
+chat-vectorization.js:1957 ✅ VectHare: 1 collections passed activation filters: ['vectra:vecthare_lorebook_story1_1778288919954']
+backend-manager.js:316 VectHare: Initializing standard backend (from alias: vectra)...
+standard.js:112 VectHare DEBUG: Checking plugin availability...
+standard.js:115 VectHare DEBUG: Plugin health check response: 200 true
+standard.js:123 VectHare: Standard backend initialized (plugin available)
+backend-manager.js:341 VectHare: Successfully initialized standard backend
+core-vector-api.js:878 [VectHare] Hybrid search (client-side), dispatching to hybrid search module
 backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
-core-vector-api.js:672 VectHare: Processing 2 items in 1 batch(es) of up to 50 with rate limit (Max 5 calls / 60s)
-eventbase-workflow.js:239 [EventBase] Batch window error: Vectorization stopped by user
-runEventBaseIngestion @ eventbase-workflow.js:239
-await in runEventBaseIngestion
-_runEventBaseBackfill @ content-vectorizer.js:2808
-await in _runEventBaseBackfill
-startVectorization @ content-vectorizer.js:2896
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-progress-tracker.js:196 [ProgressTracker] updateEmbeddingProgress: 6/602
-progress-tracker.js:209 [ProgressTracker] Batch completed: 6 chunks in 27735ms
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-content-vectorizer.js:2822 [EventBase] Ingestion result: {eventsExtracted: 0, windowsProcessed: 2, windowsSkipped: 0}
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-content-vectorizer.js:2878 [VectHare] LLM config check (start-vectorization): {provider: 'openrouter', model: 'x-ai/grok-4.1-fast', hasOpenRouterKey: true, hasVllmUrl: false}
-content-vectorizer.js:2736 [EventBase] _runEventBaseBackfill: starting...
-content-vectorizer.js:2765 [EventBase] Archive upload route — collection: vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750, messages: 602
-content-vectorizer.js:2797 [EventBase] Filtered messages: 602
-content-vectorizer.js:2798 [EventBase] Starting ingestion with settings: {eventbase_window_size: 2, eventbase_window_overlap: 0, eventbase_debug_logging: true, legacy_progress_strategy: 'per_message', legacy_total_chunks: 602}
-backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
-eventbase-workflow.js:90 [EventBase] Collection is empty but cache has entries — resetting window cache
-eventbase-workflow.js:122 [EventBase] Ingestion: 602 messages → 301 windows (size=2, overlap=0)
-progress-tracker.js:196 [ProgressTracker] updateEmbeddingProgress: 0/602
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-eventbase-extractor.js:444 [EventBase] Extracting events — window=0, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=1, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=2, provider=openrouter, messages=2
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=2): []
-eventbase-extractor.js:112 [EventBase] Parser window=2: raw length=2, preview: []
-eventbase-extractor.js:222 [EventBase] Parser window=2: 2 candidate array(s) found: (2) ['[0] len=0 firstType=undefined keys/val=undefined', '[1] len=0 firstType=undefined keys/val=undefined']
-eventbase-extractor.js:261 [EventBase] Parser window=2: chose candidate[0] len=0
-eventbase-extractor.js:476 [EventBase] Window 2: parsed 0 event candidate(s)
-eventbase-extractor.js:481 [EventBase] Window 2: LLM returned no events (valid skip)
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=1): []
-eventbase-extractor.js:112 [EventBase] Parser window=1: raw length=2, preview: []
-eventbase-extractor.js:222 [EventBase] Parser window=1: 2 candidate array(s) found: (2) ['[0] len=0 firstType=undefined keys/val=undefined', '[1] len=0 firstType=undefined keys/val=undefined']
-eventbase-extractor.js:261 [EventBase] Parser window=1: chose candidate[0] len=0
-eventbase-extractor.js:476 [EventBase] Window 1: parsed 0 event candidate(s)
-eventbase-extractor.js:481 [EventBase] Window 1: LLM returned no events (valid skip)
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=0): [{"event_type":"character_introduction","importance":7,"summary":"勇希從2025年穿越到異世界，就讀於充滿夢魔、貓娘、九尾狐女、狐狸娘、牛娘等女性種族的大學。他是唯一的男性學生，所有學生住在校園內的宿舍。","cause":"穿越到異世界。","result":"故事以搞笑帶情色的日系輕小説感覺展開。","characters":["勇希"],"locations":["異世界的大學","校園內的宿舍"],"factions":[],"DateTime":null,"items":[],"concepts":["異世界","女性種族","日系輕小説"],"keywords":["勇希","穿越","2025年","異世界","大學","夢魔","貓娘","九尾狐女","狐狸娘","牛娘","校園宿舍","唯一男性"],"open_threads":[],"should_persist":true},{"event_type":"revelation","importance":8,"summary":"異世界經歷第三次異
-eventbase-extractor.js:112 [EventBase] Parser window=0: raw length=929, preview: [{"event_type":"character_introduction","importance":7,"summary":"勇希從2025年穿越到異世界，就讀於充滿夢魔、貓娘、九尾狐女、狐狸娘、牛娘等女性種族的大學。他是唯一的男性學生，所有學生住在校園內的宿舍。","cause":"穿越到異
-eventbase-extractor.js:222 [EventBase] Parser window=0: 17 candidate array(s) found: (17) ['[0] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[1] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[2] len=1 firstType=string keys/val="勇希"', '[3] len=2 firstType=string keys/val="異世界的大學"', '[4] len=0 firstType=undefined keys/val=undefined', '[5] len=0 firstType=undefined keys/val=undefined', '[6] len=3 firstType=string keys/val="異世界"', '[7] len=12 firstType=string keys/val="勇希"', '[8] len=0 firstType=undefined keys/val=undefined', '[9] len=1 firstType=string keys/val="勇希"', '[10] len=1 firstType=string keys/val="異世界"', '[11] len=0 firstType=undefined keys/val=undefined', '[12] len=0 firstType=undefined keys/val=undefined', '[13] len=3 firstType=string keys/val="第三次異世界大戰"', '[14] len=12 firstType=string keys/val="第三次異世界大戰"', '[15] len=1 firstType=string keys/val="勇希與不同女生互動結果"', '[16] len=2 firstType=object keys/val=event_type,importance,summary,cause,result']
-eventbase-extractor.js:261 [EventBase] Parser window=0: chose candidate[0] len=2
-eventbase-extractor.js:476 [EventBase] Window 0: parsed 2 event candidate(s)
-eventbase-extractor.js:486 [EventBase] Parsed array (window=0): 2 items, types: [object, object]
-eventbase-extractor.js:544 [EventBase] Window 0: extracted 2 valid events
-eventbase-store.js:101 [EventBase] Inserting 2 event(s) into collection "vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750"
-core-vector-api.js:672 VectHare: Processing 2 items in 1 batch(es) of up to 50 with rate limit (Max 5 calls / 60s)
-qdrant.js:300 VectHare Qdrant: Inserting 2 vectors in 1 batch(es) of up to 100 items
-character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/insert 504 (Gateway Timeout)
+hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
+qdrant.js:824 [EventBase] Hybrid request: collection=vecthare_lorebook_story1_1778288919954, topK=7, sparse=492 tokens, preview=". 阿爾法聽完關於「雪兔姬」的描述，那雙冰藍色的眸子微微收縮。她伸出食指，在虛空中輕點，幾條代表龍脈能量的數據線在魔導圖譜上重新排列，試圖將「守護神」這個變量納入她那精密的計算公式中。「……守護神嗎？如果五龍族的龍脈是這台機器的硬體核心，那麼這位『雪兔姬』可能就是最初的底層代碼守護者。」她低聲自語，隨即看向勇希，神情依舊冷淡，但語氣中多了一分認同，「既然如此，與其在這裡盲目推算，獲取她的情報確實是目前最優的選擇。我會將這個目標標註為『關鍵轉折點』。」 客廳內的緊張氣氛隨著勇希決定休息的命令而逐漸消解。長桌上的魔法燈光被輕輕調暗，落地窗外，校園都市西邊的草"
+character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-insertVectorItems @ qdrant.js:307
-await in insertVectorItems
-(anonymous) @ core-vector-api.js:680
-retry @ async-utils.js:52
-processBatch @ core-vector-api.js:678
-execute @ core-vector-api.js:121
-insertVectorItems @ core-vector-api.js:686
-await in insertVectorItems
-insertEvents @ eventbase-store.js:104
-await in insertEvents
-(anonymous) @ eventbase-workflow.js:219
-await in (anonymous)
-runEventBaseIngestion @ eventbase-workflow.js:152
-await in runEventBaseIngestion
-_runEventBaseBackfill @ content-vectorizer.js:2808
-await in _runEventBaseBackfill
-startVectorization @ content-vectorizer.js:2896
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:300 VectHare Qdrant: Inserting 2 vectors in 1 batch(es) of up to 100 items
-qdrant.js:384 VectHare Qdrant: Batch 1/1 completed (2 vectors)
-collection-loader.js:104 VectHare: Registered collection: vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
-qdrant.js:395 VectHare Qdrant: Inserted 2 vectors into vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750 (separate mode, content_type: vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750)
-collection-loader.js:104 VectHare: Registered collection: qdrant:vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
-eventbase-store.js:126 [EventBase] Insert complete for collection "vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 0/602 = 0%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "0/602 (602 left)"
-progress-tracker.js:196 [ProgressTracker] updateEmbeddingProgress: 6/602
-progress-tracker.js:209 [ProgressTracker] Batch completed: 6 chunks in 141006ms
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-eventbase-extractor.js:444 [EventBase] Extracting events — window=3, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=4, provider=openrouter, messages=2
-eventbase-extractor.js:444 [EventBase] Extracting events — window=5, provider=openrouter, messages=2
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=4): []
-eventbase-extractor.js:112 [EventBase] Parser window=4: raw length=2, preview: []
-eventbase-extractor.js:222 [EventBase] Parser window=4: 2 candidate array(s) found: (2) ['[0] len=0 firstType=undefined keys/val=undefined', '[1] len=0 firstType=undefined keys/val=undefined']
-eventbase-extractor.js:261 [EventBase] Parser window=4: chose candidate[0] len=0
-eventbase-extractor.js:476 [EventBase] Window 4: parsed 0 event candidate(s)
-eventbase-extractor.js:481 [EventBase] Window 4: LLM returned no events (valid skip)
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=3): [{"event_type":"revelation","importance":8,"summary":"雪兎姫揭露自身本質為龍眠峽谷、北境雪山等土地的意識凝聚，无法離開此地。她認可主角態度，答應未來危機時提供幫助，並將藍龍族漁獲不足與黃龍族礦脈摩擦的治理難題作為預付諮詢費交付主角處理。眾人對其本質感到震撼，新任務出現。","cause":"主角承認自身危機並請求未來商量。","result":"雪兎姫好感度略微提升，交付龍族內部任務；璃燄知曉黃龍摩擦。","characters":["雪兎姫","璃燄"],"locations":["龍眠峽谷","北境雪山"],"factions":["藍龍族","黃龍族","赤龍族"],"items":[],"concepts":["土地意識","古龍本質"],"keywords":["雪兎姫","古龍","土地意識","揭露本質","諮詢費","藍龍族","漁獲不足","黃龍族","礦脈摩擦","預付","危機","求助","好感提升","龍族任務"],"open_threads":["解決藍龍族漁獲問題","處理黃龍族礦脈劃界","確認雪兎姫
-eventbase-extractor.js:112 [EventBase] Parser window=3: raw length=1511, preview: [{"event_type":"revelation","importance":8,"summary":"雪兎姫揭露自身本質為龍眠峽谷、北境雪山等土地的意識凝聚，无法離開此地。她認可主角態度，答應未來危機時提供幫助，並將藍龍族漁獲不足與黃龍族礦脈摩擦的治理難題作為預付諮詢費交付主角處理。眾人對其本
-eventbase-extractor.js:222 [EventBase] Parser window=3: 24 candidate array(s) found: (24) ['[0] len=3 firstType=object keys/val=event_type,importance,summary,cause,result', '[1] len=3 firstType=object keys/val=event_type,importance,summary,cause,result', '[2] len=2 firstType=string keys/val="雪兎姫"', '[3] len=2 firstType=string keys/val="龍眠峽谷"', '[4] len=3 firstType=string keys/val="藍龍族"', '[5] len=0 firstType=undefined keys/val=undefined', '[6] len=2 firstType=string keys/val="土地意識"', '[7] len=14 firstType=string keys/val="雪兎姫"', '[8] len=3 firstType=string keys/val="解決藍龍族漁獲問題"', '[9] len=2 firstType=string keys/val="璃燄"', '[10] len=2 firstType=string keys/val="赤龍村"', '[11] len=4 firstType=string keys/val="藍龍族"', '[12] len=2 firstType=string keys/val="防水塗料"', '[13] len=2 firstType=string keys/val="貿易走廊"', '[14] len=14 firstType=string keys/val="貿易走廊"', '[15] len=3 firstType=string keys/val="藍龍族供應核實"', '[16] len=2 firstType=string keys/val="璃燄"', '[17] len=1 firstType=string keys/val="赤龍村工地"', '[18] len=0 firstType=undefined keys/val=undefined', '[19] len=1 firstType=string keys/val="赤古龍鱗手鍊"', '[20] len=2 firstType=string keys/val="情感託付"', '[21] len=10 firstType=string keys/val="璃燄"', '[22] len=1 firstType=string keys/val="Kamira入眷儀式時間"', '[23] len=3 firstType=object keys/val=event_type,importance,summary,cause,result']
-eventbase-extractor.js:261 [EventBase] Parser window=3: chose candidate[0] len=3
-eventbase-extractor.js:476 [EventBase] Window 3: parsed 3 event candidate(s)
-eventbase-extractor.js:486 [EventBase] Parsed array (window=3): 3 items, types: [object, object, object]
-eventbase-extractor.js:544 [EventBase] Window 3: extracted 3 valid events
-eventbase-store.js:101 [EventBase] Inserting 3 event(s) into collection "vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750"
-backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
-core-vector-api.js:672 VectHare: Processing 3 items in 1 batch(es) of up to 50 with rate limit (Max 5 calls / 60s)
-qdrant.js:300 VectHare Qdrant: Inserting 3 vectors in 1 batch(es) of up to 100 items
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-eventbase-extractor.js:459 [EventBase] Raw LLM reply (window=5): [{"event_type":"dialogue_significant","importance":8,"summary":"玩家向璃燄說明度拉格公爵的「收藏品」需在其領地存放一週，由京子和椿守衛。璃燄起初嚴肅質疑安全與時機，但九条光巧妙說服，將其轉化為展示赤龍與黑龍族實力、建立貿易樞紐秩序與威懾的絕佳機會。璃燄沉思後點頭同意，認可此佈局為政治籌碼。","cause":"玩家闡明守衛任務需求。","result":"璃燄允許存放「收藏品」，轉化為立威表演，強化領袖責任與聯盟信任。","characters":["璃燄","九条光","度拉格公爵","京子","椿"],"locations":["璃燄的臨時居所兼指揮中心"],"factions":["赤龍","黑龍族"],"items":["收藏品"],"concepts":["貿易樞紐","守衛任務","立威"],"keywords":["璃燄","九条光","度拉格公爵","收藏品","京子","椿","守衛任務","說服","同意","貿易樞紐","威懾","赤龍","黑龍族","策略家","領袖責任","政治籌碼"],"ope
-eventbase-extractor.js:112 [EventBase] Parser window=5: raw length=954, preview: [{"event_type":"dialogue_significant","importance":8,"summary":"玩家向璃燄說明度拉格公爵的「收藏品」需在其領地存放一週，由京子和椿守衛。璃燄起初嚴肅質疑安全與時機，但九条光巧妙說服，將其轉化為展示赤龍與黑龍族實力、建立貿易樞紐秩序與威懾
-eventbase-extractor.js:222 [EventBase] Parser window=5: 17 candidate array(s) found: (17) ['[0] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[1] len=2 firstType=object keys/val=event_type,importance,summary,cause,result', '[2] len=5 firstType=string keys/val="璃燄"', '[3] len=1 firstType=string keys/val="璃燄的臨時居所兼指揮中心"', '[4] len=2 firstType=string keys/val="赤龍"', '[5] len=1 firstType=string keys/val="收藏品"', '[6] len=3 firstType=string keys/val="貿易樞紐"', '[7] len=16 firstType=string keys/val="璃燄"', '[8] len=2 firstType=string keys/val="收藏品內容物不明"', '[9] len=3 firstType=string keys/val="京子"', '[10] len=2 firstType=string keys/val="家"', '[11] len=0 firstType=undefined keys/val=undefined', '[12] len=1 firstType=string keys/val="收藏品"', '[13] len=1 firstType=string keys/val="椿京組合"', '[14] len=9 firstType=string keys/val="京子"', '[15] len=1 firstType=string keys/val="Kamira後續互動"', '[16] len=2 firstType=object keys/val=event_type,importance,summary,cause,result']
-eventbase-extractor.js:261 [EventBase] Parser window=5: chose candidate[0] len=2
-eventbase-extractor.js:476 [EventBase] Window 5: parsed 2 event candidate(s)
-eventbase-extractor.js:486 [EventBase] Parsed array (window=5): 2 items, types: [object, object]
-eventbase-extractor.js:544 [EventBase] Window 5: extracted 2 valid events
-eventbase-store.js:101 [EventBase] Inserting 2 event(s) into collection "vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750"
-core-vector-api.js:672 VectHare: Processing 2 items in 1 batch(es) of up to 50 with rate limit (Max 5 calls / 60s)
-eventbase-workflow.js:239 [EventBase] Batch window error: user-stop
-runEventBaseIngestion @ eventbase-workflow.js:239
-progress-tracker.js:413 [ProgressTracker] Progress bar: 6/602 = 1%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "6/602 (596 left)"
-eventbase-workflow.js:239 [EventBase] Batch window error: Vectorization stopped by user
-runEventBaseIngestion @ eventbase-workflow.js:239
-progress-tracker.js:196 [ProgressTracker] updateEmbeddingProgress: 12/602
-progress-tracker.js:209 [ProgressTracker] Batch completed: 6 chunks in 37144ms
-progress-tracker.js:413 [ProgressTracker] Progress bar: 12/602 = 2%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "12/602 (590 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 12/602 = 2%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "12/602 (590 left)"
-progress-tracker.js:413 [ProgressTracker] Progress bar: 12/602 = 2%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "12/602 (590 left)"
-content-vectorizer.js:2822 [EventBase] Ingestion result: {eventsExtracted: 2, windowsProcessed: 4, windowsSkipped: 0}
-progress-tracker.js:413 [ProgressTracker] Progress bar: 12/602 = 2%
-progress-tracker.js:445 [ProgressTracker] Updating chunks display with embedding progress: "12/602 (590 left)"
+hybridQuery @ qdrant.js:830
+await in hybridQuery
+hybridSearch @ hybrid-search.js:51
+await in hybridSearch
+queryCollection @ core-vector-api.js:882
+await in queryCollection
+queryAndMergeCollections @ chat-vectorization.js:849
+rearrangeChat @ chat-vectorization.js:1988
+await in rearrangeChat
+vecthare_rearrangeChat @ index.js:204
+runGenerationInterceptors @ extensions.js:2028
+await in runGenerationInterceptors
+Generate @ script.js:4505
+await in Generate
+triggerRefresh @ PromptViewer.vue:268
+(anonymous) @ PromptViewer.vue:250
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+(anonymous) @ runtime-core.esm-bundler.js:8133
+(anonymous) @ runtime-core.esm-bundler.js:8095
+(anonymous) @ runtime-core.esm-bundler.js:6018
+(anonymous) @ runtime-core.esm-bundler.js:5984
+(anonymous) @ runtime-core.esm-bundler.js:5483
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5914
+(anonymous) @ runtime-core.esm-bundler.js:5457
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:1000
+(anonymous) @ runtime-core.esm-bundler.js:1026
+process @ runtime-core.esm-bundler.js:1060
+(anonymous) @ runtime-core.esm-bundler.js:5495
+(anonymous) @ runtime-core.esm-bundler.js:6132
+run @ reactivity.esm-bundler.js:250
+(anonymous) @ runtime-core.esm-bundler.js:6260
+(anonymous) @ runtime-core.esm-bundler.js:6032
+(anonymous) @ runtime-core.esm-bundler.js:5984
+(anonymous) @ runtime-core.esm-bundler.js:5483
+(anonymous) @ runtime-core.esm-bundler.js:5856
+(anonymous) @ runtime-core.esm-bundler.js:5932
+(anonymous) @ runtime-core.esm-bundler.js:5457
+(anonymous) @ runtime-core.esm-bundler.js:6212
+run @ reactivity.esm-bundler.js:250
+runIfDirty @ reactivity.esm-bundler.js:288
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+flushJobs @ runtime-core.esm-bundler.js:408
+Promise.then
+queueFlush @ runtime-core.esm-bundler.js:322
+queueJob @ runtime-core.esm-bundler.js:317
+(anonymous) @ runtime-core.esm-bundler.js:6254
+trigger @ reactivity.esm-bundler.js:278
+endBatch @ reactivity.esm-bundler.js:336
+notify @ reactivity.esm-bundler.js:627
+trigger @ reactivity.esm-bundler.js:601
+value @ reactivity.esm-bundler.js:1540
+(anonymous) @ reactivity.esm-bundler.js:1570
+(anonymous) @ Toolbox.vue:36
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
+(anonymous) @ runtime-dom.esm-bundler.js:745
+qdrant.js:859 [Qdrant timing] FAILED after 5777.4ms (HTTP 500), falling back to vector-only. Server said: {"error":"Qdrant POST /collections/vecthare_lorebook_story1_1778288919954/points/query failed: 404 Not found: Collection `vecthare_lorebook_story1_1778288919954` doesn't exist!"}
+hybridQuery @ qdrant.js:859
+await in hybridQuery
+hybridSearch @ hybrid-search.js:51
+await in hybridSearch
+queryCollection @ core-vector-api.js:882
+await in queryCollection
+queryAndMergeCollections @ chat-vectorization.js:849
+rearrangeChat @ chat-vectorization.js:1988
+await in rearrangeChat
+vecthare_rearrangeChat @ index.js:204
+runGenerationInterceptors @ extensions.js:2028
+await in runGenerationInterceptors
+Generate @ script.js:4505
+await in Generate
+triggerRefresh @ PromptViewer.vue:268
+(anonymous) @ PromptViewer.vue:250
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+(anonymous) @ runtime-core.esm-bundler.js:8133
+(anonymous) @ runtime-core.esm-bundler.js:8095
+(anonymous) @ runtime-core.esm-bundler.js:6018
+(anonymous) @ runtime-core.esm-bundler.js:5984
+(anonymous) @ runtime-core.esm-bundler.js:5483
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5914
+(anonymous) @ runtime-core.esm-bundler.js:5457
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:5650
+(anonymous) @ runtime-core.esm-bundler.js:5605
+(anonymous) @ runtime-core.esm-bundler.js:5471
+(anonymous) @ runtime-core.esm-bundler.js:5734
+(anonymous) @ runtime-core.esm-bundler.js:1000
+(anonymous) @ runtime-core.esm-bundler.js:1026
+process @ runtime-core.esm-bundler.js:1060
+(anonymous) @ runtime-core.esm-bundler.js:5495
+(anonymous) @ runtime-core.esm-bundler.js:6132
+run @ reactivity.esm-bundler.js:250
+(anonymous) @ runtime-core.esm-bundler.js:6260
+(anonymous) @ runtime-core.esm-bundler.js:6032
+(anonymous) @ runtime-core.esm-bundler.js:5984
+(anonymous) @ runtime-core.esm-bundler.js:5483
+(anonymous) @ runtime-core.esm-bundler.js:5856
+(anonymous) @ runtime-core.esm-bundler.js:5932
+(anonymous) @ runtime-core.esm-bundler.js:5457
+(anonymous) @ runtime-core.esm-bundler.js:6212
+run @ reactivity.esm-bundler.js:250
+runIfDirty @ reactivity.esm-bundler.js:288
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+flushJobs @ runtime-core.esm-bundler.js:408
+Promise.then
+queueFlush @ runtime-core.esm-bundler.js:322
+queueJob @ runtime-core.esm-bundler.js:317
+(anonymous) @ runtime-core.esm-bundler.js:6254
+trigger @ reactivity.esm-bundler.js:278
+endBatch @ reactivity.esm-bundler.js:336
+notify @ reactivity.esm-bundler.js:627
+trigger @ reactivity.esm-bundler.js:601
+value @ reactivity.esm-bundler.js:1540
+(anonymous) @ reactivity.esm-bundler.js:1570
+(anonymous) @ Toolbox.vue:36
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
+(anonymous) @ runtime-dom.esm-bundler.js:745
+core-vector-api.js:888 [VectHare] Hybrid search (RRF) response: 0 result(s) in 10231ms, scores=[]
+chat-vectorization.js:864 VectHare: Retrieved 0 chunks from vectra:vecthare_lorebook_story1_1778288919954
+chat-vectorization.js:2077 VectHare: Retrieved 0 total chunks from 1 collections
+chat-vectorization.js:2130 VectHare: Stored 0 chunks for visualizer
+chat-vectorization.js:2133 [VectHare Deduplication] Starting with 0 chunks before deduplication
+chat-vectorization.js:2134 [VectHare Deduplication] Current chat has 14 messages
+chat-vectorization.js:1494 [VectHare Dedup] Building hash set from 14 recent messages (depth: 50)
+chat-vectorization.js:1495 [VectHare Dedup] Total chat length: 14, checking duplicates in last 14 messages
+chat-vectorization.js:1521 [VectHare Dedup] Built hash set with 10 unique message hashes from recent context
+chat-vectorization.js:1559 [VectHare Dedup] FINAL: 0 will inject, 0 skipped as duplicates
+chat-vectorization.js:2138 [VectHare Deduplication] After deduplication: 0 to inject, 0 skipped
+chat-vectorization.js:2147 ℹ️ VectHare: All retrieved chunks already in context, nothing to inject
+chat-vectorization.js:2148    0 chunks were skipped (already in current chat)
+chat-vectorization.js:2149 [VectHare] Injection blocked: All retrieved chunks are already present in the current chat context. Adjust temporal decay or query depth if you want older messages.
+search-debug.js:148 VectHare Debug: Stored search debug data {query: '.\n阿爾法聽完關於「雪兔姬」的描述，那雙冰藍色的眸子微微收縮。她伸出食指，在虛空中輕點，幾條代表龍脈...', stages: {…}, historyCount: 1}
+script.js:4547 Core/all messages: 14/731
+world-info.js:5159 [WI] Adding 56 entries to prompt (56) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+index.js:19 [QR2] calling {args: Array(1), functionToCall: ƒ}
+script.js:4606 skipWIAN not active, adding WIAN
+handler.ts:225 [Prompt Template] start generate after 20 messages
+handler.ts:395 [Prompt Template] processing 20 messages in 8ms

@@ -14,7 +14,9 @@ import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { parseRegistryKey } from './collection-ids.js';
-import { buildLorebookCollectionId } from './collection-ids.js';
+// Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
+// the builder is intentionally not imported here because lookups can't reconstruct the
+// exact ID (backend + handle + timestamp segments are not known at lookup time).
 import { setExtensionPrompt, getCurrentChatId } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
 import { buildSearchContext } from './conditional-activation.js';
@@ -196,15 +198,51 @@ function deduplicateWithActiveEntries(semanticEntries, activeEntries) {
 // ============================================================================
 
 /**
+ * Sanitize a lorebook name the same way the builder does, for registry-scan matching.
+ */
+function _sanitizeLorebookName(name) {
+    return String(name || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '_')
+        .substring(0, 50);
+}
+
+/**
+ * Find the registry key for a lorebook by name. Scans the registry instead of trying to
+ * rebuild the exact ID — collection IDs include backend + handle + timestamp segments,
+ * none of which can be known ahead of time during a lookup. We match on the lorebook
+ * prefix + sanitized name segment.
+ *
+ * @param {string} lorebookName
+ * @param {object} settings
+ * @returns {string|null} Full registry key (may include "backend:" prefix), or null if not found.
+ */
+function _findLorebookRegistryEntry(lorebookName, settings) {
+    const sanitizedName = _sanitizeLorebookName(lorebookName);
+    if (!sanitizedName) return null;
+    const lorebookPrefix = 'vecthare_lorebook_';
+    const nameNeedle = `_${sanitizedName}_`;
+
+    const registry = settings.vecthare_collection_registry || [];
+    for (const key of registry) {
+        // Registry keys can be "backend:collectionId" or bare "collectionId".
+        const id = String(key).includes(':') ? String(key).split(':').slice(1).join(':') : String(key);
+        const idLower = id.toLowerCase();
+        if (idLower.startsWith(lorebookPrefix) && idLower.includes(nameNeedle)) {
+            return key;
+        }
+    }
+    return null;
+}
+
+/**
  * Check if a lorebook is already vectorized
  * @param {string} lorebookName - Name of the lorebook
  * @param {object} settings - VectHare settings
  * @returns {boolean}
  */
 export function isLorebookVectorized(lorebookName, settings) {
-    const collectionId = buildLorebookCollectionId(lorebookName, 'global');
-    const collectionRegistry = settings.vecthare_collection_registry || [];
-    return collectionRegistry.includes(collectionId);
+    return _findLorebookRegistryEntry(lorebookName, settings) !== null;
 }
 
 /**
@@ -230,12 +268,15 @@ export function getLorebooksVectorizationStatus(lorebookNames, settings) {
  * @returns {Promise<object|null>} Stats object or null if not vectorized
  */
 export async function getLorebookVectorStats(lorebookName, settings) {
-    const collectionId = buildLorebookCollectionId(lorebookName, 'global');
-    const meta = getCollectionMeta(collectionId);
+    const registryKey = _findLorebookRegistryEntry(lorebookName, settings);
+    if (!registryKey) return null;
 
-    if (!meta) {
-        return null;
-    }
+    // Try metadata on the registry key first (preferred), fall back to bare id.
+    const collectionId = String(registryKey).includes(':')
+        ? String(registryKey).split(':').slice(1).join(':')
+        : String(registryKey);
+    const meta = getCollectionMeta(registryKey) || getCollectionMeta(collectionId);
+    if (!meta) return null;
 
     return {
         collectionId,

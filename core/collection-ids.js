@@ -164,45 +164,88 @@ export function buildLegacyChatCollectionId(chatId) {
 }
 
 /**
- * Builds a lorebook collection ID
+ * Sanitize a name segment for use in collection IDs (lowercase, alphanumeric + underscores).
+ */
+function _sanitizeNameSegment(name, maxLength) {
+    return String(name || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '_')
+        .substring(0, maxLength);
+}
+
+/**
+ * Sanitize the persona handle from the active context. Must match the logic in the eventbase /
+ * archive builders so registerCollection's stamp check sees the handle in the collection name.
+ */
+function _currentHandleId() {
+    const ctx = getContext();
+    return String(ctx?.name1 || 'user')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '_')
+        .replace(/^_|_$/g, '')
+        .substring(0, 30) || 'user';
+}
+
+/**
+ * Builds a lorebook collection ID following the unified protocol:
+ *   vecthare_lorebook_<backend>_<handle>_<name>_<timestamp>
+ * Backend is optional but recommended; without it the format drops the backend segment:
+ *   vecthare_lorebook_<handle>_<name>_<timestamp>
+ *
  * @param {string} lorebookName Lorebook name
- * @param {number} [timestamp] Optional timestamp, defaults to Date.now()
+ * @param {string} [backend]    Vector backend (e.g. 'qdrant', 'standard')
+ * @param {number} [timestamp]  Optional timestamp, defaults to Date.now()
  * @returns {string} Collection ID
  */
-export function buildLorebookCollectionId(lorebookName, timestamp) {
-    const sanitizedName = lorebookName
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, '_')
-        .substring(0, 50);
-    return `${COLLECTION_PREFIXES.VECTHARE_LOREBOOK}${sanitizedName}_${timestamp || Date.now()}`;
+export function buildLorebookCollectionId(lorebookName, backend, timestamp) {
+    const sanitizedName = _sanitizeNameSegment(lorebookName, 50);
+    const handle = _currentHandleId();
+    const normalizedBackend = normalizeBackendForId(backend);
+    const ts = timestamp || Date.now();
+    if (normalizedBackend) {
+        return `${COLLECTION_PREFIXES.VECTHARE_LOREBOOK}${normalizedBackend}_${handle}_${sanitizedName}_${ts}`;
+    }
+    return `${COLLECTION_PREFIXES.VECTHARE_LOREBOOK}${handle}_${sanitizedName}_${ts}`;
 }
 
 /**
- * Builds a character collection ID
+ * Builds a character collection ID following the unified protocol:
+ *   vecthare_character_<backend>_<handle>_<name>_<timestamp>
+ *
  * @param {string} characterName Character name
- * @param {number} [timestamp] Optional timestamp
+ * @param {string} [backend]     Vector backend
+ * @param {number} [timestamp]   Optional timestamp
  * @returns {string} Collection ID
  */
-export function buildCharacterCollectionId(characterName, timestamp) {
-    const sanitizedName = characterName
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, '_')
-        .substring(0, 50);
-    return `${COLLECTION_PREFIXES.VECTHARE_CHARACTER}${sanitizedName}_${timestamp || Date.now()}`;
+export function buildCharacterCollectionId(characterName, backend, timestamp) {
+    const sanitizedName = _sanitizeNameSegment(characterName, 50);
+    const handle = _currentHandleId();
+    const normalizedBackend = normalizeBackendForId(backend);
+    const ts = timestamp || Date.now();
+    if (normalizedBackend) {
+        return `${COLLECTION_PREFIXES.VECTHARE_CHARACTER}${normalizedBackend}_${handle}_${sanitizedName}_${ts}`;
+    }
+    return `${COLLECTION_PREFIXES.VECTHARE_CHARACTER}${handle}_${sanitizedName}_${ts}`;
 }
 
 /**
- * Builds a document collection ID
+ * Builds a document collection ID following the unified protocol:
+ *   vecthare_document_<backend>_<handle>_<name>_<timestamp>
+ *
  * @param {string} documentName Document name
- * @param {number} [timestamp] Optional timestamp
+ * @param {string} [backend]    Vector backend
+ * @param {number} [timestamp]  Optional timestamp
  * @returns {string} Collection ID
  */
-export function buildDocumentCollectionId(documentName, timestamp) {
-    const sanitizedName = documentName
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, '_')
-        .substring(0, 50);
-    return `${COLLECTION_PREFIXES.VECTHARE_DOCUMENT}${sanitizedName}_${timestamp || Date.now()}`;
+export function buildDocumentCollectionId(documentName, backend, timestamp) {
+    const sanitizedName = _sanitizeNameSegment(documentName, 50);
+    const handle = _currentHandleId();
+    const normalizedBackend = normalizeBackendForId(backend);
+    const ts = timestamp || Date.now();
+    if (normalizedBackend) {
+        return `${COLLECTION_PREFIXES.VECTHARE_DOCUMENT}${normalizedBackend}_${handle}_${sanitizedName}_${ts}`;
+    }
+    return `${COLLECTION_PREFIXES.VECTHARE_DOCUMENT}${handle}_${sanitizedName}_${ts}`;
 }
 
 /**

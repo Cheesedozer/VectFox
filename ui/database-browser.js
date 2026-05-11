@@ -671,12 +671,16 @@ function _sanitizeHandleForFilter(name) {
 
 /**
  * Collection prefixes whose collections carry a persona-owned `creatorHandle`.
- * Lorebooks / documents / characters are global and always visible.
+ * All VectHare content types follow the unified `vecthare_<type>_<backend>_<handle>_...`
+ * naming protocol and are persona-scoped.
  */
 const _PERSONA_SCOPED_PREFIXES = [
   COLLECTION_PREFIXES.VECTHARE_CHAT,
   COLLECTION_PREFIXES.VECTHARE_EVENTBASE,
   COLLECTION_PREFIXES.VECTHARE_ARCHIVE_EVENT,
+  COLLECTION_PREFIXES.VECTHARE_LOREBOOK,
+  COLLECTION_PREFIXES.VECTHARE_CHARACTER,
+  COLLECTION_PREFIXES.VECTHARE_DOCUMENT,
 ];
 
 /**

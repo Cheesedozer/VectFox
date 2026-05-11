@@ -828,13 +828,13 @@ function generateCollectionId(contentType, source, settings) {
             break;
 
         case 'lorebook':
-            return buildLorebookCollectionId(sourceName, timestamp);
+            return buildLorebookCollectionId(sourceName, settings.vector_backend, timestamp);
 
         case 'character':
-            return buildCharacterCollectionId(sourceName, timestamp);
+            return buildCharacterCollectionId(sourceName, settings.vector_backend, timestamp);
 
         case 'document':
-            return buildDocumentCollectionId(sourceName, timestamp);
+            return buildDocumentCollectionId(sourceName, settings.vector_backend, timestamp);
 
         case 'url':
             // Use domain from URL or title
@@ -845,13 +845,13 @@ function generateCollectionId(contentType, source, settings) {
             } catch {
                 urlName = source.title || source.name || 'webpage';
             }
-            return buildDocumentCollectionId(urlName, timestamp);
+            return buildDocumentCollectionId(urlName, settings.vector_backend, timestamp);
 
         case 'wiki':
-            return buildDocumentCollectionId(source.name || 'wiki', timestamp);
+            return buildDocumentCollectionId(source.name || 'wiki', settings.vector_backend, timestamp);
 
         case 'youtube':
-            return buildDocumentCollectionId(source.name || source.videoId || 'youtube', timestamp);
+            return buildDocumentCollectionId(source.name || source.videoId || 'youtube', settings.vector_backend, timestamp);
     }
 
     // Fallback for unknown types or chat fallback
