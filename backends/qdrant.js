@@ -579,7 +579,7 @@ export class QdrantBackend extends VectorBackend {
             throw new Error(`[Qdrant] Failed to purge collection ${collectionId}: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
-         console.log(`VectHare Qdrant: Purged (type: ${type}, sourceId: ${sourceId})`);
+        console.log(`VectHare Qdrant: Purged ${actualCollectionId}`);
     }
 
     async purgeFileVectorIndex(collectionId, settings) {

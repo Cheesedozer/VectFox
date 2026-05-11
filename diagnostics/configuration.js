@@ -22,12 +22,14 @@
  * ============================================================================
  */
 
-import { getCurrentChatId, chat_metadata } from '../../../../../script.js';
 import { getSavedHashes } from '../core/core-vector-api.js';
-import { getChatCollectionId, getChatUUID, parseCollectionId } from '../core/chat-vectorization.js';
 import { VALID_EMOTIONS, VALID_GENERATION_TYPES, validateConditionRule } from '../core/conditional-activation.js';
-import { getTemporallyBlindCount, getTemporallyBlindChunks, isChunkTemporallyBlind, isCollectionEnabled } from '../core/collection-metadata.js';
+import { getTemporallyBlindCount, getTemporallyBlindChunks, isCollectionEnabled } from '../core/collection-metadata.js';
 import { getCollectionRegistry } from '../core/collection-loader.js';
+
+// DEAD-CHUNK-CHAT: chunk-based chat is removed; chat runs through the EventBase pipeline.
+// Diagnostics that used to validate `vh:chat:*` collections now report "not applicable".
+const CHAT_NOT_APPLICABLE_MESSAGE = 'Not applicable (EventBase mode — chat is not stored as a chunk collection)';
 
 /**
  * Check: RAG Query Status
@@ -36,7 +38,9 @@ import { getCollectionRegistry } from '../core/collection-loader.js';
  */
 export function checkChatEnabled(settings) {
     const chatEnabled = settings.enabled_chats;
-    const chatCollectionId = getChatCollectionId();
+    // DEAD-CHUNK-CHAT: chat collection ID is always null; the "skip current chat" branch
+    // below is preserved for legacy registries but is now a no-op.
+    const chatCollectionId = null;
 
     // Count other enabled collections (not the current chat)
     const registry = getCollectionRegistry();
@@ -208,45 +212,13 @@ export function checkInsertQueryCounts(settings) {
  * Check: Current chat has vectors
  */
 export async function checkChatVectors(settings) {
-    if (!getCurrentChatId()) {
-        return {
-            name: 'Chat Vectors',
-            status: 'warning',
-            message: 'No chat selected'
-        };
-    }
-
-    try {
-        const collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: 'Chat Vectors',
-                status: 'warning',
-                message: 'Could not get collection ID'
-            };
-        }
-        const hashes = await getSavedHashes(collectionId, settings);
-        if (hashes.length === 0) {
-            return {
-                name: 'Chat Vectors',
-                status: 'warning',
-                message: 'Current chat has no vectorized chunks',
-                fixable: true,
-                fixAction: 'vectorize_all'
-            };
-        }
-        return {
-            name: 'Chat Vectors',
-            status: 'pass',
-            message: `${hashes.length} vectorized chunks`
-        };
-    } catch (error) {
-        return {
-            name: 'Chat Vectors',
-            status: 'fail',
-            message: `Failed to check vectors: ${error.message}`
-        };
-    }
+    // DEAD-CHUNK-CHAT: chat is no longer stored as a chunk collection; EventBase
+    // handles chat history. This check has nothing to validate.
+    return {
+        name: 'Chat Vectors',
+        status: 'pass',
+        message: CHAT_NOT_APPLICABLE_MESSAGE
+    };
 }
 
 /**
@@ -268,15 +240,8 @@ export function checkTemporalDecaySettings(settings) {
  * Check: Temporally blind chunks integrity
  */
 export async function checkTemporallyBlindChunks(settings) {
-    if (!getCurrentChatId()) {
-        return {
-            name: 'Temporally Blind Chunks',
-            status: 'pass',
-            message: 'No chat selected - cannot verify',
-            category: 'configuration'
-        };
-    }
-
+    // DEAD-CHUNK-CHAT: the "in current chat" cross-check is gone with chunk-based chat.
+    // Just report the global blind-chunk count instead.
     try {
         const blindChunks = getTemporallyBlindChunks();
         const blindCount = blindChunks.length;
@@ -290,23 +255,10 @@ export async function checkTemporallyBlindChunks(settings) {
             };
         }
 
-        // Check if any blind chunks exist in current chat's vectors
-        const collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: 'Temporally Blind Chunks',
-                status: 'warning',
-                message: 'Could not get collection ID',
-                category: 'configuration'
-            };
-        }
-        const hashes = await getSavedHashes(collectionId, settings);
-        const blindInChat = blindChunks.filter(hash => hashes.includes(parseInt(hash)));
-
         return {
             name: 'Temporally Blind Chunks',
             status: 'pass',
-            message: `${blindCount} total blind chunk(s), ${blindInChat.length} in current chat`,
+            message: `${blindCount} total blind chunk(s)`,
             category: 'configuration'
         };
     } catch (error) {
@@ -366,61 +318,16 @@ export function checkVisualizerApiReadiness(settings) {
 
 /**
  * Check: Collection ID format and UUID availability
- * Verifies that chat_metadata.integrity is available for unique collection IDs
+ * DEAD-CHUNK-CHAT — see function body.
  */
 export function checkCollectionIdFormat() {
-    if (!getCurrentChatId()) {
-        return {
-            name: 'Collection ID Format',
-            status: 'pass',
-            message: 'No chat selected - cannot verify UUID',
-            category: 'configuration'
-        };
-    }
-
-    // Check if chat_metadata.integrity is available
-    const integrity = chat_metadata?.integrity;
-    const uuid = getChatUUID();
-    const collectionId = getChatCollectionId();
-
-    if (!integrity) {
-        // Using fallback
-        return {
-            name: 'Collection ID Format',
-            status: 'warning',
-            message: `Using chatId fallback (integrity UUID not available). Collection: ${collectionId || 'null'}`,
-            category: 'configuration'
-        };
-    }
-
-    // Verify collection ID format
-    const parsed = parseCollectionId(collectionId);
-    if (!parsed) {
-        return {
-            name: 'Collection ID Format',
-            status: 'fail',
-            message: `Invalid collection ID format: ${collectionId}`,
-            category: 'configuration'
-        };
-    }
-
-    if (parsed.prefix !== 'vh') {
-        return {
-            name: 'Collection ID Format',
-            status: 'fail',
-            message: `Collection ID missing 'vh' prefix: ${collectionId}`,
-            category: 'configuration'
-        };
-    }
-
-    // UUID format check (should be like a1b2c3d4-e5f6-7890-abcd-ef1234567890)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isValidUUID = uuidRegex.test(parsed.sourceId);
-
+    // DEAD-CHUNK-CHAT: the `vh:chat:<uuid>` ID format only existed for chunk-based chat
+    // collections. EventBase collections use their own naming scheme and don't need
+    // this validation.
     return {
         name: 'Collection ID Format',
         status: 'pass',
-        message: `${parsed.type}:${parsed.sourceId.substring(0, 8)}... (${isValidUUID ? 'UUID' : 'fallback ID'})`,
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
         category: 'configuration'
     };
 }
@@ -479,77 +386,14 @@ export function checkConditionalActivationModule() {
  * High collision rate (>10%) may indicate repetitive conversations or chunking misconfiguration.
  */
 export async function checkHashCollisionRate(settings) {
-    if (!getCurrentChatId()) {
-        return {
-            name: 'Hash Collision Rate',
-            status: 'pass',
-            message: 'No chat selected',
-            category: 'configuration'
-        };
-    }
-
-    try {
-        const collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: 'Hash Collision Rate',
-                status: 'pass',
-                message: 'Could not get collection ID',
-                category: 'configuration'
-            };
-        }
-
-        const hashes = await getSavedHashes(collectionId, settings);
-        if (hashes.length === 0) {
-            return {
-                name: 'Hash Collision Rate',
-                status: 'pass',
-                message: 'No chunks to analyze',
-                category: 'configuration'
-            };
-        }
-
-        // Count unique hashes
-        const uniqueHashes = new Set(hashes);
-        const totalChunks = hashes.length;
-        const uniqueCount = uniqueHashes.size;
-        const duplicates = totalChunks - uniqueCount;
-        const collisionRate = duplicates / totalChunks;
-
-        // Collision is EXPECTED behavior (semantic deduplication)
-        // Only warn if rate is very high (suggests repetitive content or misconfiguration)
-        if (collisionRate > 0.15) {
-            return {
-                name: 'Hash Collision Rate',
-                status: 'warning',
-                message: `High deduplication: ${(collisionRate * 100).toFixed(1)}% (${duplicates}/${totalChunks} chunks). Chat may have very repetitive content.`,
-                category: 'configuration'
-            };
-        }
-
-        if (duplicates > 0) {
-            return {
-                name: 'Hash Collision Rate',
-                status: 'pass',
-                message: `${uniqueCount} unique chunks, ${duplicates} deduplicated (${(collisionRate * 100).toFixed(1)}% - normal)`,
-                category: 'configuration'
-            };
-        }
-
-        return {
-            name: 'Hash Collision Rate',
-            status: 'pass',
-            message: `${uniqueCount} chunks, all unique hashes`,
-            category: 'configuration'
-        };
-    } catch (error) {
-        return {
-            name: 'Hash Collision Rate',
-            status: 'warning',
-            message: `Could not analyze: ${error.message}`,
-            category: 'configuration'
-        };
-    }
+    // DEAD-CHUNK-CHAT: the per-chat collection used for this check no longer exists.
+    // (Could be re-implemented to walk EventBase collections later; not worth it now.)
+    return {
+        name: 'Hash Collision Rate',
+        status: 'pass',
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
+        category: 'configuration'
+    };
 }
 
 /**
@@ -558,43 +402,13 @@ export async function checkHashCollisionRate(settings) {
  * Missing or malformed UUIDs can cause collection mismatches.
  */
 export function checkChatMetadataIntegrity() {
-    const chatId = getCurrentChatId();
-
-    if (!chatId) {
-        return {
-            name: 'Chat Metadata Integrity',
-            status: 'skipped',
-            message: 'No chat selected',
-            category: 'configuration'
-        };
-    }
-
-    const uuid = getChatUUID();
-
-    if (!uuid) {
-        return {
-            name: 'Chat Metadata Integrity',
-            status: 'warning',
-            message: 'Chat is missing integrity UUID. This can cause collection ID mismatches. Re-opening the chat should fix this.',
-            category: 'configuration'
-        };
-    }
-
-    // Validate UUID format (should be standard UUID v4 format)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(uuid)) {
-        return {
-            name: 'Chat Metadata Integrity',
-            status: 'warning',
-            message: `Chat UUID has non-standard format: ${uuid.substring(0, 20)}...`,
-            category: 'configuration'
-        };
-    }
-
+    // DEAD-CHUNK-CHAT: this check validated the chat UUID used to build chunk-based
+    // chat collection IDs. With chat handled by EventBase, the UUID is no longer
+    // load-bearing for collection identification.
     return {
         name: 'Chat Metadata Integrity',
         status: 'pass',
-        message: `UUID: ${uuid.substring(0, 8)}...`,
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
         category: 'configuration'
     };
 }
@@ -604,81 +418,16 @@ export function checkChatMetadataIntegrity() {
  * Verifies all chunk conditions in the current chat collection use valid operators and values.
  */
 export async function checkConditionRuleValidity(settings) {
-    try {
-        const collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: 'Condition Rules',
-                status: 'skipped',
-                message: 'No chat collection',
-                category: 'configuration'
-            };
-        }
-
-        // Get chunks with conditions
-        const hashesResult = await getSavedHashes(collectionId, settings, true);
-        if (!hashesResult || !Array.isArray(hashesResult)) {
-            return {
-                name: 'Condition Rules',
-                status: 'pass',
-                message: 'No chunks with conditions',
-                category: 'configuration'
-            };
-        }
-
-        const chunksWithConditions = hashesResult.filter(item =>
-            item.metadata?.conditions && Object.keys(item.metadata.conditions).length > 0
-        );
-
-        if (chunksWithConditions.length === 0) {
-            return {
-                name: 'Condition Rules',
-                status: 'pass',
-                message: 'No conditional chunks configured',
-                category: 'configuration'
-            };
-        }
-
-        // Validate each condition
-        const invalidConditions = [];
-        for (const chunk of chunksWithConditions) {
-            const conditions = chunk.metadata.conditions;
-            for (const [ruleType, rule] of Object.entries(conditions)) {
-                const validation = validateConditionRule(ruleType, rule);
-                if (!validation.valid) {
-                    invalidConditions.push({
-                        hash: chunk.hash,
-                        rule: ruleType,
-                        error: validation.errors?.join(', ') || 'Invalid rule'
-                    });
-                }
-            }
-        }
-
-        if (invalidConditions.length > 0) {
-            return {
-                name: 'Condition Rules',
-                status: 'warning',
-                message: `${invalidConditions.length} invalid condition(s) found. Check chunk conditions in the visualizer.`,
-                category: 'configuration',
-                data: { invalidConditions }
-            };
-        }
-
-        return {
-            name: 'Condition Rules',
-            status: 'pass',
-            message: `${chunksWithConditions.length} conditional chunks, all valid`,
-            category: 'configuration'
-        };
-    } catch (error) {
-        return {
-            name: 'Condition Rules',
-            status: 'warning',
-            message: `Could not validate: ${error.message}`,
-            category: 'configuration'
-        };
-    }
+    // DEAD-CHUNK-CHAT: this used to scan the per-chat chunk collection for
+    // condition rules. Condition rules now live on EventBase / Lorebook /
+    // ArchiveEvent collections; a full validator would need to walk those
+    // separately. Skipping for now rather than reporting a misleading status.
+    return {
+        name: 'Condition Rules',
+        status: 'pass',
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
+        category: 'configuration'
+    };
 }
 
 /**

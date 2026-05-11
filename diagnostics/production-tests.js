@@ -18,14 +18,17 @@
  * ============================================================================
  */
 
-import { getCurrentChatId, getRequestHeaders } from '../../../../../script.js';
+import { getRequestHeaders } from '../../../../../script.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 import { getSavedHashes, purgeVectorIndex } from '../core/core-vector-api.js';
-import { getChatCollectionId } from '../core/chat-vectorization.js';
 import { getModelField, getProviderConfig } from '../core/providers.js';
 import { unregisterCollection } from '../core/collection-loader.js';
 import { reciprocalRankFusion, weightedCombination } from '../core/hybrid-search.js';
 import { applyKeywordBoost, extractTextKeywords, extractLorebookKeywords } from '../core/keyword-boost.js';
+
+// DEAD-CHUNK-CHAT: tests that targeted the per-chat chunk collection are no longer
+// meaningful — chat history runs through EventBase, not `vecthare_chat_*`.
+const CHAT_NOT_APPLICABLE_MESSAGE = 'Not applicable (EventBase mode — chat is not stored as a chunk collection)';
 
 /**
  * Full cleanup for test collections - purges vectors AND unregisters from registry
@@ -43,6 +46,59 @@ async function cleanupTestCollection(collectionId, settings) {
     const registryKey = `${settings.source}:${collectionId}`;
     unregisterCollection(registryKey);
     unregisterCollection(collectionId); // Also try without source prefix
+}
+
+/**
+ * Sweep any leftover `vh:test:*` collections from previous diagnostic runs that
+ * leaked (e.g. earlier code without try/finally cleanup, or process killed mid-run).
+ * Safe to call multiple times — `vh:test:` is a reserved prefix only used by
+ * the production-test helpers above.
+ */
+export async function sweepLeftoverTestCollections(settings) {
+    let sweptIds = [];
+    try {
+        const response = await fetch('/api/plugins/similharity/collections', {
+            method: 'GET',
+            headers: getRequestHeaders(),
+        });
+        if (!response.ok) {
+            return { name: '[PROD] Test Collection Sweep', status: 'pass', message: 'Could not list collections (skipping sweep)', category: 'production' };
+        }
+        const data = await response.json();
+        const collections = data.collections || [];
+
+        // Match the test-collection prefix used by testVectorStorage / testPluginEmbeddingGeneration.
+        const leftovers = collections.filter(c => {
+            const id = c.id || c.collectionId || c.name || '';
+            return id.startsWith('vh:test:') || id.includes(':vh:test:');
+        });
+
+        for (const c of leftovers) {
+            // Some endpoints return id, others collectionId/name — try them in order.
+            const rawId = c.id || c.collectionId || c.name;
+            // Strip backend/source prefix if present (e.g. "qdrant:transformers:vh:test:storage_..." → "vh:test:storage_...").
+            const idx = rawId.indexOf('vh:test:');
+            const cleanId = idx >= 0 ? rawId.slice(idx) : rawId;
+            await cleanupTestCollection(cleanId, settings);
+            sweptIds.push(cleanId);
+        }
+
+        return {
+            name: '[PROD] Test Collection Sweep',
+            status: 'pass',
+            message: sweptIds.length === 0
+                ? 'No leftover test collections found'
+                : `Cleaned ${sweptIds.length} leftover test collection(s): ${sweptIds.slice(0, 3).join(', ')}${sweptIds.length > 3 ? '...' : ''}`,
+            category: 'production'
+        };
+    } catch (error) {
+        return {
+            name: '[PROD] Test Collection Sweep',
+            status: 'warning',
+            message: `Sweep error: ${error.message}`,
+            category: 'production'
+        };
+    }
 }
 
 /**
@@ -179,8 +235,8 @@ export async function testEmbeddingGeneration(settings) {
  * Creates a temporary test collection that is cleaned up after the test.
  */
 export async function testVectorStorage(settings) {
+    const testCollectionId = `vh:test:storage_${Date.now()}`;
     try {
-        const testCollectionId = `vh:test:storage_${Date.now()}`;
         const testHash = String(Math.floor(Math.random() * 1000000));
         const testText = 'VectHare storage test message';
         const backend = settings.vector_backend || 'standard';
@@ -214,9 +270,6 @@ export async function testVectorStorage(settings) {
             };
         }
 
-        // Cleanup - full collection cleanup (purge + unregister from registry)
-        await cleanupTestCollection(testCollectionId, settings);
-
         return {
             name: '[PROD] Vector Storage',
             status: 'pass',
@@ -230,6 +283,9 @@ export async function testVectorStorage(settings) {
             message: `Storage test error: ${error.message}`,
             category: 'production'
         };
+    } finally {
+        // Always clean up the test collection, even if the test bailed early.
+        await cleanupTestCollection(testCollectionId, settings);
     }
 }
 
@@ -237,74 +293,15 @@ export async function testVectorStorage(settings) {
  * Test: Can we query and retrieve similar vectors?
  */
 export async function testVectorRetrieval(settings) {
-    if (!getCurrentChatId()) {
-        return {
-            name: '[PROD] Vector Retrieval',
-            status: 'warning',
-            message: 'No chat selected - cannot test retrieval',
-            category: 'production'
-        };
-    }
-
-    const collectionId = getChatCollectionId();
-    if (!collectionId) {
-        return {
-            name: '[PROD] Vector Retrieval',
-            status: 'warning',
-            message: 'Could not get collection ID',
-            category: 'production'
-        };
-    }
-
-    try {
-        const hashes = await getSavedHashes(collectionId, settings);
-
-        if (hashes.length === 0) {
-            return {
-                name: '[PROD] Vector Retrieval',
-                status: 'warning',
-                message: 'No vectors in current chat to test retrieval',
-                category: 'production'
-            };
-        }
-
-        const response = await fetch('/api/vector/query', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                collectionId: collectionId,
-                searchText: 'test query',
-                topK: 3,
-                source: settings.source,
-                ...getProviderBody(settings)
-            })
-        });
-
-        if (!response.ok) {
-            return {
-                name: '[PROD] Vector Retrieval',
-                status: 'fail',
-                message: `Query failed: ${response.status}`,
-                category: 'production'
-            };
-        }
-
-        const data = await response.json();
-
-        return {
-            name: '[PROD] Vector Retrieval',
-            status: 'pass',
-            message: `Successfully retrieved ${data.hashes?.length || 0} results`,
-            category: 'production'
-        };
-    } catch (error) {
-        return {
-            name: '[PROD] Vector Retrieval',
-            status: 'fail',
-            message: `Retrieval test error: ${error.message}`,
-            category: 'production'
-        };
-    }
+    // DEAD-CHUNK-CHAT: this test queried the per-chat chunk collection. EventBase
+    // collections are queried through a different pipeline; rewrite needed to
+    // exercise that path. Skipping for now.
+    return {
+        name: '[PROD] Vector Retrieval',
+        status: 'pass',
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
+        category: 'production'
+    };
 }
 
 /**
@@ -314,126 +311,15 @@ export async function testVectorRetrieval(settings) {
  * Uses the dedicated get-embedding endpoint to avoid inserting test data.
  */
 export async function testVectorDimensions(settings) {
-    if (!getCurrentChatId()) {
-        return {
-            name: '[PROD] Vector Dimensions',
-            status: 'pass',
-            message: 'No chat selected - cannot check dimensions',
-            category: 'production'
-        };
-    }
-
-    const collectionId = getChatCollectionId();
-    if (!collectionId) {
-        return {
-            name: '[PROD] Vector Dimensions',
-            status: 'pass',
-            message: 'Could not get collection ID',
-            category: 'production'
-        };
-    }
-
-    try {
-        // Get collection stats to see stored dimensions
-        const statsResponse = await fetch('/api/plugins/similharity/chunks/stats', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                backend: settings.vector_backend || 'standard',
-                collectionId: collectionId,
-                source: settings.source || 'transformers',
-                model: settings[getModelField(settings.source)] || null,
-            }),
-        });
-
-        if (!statsResponse.ok) {
-            // Stats endpoint not available or error - skip check
-            return {
-                name: '[PROD] Vector Dimensions',
-                status: 'pass',
-                message: 'Could not fetch collection stats',
-                category: 'production'
-            };
-        }
-
-        const statsData = await statsResponse.json();
-        const storedDimensions = statsData.stats?.embeddingDimensions;
-
-        if (!storedDimensions || storedDimensions === 0) {
-            return {
-                name: '[PROD] Vector Dimensions',
-                status: 'pass',
-                message: 'No vectors stored yet - dimensions will be set on first vectorization',
-                category: 'production'
-            };
-        }
-
-        // Generate a test embedding using the dedicated endpoint (no storage)
-        const testText = 'Dimension test';
-        const embeddingResponse = await fetch('/api/plugins/similharity/get-embedding', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                text: testText,
-                source: settings.source || 'transformers',
-                model: settings[getModelField(settings.source)] || null,
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
-            })
-        });
-
-        if (!embeddingResponse.ok) {
-            const errorText = await embeddingResponse.text();
-            return {
-                name: '[PROD] Vector Dimensions',
-                status: 'warning',
-                message: `Could not generate test embedding: ${embeddingResponse.status} - ${errorText}`,
-                category: 'production'
-            };
-        }
-
-        const embeddingData = await embeddingResponse.json();
-        let currentDimensions = 0;
-        if (embeddingData.embedding && Array.isArray(embeddingData.embedding)) {
-            currentDimensions = embeddingData.embedding.length;
-        }
-
-        if (currentDimensions === 0) {
-            return {
-                name: '[PROD] Vector Dimensions',
-                status: 'warning',
-                message: 'Could not determine current embedding dimensions',
-                category: 'production'
-            };
-        }
-
-        // Compare dimensions
-        if (storedDimensions !== currentDimensions) {
-            return {
-                name: '[PROD] Vector Dimensions',
-                status: 'fail',
-                message: `Dimension mismatch! Stored: ${storedDimensions}, Current provider: ${currentDimensions}. You likely switched embedding models. Re-vectorize this chat to fix.`,
-                category: 'production',
-                fixable: true,
-                fixAction: 'revectorize',
-                data: { storedDimensions, currentDimensions, collectionId }
-            };
-        }
-
-        return {
-            name: '[PROD] Vector Dimensions',
-            status: 'pass',
-            message: `Dimensions match (${storedDimensions}D)`,
-            category: 'production'
-        };
-    } catch (error) {
-        return {
-            name: '[PROD] Vector Dimensions',
-            status: 'warning',
-            message: `Dimension check error: ${error.message}`,
-            category: 'production'
-        };
-    }
+    // DEAD-CHUNK-CHAT: this checked dimension consistency against the per-chat
+    // chunk collection's stored vectors. Could be repurposed to walk EventBase
+    // collections (or accept a collectionId argument) — until then, N/A.
+    return {
+        name: '[PROD] Vector Dimensions',
+        status: 'pass',
+        message: CHAT_NOT_APPLICABLE_MESSAGE,
+        category: 'production'
+    };
 }
 
 /**
@@ -504,23 +390,14 @@ export async function testTemporalDecay(settings) {
  */
 export async function testChunkServerSync(settings, collectionId) {
     if (!collectionId) {
-        if (!getCurrentChatId()) {
-            return {
-                name: '[PROD] Chunk-Server Sync',
-                status: 'warning',
-                message: 'No collection selected - cannot test sync',
-                category: 'production'
-            };
-        }
-        collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: '[PROD] Chunk-Server Sync',
-                status: 'warning',
-                message: 'Could not get collection ID',
-                category: 'production'
-            };
-        }
+        // DEAD-CHUNK-CHAT: auto-discovery used to pick the per-chat chunk collection.
+        // Callers (e.g. the visualizer) can still pass a specific collectionId.
+        return {
+            name: '[PROD] Chunk-Server Sync',
+            status: 'pass',
+            message: CHAT_NOT_APPLICABLE_MESSAGE,
+            category: 'production'
+        };
     }
 
     try {
@@ -616,23 +493,14 @@ export async function fixOrphanedMetadata(orphanedHashes) {
  */
 export async function testDuplicateHashes(settings, collectionId) {
     if (!collectionId) {
-        if (!getCurrentChatId()) {
-            return {
-                name: '[PROD] Duplicate Hash Check',
-                status: 'warning',
-                message: 'No collection selected - cannot check for duplicates',
-                category: 'production'
-            };
-        }
-        collectionId = getChatCollectionId();
-        if (!collectionId) {
-            return {
-                name: '[PROD] Duplicate Hash Check',
-                status: 'warning',
-                message: 'Could not get collection ID',
-                category: 'production'
-            };
-        }
+        // DEAD-CHUNK-CHAT: auto-discovery used to pick the per-chat chunk collection.
+        // Callers (e.g. the visualizer) can still pass a specific collectionId.
+        return {
+            name: '[PROD] Duplicate Hash Check',
+            status: 'pass',
+            message: CHAT_NOT_APPLICABLE_MESSAGE,
+            category: 'production'
+        };
     }
 
     try {
@@ -868,8 +736,8 @@ export async function testPluginEmbeddingGeneration(settings) {
         };
     }
 
+    const testCollectionId = `vh:test:embed_${Date.now()}`;
     try {
-        const testCollectionId = `vh:test:embed_${Date.now()}`;
         const testHash = String(Math.floor(Math.random() * 1000000));
         const testText = 'Plugin embedding generation test';
 
@@ -925,9 +793,6 @@ export async function testPluginEmbeddingGeneration(settings) {
             querySuccess = results.results?.length > 0 || results.hashes?.length > 0;
         }
 
-        // Cleanup test collection
-        await cleanupTestCollection(testCollectionId, settings);
-
         if (!querySuccess) {
             return {
                 name: '[PROD] Plugin Embedding Gen',
@@ -950,6 +815,9 @@ export async function testPluginEmbeddingGeneration(settings) {
             message: `Test error: ${error.message}`,
             category: 'production'
         };
+    } finally {
+        // Always clean up the test collection, even if the test bailed early.
+        await cleanupTestCollection(testCollectionId, settings);
     }
 }
 

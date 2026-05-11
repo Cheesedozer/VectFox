@@ -63,7 +63,8 @@ import {
     testKeywordBoosting,
     testLorebookKeywordExtraction,
     fixOrphanedMetadata,
-    fixDuplicateHashes
+    fixDuplicateHashes,
+    sweepLeftoverTestCollections
 } from './production-tests.js';
 
 import { testConditionalActivation } from './activation-tests.js';
@@ -86,8 +87,9 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
 
     // Try to get extension version from manifest.json
     try {
-        // Add cache-busting parameter to ensure fresh fetch
-        const manifestUrl = `/scripts/extensions/third-party/VectHare/manifest.json?_=${Date.now()}`;
+        // Derive manifest URL from this module's location so it works regardless of
+        // the folder name the user installs the extension under (e.g. VectHare vs VectHarePlus).
+        const manifestUrl = new URL('../manifest.json', import.meta.url).href + `?_=${Date.now()}`;
         console.log('VectHare Diagnostics: Fetching manifest from:', manifestUrl);
         const manifestResponse = await fetch(manifestUrl);
         console.log('VectHare Diagnostics: Manifest response status:', manifestResponse.status);
@@ -216,6 +218,8 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
 
     // ========== PRODUCTION TESTS (Optional) ==========
     if (includeProductionTests) {
+        // Drop any leftover `vh:test:*` collections from previous runs before creating new ones.
+        categories.production.push(await sweepLeftoverTestCollections(settings));
         categories.production.push(await testEmbeddingGeneration(settings));
         categories.production.push(await testVectorStorage(settings));
         categories.production.push(await testVectorRetrieval(settings));
