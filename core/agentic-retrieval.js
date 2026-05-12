@@ -98,14 +98,15 @@ export async function retrieveEventsWithAgent(params) {
     });
 
     if (agenticDebug) {
-        console.log(`[VectHarePlus-Agentic] LLM prompt (system + user, approx ${Math.round((AGENTIC_PLANNER_SYSTEM_PROMPT.length + userMessage.length) / 4)} tokens):`);
-        console.log('─── SYSTEM ────────────────────────────────────');
-        console.log(AGENTIC_PLANNER_SYSTEM_PROMPT);
-        console.log('─── USER ──────────────────────────────────────');
-        console.log(userMessage);
-        console.log('───────────────────────────────────────────────');
+        // Prompt size only — the full prompt is intentionally NOT dumped to keep
+        // the log readable. The narrative-context preview above already shows
+        // what the planner sees per turn; the static system prompt lives in
+        // core/agentic-prompt.js for inspection.
+        const approxTokens = Math.round((AGENTIC_PLANNER_SYSTEM_PROMPT.length + userMessage.length) / 4);
+        console.log(`[VectHarePlus-Agentic] LLM prompt size: system+user approx ${approxTokens} tokens (${AGENTIC_PLANNER_SYSTEM_PROMPT.length}+${userMessage.length} chars)`);
     }
 
+    const timeoutMs = settings.agentic_retrieval_timeout_ms || 30000;
     let plan;
     const tLlmStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     try {
@@ -113,11 +114,22 @@ export async function retrieveEventsWithAgent(params) {
             systemPrompt: AGENTIC_PLANNER_SYSTEM_PROMPT,
             userMessage,
             llmCfg,
-            timeoutMs: settings.agentic_retrieval_timeout_ms || 5000,
+            timeoutMs,
         });
     } catch (err) {
         const tLlmMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tLlmStart));
-        console.warn(`[VectHarePlus-Agentic] Planner LLM call failed after ${tLlmMs}ms, using pre-search only: ${err?.message || err}`);
+        // AbortSignal.timeout() throws either a TimeoutError or a generic
+        // "user aborted a request" message depending on the runtime. Detect both
+        // and surface a clearer log line so timeout vs. real error is obvious.
+        const isTimeout =
+            err?.name === 'TimeoutError' ||
+            err?.name === 'AbortError' ||
+            /aborted|timeout|timed out/i.test(err?.message || '');
+        if (isTimeout) {
+            console.warn(`[VectHarePlus-Agentic] Planner LLM call TIMED OUT after ${tLlmMs}ms (configured limit: ${timeoutMs}ms). Falling back to pre-search only. Bump "Planner LLM Timeout" in the AgentMode tab if your model needs longer.`);
+        } else {
+            console.warn(`[VectHarePlus-Agentic] Planner LLM call failed after ${tLlmMs}ms, using pre-search only: ${err?.message || err}`);
+        }
         return preSearch;
     }
     const tLlmMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tLlmStart));

@@ -197,7 +197,7 @@ const defaultSettings = {
     agentic_retrieval_chat_depth: 5,                   // # of past chat turns sent to planner (slider 3-15)
     agentic_retrieval_candidates_to_show: 12,          // Pre-search slice shown to planner (slider 5-20)
     agentic_retrieval_max_queries: 4,                  // Hard ceiling on planner output (slider 1-4)
-    agentic_retrieval_timeout_ms: 5000,                // Planner LLM call timeout
+    agentic_retrieval_timeout_ms: 30000,               // Planner LLM call timeout (matches summarize default; some models need >5s)
     agentic_retrieval_debug_logging: false,            // Separate debug toggle from eventbase_debug_logging
 };
 

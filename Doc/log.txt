@@ -1,57 +1,275 @@
-VectHare: Health cache stale for qdrant, re-verifying...
-core-vector-api.js:1021 [VectHare] Hybrid search (native) for multi-collection query
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a, topK=5, sparse=1 tokens, terms=[贖身], preview="贖身"
-character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
-(anonymous) @ character.ts:107
-hybridQuery @ qdrant.js:836
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryMultipleCollections @ core-vector-api.js:1027
-await in queryMultipleCollections
-performSearch @ database-browser.js:3268
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:865 [Qdrant timing] FAILED after 891.7ms (HTTP 500), falling back to vector-only. Server said: {"error":"Qdrant POST /collections/vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a/points/query failed: 404 Not found: Collection `vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a` doesn't exist!"}
-hybridQuery @ qdrant.js:865
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryMultipleCollections @ core-vector-api.js:1027
-await in queryMultipleCollections
-performSearch @ database-browser.js:3268
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=5, sparse=1 tokens, terms=[贖身], preview="贖身"
-qdrant.js:845 [Qdrant timing] total=410.1ms, results=5
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a, topK=5, sparse=1 tokens, terms=[贖身], preview="贖身"
-character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
-(anonymous) @ character.ts:107
-hybridQuery @ qdrant.js:836
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryMultipleCollections @ core-vector-api.js:1027
-await in queryMultipleCollections
-performSearch @ database-browser.js:3268
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:865 [Qdrant timing] FAILED after 395.8ms (HTTP 500), falling back to vector-only. Server said: {"error":"Qdrant POST /collections/vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a/points/query failed: 404 Not found: Collection `vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a` doesn't exist!"}
-hybridQuery @ qdrant.js:865
-await in hybridQuery
-hybridSearch @ hybrid-search.js:51
-await in hybridSearch
-queryMultipleCollections @ core-vector-api.js:1027
-await in queryMultipleCollections
-performSearch @ database-browser.js:3268
-dispatch @ jquery-3.5.1.min.js:2
-v.handle @ jquery-3.5.1.min.js:2
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750, topK=5, sparse=1 tokens, terms=[贖身], preview="贖身"
-qdrant.js:845 [Qdrant timing] total=846.7ms, results=5
-hybrid-search.js:48 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_lorebook_qdrant_critblade_story1_1778514888106, topK=5, sparse=1 tokens, terms=[贖身], preview="贖身"
-qdrant.js:845 [Qdrant timing] total=599.6ms, results=5
+Generate entered
+index.js:19 [QR2] calling {args: Array(3), functionToCall: ƒ}
+chat-vectorization.js:1786 🐰 VectHare: rearrangeChat called (type: normal, chat length: 2116)
+eventbase-workflow.js:362 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_chat_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:362 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_qdrant_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:362 [EventBase] Live collection skipped (not locked to chat): vecthare_eventbase_standard_critblade_異世界學校_60d40b35-fa7a-4f30-8485-805303f4916a
+eventbase-workflow.js:395 [EventBase] Live retrieval: uuid=67d28099-167f-4c07-a7cb-1b62e44f43d0, lockedLiveCollections=1, ids=["vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0"]
+eventbase-workflow.js:321 [EventBase] Archive event collection skipped (not locked to chat): vecthare_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
+eventbase-workflow.js:408 [EventBase] Phase A: live=true, archiveCollections=0, searchText length=4453
+eventbase-workflow.js:422 [EventBase] Keyword query (user last message, 31 chars): 我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?"
+eventbase-retrieval.js:124 [EventBase] Retrieval start — topK overfetch=20, minImportance=1, method=bm25, nativePrefer=true, liveCollections=1
+2backend-manager.js:274 VectHare: Health cache stale for qdrant, re-verifying...
+core-vector-api.js:878 [VectHare] Hybrid search (native), dispatching to hybrid search module
+hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
+core-vector-api.js:878 [VectHare] Hybrid search (native), dispatching to hybrid search module
+hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
+qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=8 tokens, terms=[mayla, 我對, 説, 記得, 當時, 為甚麼, 為你, 金幣], preview="我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?""
+qdrant.js:827 [EventBase] Hybrid request: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=751 tokens, terms=[mayla, 20, 15, critblad, kashier, fern, valeri, engni, lia, lead, 262, vs, nsfw, writing_styl, ban, master, 800, 1500, sourc, truth, check, all, current, valu, no, combat, occur, experienc, emotion, breakthrough, tough, love, speech, familiar, verbally, commit, help, wingshad, affection, remain, 100, max, item, money, quest, rest, recovery, chang, advanc, minimally, scene, continuate, 我對, 説, 記得, 當時, 為甚麼, 為你, 金幣, 仔細, 思考, 劇情, 回顧, 當前, 情況, 時間, 晚上, 位置, 新大陸, 流沙, 之國, 扎赫, 拉巴, 星月, 綠洲, 頂層, 皇家, 套房, 個人, 分配, 床位, 一張, 索拉雅, 單獨, 阿斯蒙蒂斯, 人物, 關係, 剛剛, 崩潰, 大哭, 擔心, 會像她, 父親, 影翼, 消失, 鼓勵, 並對, 房間, 喊話, 主線, 暗線, 安撫, 告訴, 都會, 幫她找, 點醒, 展現, 領導, 能力, 不能, 整天, 愁眉苦臉, 索拉雅在, 角落, 忍受, 淫紋, 發作, 表面, 裝睡, 其實, 偷聽, 也在, 人對, 都有, 不同, 反應, 使用, 最新, 輸入, 內容, 抱住, 這間, 房, 裡面, 的人, 一定會, 幫你, 找到, 生要見, 人死, 要見屍, 沒有, 人會, 放棄, 大聲, 對房內的人說, 對吧, 最後, 你要, 任務, 成功, 說服, 眷屬, 你有, 模樣, 跟著, 你走, 這段, 話要, 完整, 復述, 省略, 核心, 發言, 角色, 性格, 特質, 極度, 依賴, 內心, 強烈, 安全, 但她, 智力, 是影之, 軍師, 恐懼, 壓垮, 精明, 商人, 絕對, 忠誠, 會第, 響應, 裝傻, 賣萌但, 會用, 撒嬌, 方式, 病態, 嫉妒, 會裝, 得很, 虔誠, 病嬌, 刺客, 冷漠, 但對, 魔王, 之女, 不懂, 人類, 情感, 可能會, 說出, 直接, 體的話, 寡言, 宿命, 論者, 折磨, 之間, 化學反應, 兩個, 都想, 獨佔, 贏了, 爭奪戰, 心裡, 肯定, 咒罵, 結盟, 會用最, 得體, 本質, 會讓她用, 極端, 表達, 完全, 狀況, 找, 很難, 殺掉, 擋路, 就好, 她會用最, 簡短, 回應, 主要, 心思, 壓制, 參考, 處理, 色色, 一段, 重點, 衝擊, 團隊, 凝聚, 不適合, 暗示, 生理, 乳頭, 硬挺, 緊貼, 時巨乳的, 觸感, 混合, 用日輕文風, 自然, 流暢, 長, 短句, 交錯, 心理, 描寫, 用單, 星號, 男性, 視覺, 小說, 風格, 口述, 畫面, 分鏡感, 對話, 獨立, 成段, 避免, 詞, 不用, 極其, 一絲, 垃圾, 嚴格, 符合, 字數, 目標, 大於, 字, 小於, 策略, 詳細, 每個, 情緒, 轉變, 霸氣, 宣言, 注意, 正文, 規則, 以外, 結尾, 重複, 上次, 繁體, 中文, 輸出, 對白, 思維, 腦, 回路, 有分鏡感和, 推進, 衔接, 内容, 痛哭, 壓抑, 摟緊, 那段, 鼓勁, 寫出, 領導者, 影之, 躲在, 都要, 靈魂, 立刻, 開寫, 衝啊, 我摟緊了, 懷裡, 這具, 顫抖, 軀體, 那對, 多汁, 的巨乳, 緊緊, 壓在, 濕透, 淚水, 浸透, 衣領, 她像隻, 快要, 溺死, 的幼獸, 拼命, 抓著, 後背, 指甲, 幾乎, 要陷進肉裡, 那聲撕心裂肺的, 哭聲, 在半, 開放, 迴盪, 毫無, 保留, 偽裝, 手掌, 輕撫, 她那頭及臀的, 黑色, 卷髮, 像在, 撫摸, 一隻, 炸毛的貓, 指尖, 梳過, 髮絲, 時能聞到, 淡淡的, 海水, 與薰衣草, 香氣, 她哭到, 窒息, 鼻音, 小了, 變成, 斷斷續續, 抽泣, 抬起, 視線, 掃過, 奢華, 那張, 床上, 女人, 依然, 維持, 閉眼, 姿勢, 我能, 看見, 金色, 豎瞳在, 眼皮, 顫動, 的貓耳也, 抖了, 尾巴, 尖端, 被子, 緩慢, 擺動, 傳來, 均勻, 呼吸, 這位, 之女是, 真的, 睡著了, 小腿, 上的, 藍色, 金屬, 甲, 都沒, 詭異, 的是, 那張床, 背對背, 躺著, 間隔, 至少, 半米, 像是, 生怕, 碰到, 沾上, 髒東西, 誇張, 起伏, 節奏, 太, 規律, 刻意, 則一動, 不動, 她攥著, 床單, 手指, 指節, 泛白, 角落裡, 索拉雅側, 深紅色, 長袍, 褪到, 腰間, 背對著, 肩膀, 過度, 用力, 雙腿, 夾, 在一起, 大腿, 根部, 肌肉, 長時間, 繃緊, 痙攣, 都在, 我深吸, 一口氣, 收緊, 了摟著, 手臂, 你說, 平靜, 帶著, 不容置疑, 份量, 身體, 猛地一僵, 梨花, 帶雨的臉, 青色, 眼眸, 全是, 不敢, 置信, 的光, 鬆開, 站, 起身, 環視, 整個, 半, 空間, 睜開眼睛, 優雅, 地坐, 紫色, 長髮, 肩頭, 滑落, 那雙, 的豎瞳在, 昏暗, 光線, 閃爍著, 從容, 字都, 擲地有聲, 意志, 藍聯, 商會, 頷首, 影翼在, 動用, 情報, 網絡, 將他, 挖出來, 懶洋洋, 貓耳, 興奮, 抖動, 兩下, 她用那雙, 水汪汪, 柳葉, 看著, 甜膩得, 拉絲, 都發, 話了, 盡全力, 幫忙, 故意, 挺了, 挺胸, 讓那對, 飽滿, 雪白, 肉球在, 薄薄的, 內衣, 晃動, 擅長, 貴族, 圈子裡, 挖, 八卦, 了呢, 包在我, 坐起, 鮮, 粉色, 冷冷, 落在, 空靈, 刺骨, 殺意, 主人, 要找的人, 我會, 頓了, 補充, 活的, 死的, 慢條斯理, 碩大, 肥膩, 木瓜, 奶在, 緊身, 乳膠, 修女, 袍下, 劇烈, 雙手, 合十, 做出, 祈禱, 愛心, 瞳孔, 毫不掩飾, 狂熱, 大人, 妾身, 願意, 將神術的, 奉獻, 給您的, 甜膩, 顫音, 追蹤, 審問, 為您, 做到, 最好, 該死, 賤貨, 竟然, 敢在, 面前, 哭成, 瘋狂, 咆哮, 掛著, 純潔, 無害, 微笑, 就連睡死的, 也被吵醒了, 迷迷糊糊, 紅瞳, 困惑, 她抓了抓, 粉紅色, 平直, 找人, 她歪了, 歪頭, 那就, 消息, 抓起來, 不說, 打到, 複雜, 說了, 她就照做, 終於, 動了, 坐, 重新, 披在, 肩上, 深邃, 棕色, 嘴脣, 動了動, 吐出, 星象, 就這, 但我, 意思, 她會用, 魔法, 我轉, 回身, 跪在, 淚流滿面, 不容, 拒絕, 嚴厲, 房裡, 每一個, 伸手, 拇指, 抹去, 臉頰, 淚痕, 瞬間, 睜大, 愣住, 說的, 在罵, 我不, 我是, 大腦, 運轉, 曾經, 枷鎖, 城用, 智慧, 手腕, 生存, 能在, 月內, 策劃, 出, 完美, 舞台劇, 上位, 甦醒, 她深吸, 手背, 狠狠, 擦了擦, 眼淚, 的長, 燈光, 反射, 幽深, 光澤, 轉過, 面對, 裡的, 那股失焦的, 迷茫, 一點, 褪去, 取而代之, 某種, 冰冷, 銳利, 光芒, 開口, 不再, 姐姐, 深深地, 鞠, 了一, 薇拉, 剛才, 失態, 但薇拉, 哭泣, 解決, 不了, 問題, 嘴角, 勾起, 一抹, 極淡的, 陰冷, 弧度, 力量, 越來越, 薇拉會, 整理, 一份, 行動, 計劃, 包括, 在新, 港的, 下一步, 接觸, 魅魔, 從她, 口中, 套出影翼的, 線索, 利用, 資源, 編織, 讓影翼, 無處可逃, 豎瞳, 一亮, 醒了], preview="我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?" 好，來仔細思考一下這次的劇情！ - 回顧當前情況 * 時間：20:15，晚上 * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia） * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話 - 當前劇情的主線是？暗線是？ * 主線：Critblade安撫Ma"
+qdrant.js:845 [Qdrant timing] total=1080.5ms, results=20
+core-vector-api.js:888 [VectHare] Hybrid search (RRF) response: 20 result(s) in 1381ms, scores=[0.8333, 0.5625, 0.4500, 0.3611, 0.3522, 0.2526, 0.2167, 0.2024, 0.1494, 0.1434, 0.1429, 0.1429, 0.1382, 0.1313, 0.1068, 0.1067, 0.1043, 0.1000, 0.0957, 0.0909]
+qdrant.js:845 [Qdrant timing] total=2608.8ms, results=20
+core-vector-api.js:888 [VectHare] Hybrid search (RRF) response: 20 result(s) in 2944ms, scores=[0.8333, 0.5000, 0.4583, 0.2845, 0.2500, 0.2222, 0.2200, 0.2067, 0.2000, 0.1845, 0.1667, 0.1463, 0.1429, 0.1422, 0.1303, 0.1294, 0.1140, 0.1131, 0.1098, 0.1000]
+eventbase-retrieval.js:172 [EventBase] Live query: 1 collection(s) × 2 query/queries → 34 unique events
+eventbase-retrieval.js:192 [EventBase] After importance filter (>=1): 34 candidates
+eventbase-retrieval.js:275 [EventBase] Dedup-depth skip: event "character_state_change" source_window_end=2113 is within last 50 messages (threshold=2066)
+eventbase-retrieval.js:275 [EventBase] Dedup-depth skip: event "promise_or_oath" source_window_end=2113 is within last 50 messages (threshold=2066)
+eventbase-retrieval.js:281 [EventBase] Dedup depth (50) removed 2 event(s) already visible in context
+eventbase-retrieval.js:289 [EventBase] Final events after dedup + trim: 10
+eventbase-retrieval.js:291   [0] type=relationship_change imp=8 score=0.792 persist=true
+eventbase-retrieval.js:291   [1] type=relationship_change imp=8 score=0.686 persist=true
+eventbase-retrieval.js:291   [2] type=revelation imp=7 score=0.612 persist=true
+eventbase-retrieval.js:291   [3] type=promise_or_oath imp=8 score=0.566 persist=true
+eventbase-retrieval.js:291   [4] type=item_acquired imp=6 score=0.551 persist=true
+eventbase-retrieval.js:291   [5] type=character_state_change imp=8 score=0.515 persist=true
+eventbase-retrieval.js:291   [6] type=character_state_change imp=8 score=0.502 persist=true
+eventbase-retrieval.js:291   [7] type=revelation imp=7 score=0.456 persist=true
+eventbase-retrieval.js:291   [8] type=revelation imp=9 score=0.454 persist=true
+eventbase-retrieval.js:291   [9] type=promise_or_oath imp=8 score=0.448 persist=true
+agentic-retrieval.js:76 [VectHarePlus-Agentic] mode=ON  trigger=user_message_len=31
+agentic-retrieval.js:77 [VectHarePlus-Agentic] Pre-search returned 10 candidates (top score=0.792)
+agentic-retrieval.js:82 [VectHarePlus-Agentic] Past chat turns sent to planner: 3
+agentic-retrieval.js:83 [VectHarePlus-Agentic] Narrative context preview (one ~50-word snippet per turn):
+agentic-retrieval.js:87   [-3] {{user}}: 我抱住Mayla 説 "我肯定跟你説, 這間房裡面的人, 一定會幫你找到你的父親, 生要見人死要見屍. 沒有人會放棄你." 我大聲對房內的人説 "對吧?" 我對Mayla 説 "你要這個任務成功, 你首先要説服其他眷屬你有能力去lead 我們去完成. 你這個模樣, 整天愁眉苦臉, 你要其他人怎樣跟着你走?"
+agentic-retrieval.js:87   [-2] ArtificRealm創世域: <konatan_planning~> 好，來仔細思考一下這次的劇情！ - 回顧當前情況 * 時間：20:15，晚上 * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia） * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話 - 當前劇情的主線是？暗線是？ * 主線：Critblade安撫Mayla，告訴她所有人都會幫她找父親，但同時點醒她——她需要展現領導能力，不能整天愁眉苦臉 * 暗線：索拉雅在角落忍受淫紋發作，Engni和Lia表面裝睡但其實在偷聽，Kashier和Fern也在聽，所有人對Mayla的崩潰都有不同反應 - 如何使用最新輸入內容？ * Critblade抱住Mayla說「這間房裡面的人，一定會幫你找到你的父親，生要見人死要見屍。沒有人會放棄你。」然後大聲對房內的人說「對吧？」最後對Mayla說「你要這個任務成功，你首先要說服其他眷屬你有能力去lead我們去完成。你這個模樣，整天愁眉苦臉，你要其他人怎樣跟著你走？」 * 這段話要完整復述，不能省略，是Critblade的核心發言 - 回顧角色性格特質 * Mayla：極度依賴Critblade，內心有強烈不安全感，但她其實智力262，是影之軍師，只是現在被恐懼壓垮了 * Kashier：精明商人，對Critblade絕對忠誠，會第一個響應 * Fern：裝傻賣萌但內心精明，會用撒嬌方式響應 * Engni：病態M，嫉妒Mayla但表面會裝得很虔誠 * Lia：病嬌刺客，冷漠但對Critblade忠誠 * Valerie：魔王之女，不懂人類情感，可能會說出很直接但不得體的話 * 索拉雅：極度寡言，宿命論者，正在忍受淫紋折磨 - 角色之間的化學反應 * Mayla vs Engni：兩個都想獨佔Critblade，但Mayla剛剛贏了床位爭奪戰，Engni心裡肯定在咒罵 * Kashier + Fern：兩個精明人結盟，會用最得體的方式響應 * Lia：病嬌本質會讓她用極端方式表達忠誠...
+agentic-retrieval.js:87   [-1] {{user}}: 我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?"
+agentic-retrieval.js:101 [VectHarePlus-Agentic] LLM prompt (system + user, approx 1647 tokens):
+agentic-retrieval.js:102 ─── SYSTEM ────────────────────────────────────
+agentic-retrieval.js:103 You are a retrieval planner for a roleplay memory system. Your job is to read
+recent chat context plus pre-search candidate events, then decide what to search
+the event database for so the main AI has rich context to reply naturally.
+
+The database stores structured events. Each event has these fields you can think
+about when planning:
+  event_type   — e.g. battle, item_acquired, dialogue, rescue, betrayal
+  importance   — 1-10, narratively significant
+  text         — short description
+  cause        — what led to this event
+  result       — outcome / state change
+  characters   — array of people present
+  locations    — array of places
+  factions     — array of groups
+  items        — array of items
+  concepts     — array of themes (e.g. "ransom", "first kiss")
+  keywords     — array of search terms
+  DateTime     — in-story timestamp
+
+Your output is STRICT JSON with three top-level fields:
+
+  queries:   1-4 short search strings (5-15 words each).
+             Aim for COMPLEMENTARY coverage, not paraphrases of the same
+             question. Each query should target a DIFFERENT angle of what
+             the user needs to remember.
+             If the chat language is non-English, emit queries in BOTH the
+             chat language AND English — events may be indexed in either.
+
+  filters:   Optional. Object with any of:
+               characters_any, locations_any, factions_any, concepts_any,
+               event_type_any  (arrays of strings)
+               importance_gte  (number 1-10)
+             Use sparingly — over-filtering hides relevant events.
+             You may omit this field entirely.
+
+  rationale: One sentence in the chat language explaining your plan. For
+             debugging only — it is not used in retrieval.
+
+DECOMPOSITION GUIDE — different question types need different coverage:
+
+  "why X happened?"      → pull X itself AND the cause chain (prior events
+                           leading to X). Multiple queries covering different
+                           steps of that chain.
+  "what happened at Y?"  → pull events at location Y, sorted by importance.
+  "remember when...?"    → pull the event + its result/aftermath + emotional
+                           reactions. Don't over-filter; user may misremember.
+  "how did Z react?"     → pull Z's events around the referenced moment.
+  Reflective / vague     → broader queries, fewer filters. Let vector search
+                           do the fuzzy matching.
+
+EXAMPLES
+
+Example 1 — English question, single character focus:
+User says: "Astarion, what did you think of the Gauntlet?"
+Output:
+{
+  "queries": [
+    "Gauntlet of Shar exploration entry",
+    "Astarion reaction Gauntlet trial",
+    "Shadowfell discoveries Gauntlet"
+  ],
+  "filters": { "characters_any": ["Astarion"] },
+  "rationale": "User is asking Astarion's perspective on a specific dungeon arc — pull events from that location involving him plus reactions."
+}
+
+Example 2 — Traditional Chinese reflective "why" question:
+User says: 我對 Mayla 説 "你記得我當時為甚麼為你贖身嗎?"
+Output:
+{
+  "queries": [
+    "Mayla 贖身 ransom payment",
+    "Mayla 綁架 kidnapping captivity",
+    "贖金談判 negotiation ransom broker",
+    "Mayla 獲救 rescue aftermath emotional"
+  ],
+  "filters": {
+    "characters_any": ["Mayla"],
+    "concepts_any": ["ransom", "kidnapping", "rescue"]
+  },
+  "rationale": "用戶在問「為甚麼」,需要完整因果鏈:綁架前因 → 贖金談判 → 付款 → 救出反應。"
+}
+
+Return ONLY the JSON object. No commentary, no markdown fences, no preamble.
+agentic-retrieval.js:104 ─── USER ──────────────────────────────────────
+agentic-retrieval.js:105 Recent chat (oldest first):
+  [-3] {{user}}: 我抱住Mayla 説 "我肯定跟你説, 這間房裡面的人, 一定會幫你找到你的父親, 生要見人死要見屍.  沒有人會放棄你."
+
+我大聲對房內的人説 "對吧?"
+
+我對Mayla 説 "你要這個任務成功, 你首先要説服其他眷屬你有能力去lead 我們去完成.  你這個模樣, 整天愁眉苦臉, 你要其他人怎樣跟着你走?"
+  [-2] ArtificRealm創世域: <konatan_planning~>
+好，來仔細思考一下這次的劇情！
+
+- 回顧當前情況
+  * 時間：20:15，晚上
+  * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia）
+  * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話
+
+- 當前劇情的主線是？暗線是？
+  * 主線：Critblade安撫Mayla，告訴她所有人都會幫她找父親，但同時點醒她——她需要展現領導能力，不能整天愁眉苦臉
+  * 暗線：索拉雅在角落忍受淫紋發作，Engni和Lia表面裝睡但其實在偷聽，Kashier和Fern也在聽，所有人對Mayla的崩潰都有不同反應
+
+- 如何使用最新輸入內容？
+  * Critblade抱住Mayla說「這間房裡面的人，一定會幫你找到你的父親，生要見人死要見屍。沒有人會放棄你。」然後大聲對房內的人說「對吧？」最後對Mayla說「你要這個任務成功，你首先要說服其他眷屬你有能力去lead我們去完成。你這個模樣，整天愁眉苦臉，你要其他人怎樣跟著你走？」
+  * 這段話要完整復述，不能省略，是Critblade的核心發言
+
+- 回顧角色...
+  [-1] {{user}}: 我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?"
+
+Current user message:
+  我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?"
+
+Candidate events from pre-search (top by similarity, may be incomplete):
+  E1 [0.83] relationship_change — [relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的Mayla宣告「現在
+      chars: [Critblade, Mayla] | concepts: [見習眷屬, 贖身] | importance: 8
+  E2 [0.56] relationship_change — [relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公主/女皇（Issy、
+      chars: [Critblade, Lia, Issy, Kashier] | concepts: [團隊價值, 公主女皇, 壞孩子聯盟] | importance: 8
+  E3 [0.46] revelation — [revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領行程準備物品，如藥水
+      chars: [Critblade, Mayla, 影翼, 莉莉安] | concepts: [亞特蘭蒂斯公主, 生父, 妓院過去, 身份掙扎] | importance: 7
+  E4 [0.35] promise_or_oath — [promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改變什麼」，安撫她並抱
+      chars: [Critblade, Mayla] | concepts: [無條件支持, 情感依賴] | importance: 8
+  E5 [0.50] item_acquired — [item_acquired] 卡希雅利用高魅力、商人背景與專業知識，將幻影絲綢禮服從120金幣砍價至100金幣，並以未來生意威脅與誘惑說服老闆成交。Critblade支付100金
+      chars: [卡希雅, Critblade, 老闆] | concepts: [擬態魔法, 砍價, 商人背景] | importance: 6
+  E6 [0.25] character_state_change — [character_state_change] Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北方蠻族前公主、埃拉西
+      chars: [Critblade, Mayla, Kashier, Valerie] | concepts: [公主身份, 眷屬, 不同種族] | importance: 8
+  E7 [0.22] character_state_change — [character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過去身份的羞恥感。Ma
+      chars: [Critblade, Mayla, 薇拉] | concepts: [性冷感, 妓女身份, 公主偽裝, 頭牌歌姬] | importance: 8
+  E8 [0.14] revelation — [revelation] 薇拉帶領十位代表參觀第三期工程樣板樓，展示每戶售價100金幣、首付10金幣、20年分期，每月40銀幣。第一二期75棟樓、入住率98%、4萬6800人，年房
+      chars: [薇拉, 格雷戈里, 塞拉斯, 艾薇兒] | concepts: [房貸, 現金流, 魔導符文陣列] | importance: 7
+  E9 [0.11] revelation — [revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將她託付給鎮上人家，承
+      chars: [Critblade, Mayla, Kashier, Valerie] | concepts: [亞特蘭蒂斯, 海底國度, 被賣, 母親] | importance: 9
+  E10 [0.13] promise_or_oath — [promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴魔王領尋影翼，未果則
+      chars: [Critblade, Mayla, 莉莉安, 影翼] | concepts: [正式眷屬, 保護承諾] | importance: 8
+
+Plan retrieval. Return strict JSON only.
+agentic-retrieval.js:106 ───────────────────────────────────────────────
+agentic-retrieval.js:120 [VectHarePlus-Agentic] Planner LLM call failed after 5001ms, using pre-search only: The user aborted a request.
+retrieveEventsWithAgent @ agentic-retrieval.js:120
+await in retrieveEventsWithAgent
+runEventBaseRetrieval @ eventbase-workflow.js:459
+await in runEventBaseRetrieval
+rearrangeChat @ chat-vectorization.js:1824
+await in rearrangeChat
+vecthare_rearrangeChat @ index.js:220
+runGenerationInterceptors @ extensions.js:2028
+await in runGenerationInterceptors
+Generate @ script.js:4505
+await in Generate
+triggerRefresh @ PromptViewer.vue:268
+(anonymous) @ PromptViewer.vue:250
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+(anonymous) @ runtime-core.esm-bundler.js:8140
+(anonymous) @ runtime-core.esm-bundler.js:8102
+(anonymous) @ runtime-core.esm-bundler.js:6023
+(anonymous) @ runtime-core.esm-bundler.js:5989
+(anonymous) @ runtime-core.esm-bundler.js:5488
+(anonymous) @ runtime-core.esm-bundler.js:5739
+(anonymous) @ runtime-core.esm-bundler.js:5919
+(anonymous) @ runtime-core.esm-bundler.js:5462
+(anonymous) @ runtime-core.esm-bundler.js:5739
+(anonymous) @ runtime-core.esm-bundler.js:5655
+(anonymous) @ runtime-core.esm-bundler.js:5610
+(anonymous) @ runtime-core.esm-bundler.js:5476
+(anonymous) @ runtime-core.esm-bundler.js:5739
+(anonymous) @ runtime-core.esm-bundler.js:5655
+(anonymous) @ runtime-core.esm-bundler.js:5610
+(anonymous) @ runtime-core.esm-bundler.js:5476
+(anonymous) @ runtime-core.esm-bundler.js:5739
+(anonymous) @ runtime-core.esm-bundler.js:5655
+(anonymous) @ runtime-core.esm-bundler.js:5610
+(anonymous) @ runtime-core.esm-bundler.js:5476
+(anonymous) @ runtime-core.esm-bundler.js:5739
+(anonymous) @ runtime-core.esm-bundler.js:1000
+(anonymous) @ runtime-core.esm-bundler.js:1026
+process @ runtime-core.esm-bundler.js:1060
+(anonymous) @ runtime-core.esm-bundler.js:5500
+(anonymous) @ runtime-core.esm-bundler.js:6137
+run @ reactivity.esm-bundler.js:260
+(anonymous) @ runtime-core.esm-bundler.js:6265
+(anonymous) @ runtime-core.esm-bundler.js:6037
+(anonymous) @ runtime-core.esm-bundler.js:5989
+(anonymous) @ runtime-core.esm-bundler.js:5488
+(anonymous) @ runtime-core.esm-bundler.js:5861
+(anonymous) @ runtime-core.esm-bundler.js:5937
+(anonymous) @ runtime-core.esm-bundler.js:5462
+(anonymous) @ runtime-core.esm-bundler.js:6217
+run @ reactivity.esm-bundler.js:260
+runIfDirty @ reactivity.esm-bundler.js:298
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+flushJobs @ runtime-core.esm-bundler.js:408
+Promise.then
+queueFlush @ runtime-core.esm-bundler.js:322
+queueJob @ runtime-core.esm-bundler.js:317
+(anonymous) @ runtime-core.esm-bundler.js:6259
+trigger @ reactivity.esm-bundler.js:288
+endBatch @ reactivity.esm-bundler.js:346
+notify @ reactivity.esm-bundler.js:637
+trigger @ reactivity.esm-bundler.js:611
+value @ reactivity.esm-bundler.js:1550
+(anonymous) @ reactivity.esm-bundler.js:1580
+(anonymous) @ Toolbox.vue:36
+callWithErrorHandling @ runtime-core.esm-bundler.js:199
+callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
+(anonymous) @ runtime-dom.esm-bundler.js:745
+eventbase-workflow.js:471 [EventBase] Retrieval debug: {dualQuery: true, keywordScoringMethod: 'bm25', nativeHybridPrefer: true, fusionMethod: 'rrf', rawCount: 34, …}
+eventbase-workflow.js:515 [EventBase] Injected 10 event(s) (requested 10), text length: 6381
+eventbase-workflow.js:516 [EventBase] setExtensionPrompt tag="3_vecthare_eventbase" position=0 depth=2
+eventbase-workflow.js:519 [EventBase] Slot verification — key exists: true, value type: string, length: 6381
+eventbase-workflow.js:520 [EventBase] extension_prompts keys: (11) ['1_memory', '2_floating_prompt', 'QUIET_PROMPT', 'customDepthWI_0_0', 'customDepthWI_0_1', 'customDepthWI_0_2', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'DEPTH_PROMPT', '3_vecthare', '3_vecthare_eventbase']
+eventbase-workflow.js:521 [EventBase] Injection preview: <VectHareMemory>
+# Event 1
+event_type: relationship_change
+importance: 8
+summary: Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的Mayla宣告「現在你是見習眷屬」，邀請提問所有疑問，包括為何用20000金幣從天上人間贖身、拿到奴隸契約簽名後撕掉整個契約、20000金幣1秒內消失，並指在場眷屬皆可回答。
+DateTime: 1577-08-29T14:40:00.000Z
+cause: Mayla有許多疑問，SQ_71未完成。
+result: M
+chat-vectorization.js:1850 VectHare: Will query 1 collections: ['qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106']
+chat-vectorization.js:1869 VectHare: Extracted 8 keywords from query: (8) ['mayla', 'critblade', 'kashier', 'fern', 'engni', 'lia', 'valerie', 'master']
+collection-metadata.js:895 [VectHare Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: hasTriggers=false, hasConditions=false
+collection-metadata.js:932 [VectHare Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: ✗ NOT_ACTIVATED (no trigger match, no condition pass, not locked)
+collection-metadata.js:953 [VectHare Activation Filter] Summary: 1 collections → 0 active
+chat-vectorization.js:1896 ⚠️ VectHare: No collections passed activation conditions and World Info disabled - chunks cannot be injected!
+chat-vectorization.js:1897    💡 Check your collection activation conditions in VectHare settings
+script.js:4547 Core/all messages: 2116/2116
+world-info.js:623 [WI] Processing sticky entry ArtificRealm創世域.42 {hash: 5608283655957508, start: 2116, end: 2117, protected: false}
+world-info.js:627 [WI] Removing sticky entry ArtificRealm創世域.42 from timedWorldInfo: chat not advanced {hash: 5608283655957508, start: 2116, end: 2117, protected: false}
+world-info.js:722 [WI] Adding sticky entry ArtificRealm創世域.42: start=2116, end=2117, protected=false

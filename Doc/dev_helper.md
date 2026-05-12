@@ -493,7 +493,7 @@ agentic_retrieval_vllm_api_key           ''          // '' → inherit summarize
 agentic_retrieval_chat_depth             5           // slider 3-15
 agentic_retrieval_candidates_to_show     12          // slider 5-20
 agentic_retrieval_max_queries            4           // slider 1-4
-agentic_retrieval_timeout_ms             5000        // hard timeout for planner call
+agentic_retrieval_timeout_ms             30000       // hard timeout for planner call (matches summarize default)
 agentic_retrieval_debug_logging          false       // separate from eventbase_debug_logging
 ```
 
@@ -508,9 +508,9 @@ Per retrieval round emits, in order:
 2. `Pre-search returned <N> candidates (top score=<x.xx>)`
 3. `Past chat turns sent to planner: <depth>`
 4. `Narrative context preview` — one ~50-word snippet per turn (matches what the planner actually sees, and the count equals `agentic_retrieval_chat_depth`)
-5. Full system + user prompt dump between `─── SYSTEM ───` / `─── USER ───` separators
+5. `LLM prompt size: system+user approx <T> tokens (<a>+<b> chars)` — size only, not the prompt text (it's noisy and the static system prompt is already in `core/agentic-prompt.js`; the narrative-context preview at step 4 already shows the dynamic part)
 6. `LLM call complete: <ms>ms`
-7. `Planner output:` (pretty-printed JSON)
+7. `Planner output:` followed by the full JSON response from the LLM (queries, filters, rationale)
 8. `Qdrant fanout: <N> queries × <M> collections = <X> parallel calls`
 9. `Qdrant fanout complete: <ms>ms`
 10. `Per-query hits:` — one line per query with top score

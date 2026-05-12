@@ -176,7 +176,7 @@ Validated by `_validatePlannerOutput(json)` — rejects extra top-level keys, cl
 | Temperature | 0.2 (deterministic structured output) |
 | Max tokens | 400 |
 | Response format | `{ type: "json_object" }` when provider supports it (OpenRouter passes through to upstream) |
-| Timeout | `agentic_retrieval_timeout_ms`, default 5000 (hard limit — agentic must not block generation) |
+| Timeout | `agentic_retrieval_timeout_ms`, default 30000 (matches summarize default — some models need >5s on a 1500-token planner prompt) |
 
 **Inheritance rule:** at call time, each `agentic_retrieval_*` field is checked first; if it's an empty string / null / undefined, the corresponding `summarize_*` value is used. Implement once as `_resolveAgenticLLMConfig(settings)` in `core/agentic-retrieval.js` that returns a fully-resolved config object.
 
@@ -294,7 +294,7 @@ agentic_retrieval_vllm_api_key: '',                                // '' → inh
 agentic_retrieval_max_queries: 4,                                  // hard ceiling on planner output (slider 1-4)
 agentic_retrieval_candidates_to_show: 12,                          // pre-search slice given to planner (slider 5-20)
 agentic_retrieval_chat_depth: 5,                                   // # of past chat turns sent to planner (slider 3-15)
-agentic_retrieval_timeout_ms: 5000,
+agentic_retrieval_timeout_ms: 30000,
 agentic_retrieval_debug_logging: false,                            // separate from eventbase_debug_logging
 ```
 
@@ -338,7 +338,7 @@ A new top-level tab in [ui/ui-manager.js](../ui/ui-manager.js), peer of Core / E
 - **Past chat turns sent to planner** (slider 3–15, default 5)
 - **Candidates shown to planner from pre-search** (slider 5–20, default 12)
 - **Max planner queries** (slider 1–4, default 4)
-- **Timeout (ms)** (numeric, default 5000)
+- **Timeout (ms)** (numeric, default 30000)
 
 **Section: Debug**
 - **Enable agent-mode debug logging** (checkbox, default off)
@@ -354,7 +354,7 @@ A new top-level tab in [ui/ui-manager.js](../ui/ui-manager.js), peer of Core / E
 | Backend ≠ Qdrant | Skip stages 2-5, log once → pre-search only |
 | Planner returns invalid JSON | Catch in `callPlanner`, log warn → pre-search only |
 | Planner returns 0 queries | Skip stages 4-5 → pre-search only |
-| Planner exceeds 5s timeout | AbortController on the fetch → pre-search only |
+| Planner exceeds configured timeout (default 30s) | AbortSignal.timeout on the fetch → log "TIMED OUT after Xms" with the configured limit → pre-search only |
 | Batch embedding fails | Catch in stage 4 → pre-search only |
 | One of N Qdrant queries fails | Per-promise `.catch(err) → []`, other queries still merge |
 | All Qdrant queries fail | Stage 5 returns `agenticHits = []` → stage 6 re-ranks pre-search events normally |
@@ -379,14 +379,8 @@ Per retrieval round, emit these in order:
   ...
   [-2] <speaker>: <first ~50 words...>
   [-1] <speaker>: <first ~50 words...>
-[VectHarePlus-Agentic] LLM prompt (system + user, <T> tokens):
-─── SYSTEM ────────────────────────────────────
-<full system prompt>
-─── USER ──────────────────────────────────────
-<full user message including candidates>
-───────────────────────────────────────────────
-[VectHarePlus-Agentic] LLM call started (provider=<p>, model=<m>)
-[VectHarePlus-Agentic] LLM call complete: <ms>ms, output <T> tokens
+[VectHarePlus-Agentic] LLM prompt size: system+user approx <T> tokens (<a>+<b> chars)
+[VectHarePlus-Agentic] LLM call complete: <ms>ms
 [VectHarePlus-Agentic] Planner output:
 {
   "queries": [...],

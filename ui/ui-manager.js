@@ -1191,8 +1191,8 @@ export function renderSettings(containerId, settings, callbacks) {
 
                             <div class="vecthare-form-group">
                                 <label for="vecthare_agentic_timeout"><small>Planner LLM Timeout (ms)</small></label>
-                                <input type="number" id="vecthare_agentic_timeout" class="vecthare-input" min="1000" max="30000" step="500" />
-                                <small class="vecthare_hint">Hard timeout for the planner call. On timeout, agent mode falls back to pre-search only.</small>
+                                <input type="number" id="vecthare_agentic_timeout" class="vecthare-input" min="1000" max="60000" step="1000" />
+                                <small class="vecthare_hint">Hard timeout for the planner call. Default <b>30000 ms (30s)</b>. On timeout, agent mode falls back to pre-search only. Increase if your planner model is slow (large models / free-tier providers often take 10-20s on a 1500-token prompt).</small>
                             </div>
 
                             <!-- Debug -->
@@ -2452,10 +2452,10 @@ function bindSettingsEvents(settings, callbacks) {
     bindAgenticSlider('#vecthare_agentic_max_queries', '#vecthare_agentic_max_queries_val', 'agentic_retrieval_max_queries', 4);
 
     $('#vecthare_agentic_timeout')
-        .val(Number(settings.agentic_retrieval_timeout_ms ?? 5000))
+        .val(Number(settings.agentic_retrieval_timeout_ms ?? 30000))
         .on('change input', function() {
             const v = Number($(this).val());
-            settings.agentic_retrieval_timeout_ms = Math.max(1000, Math.min(30000, v || 5000));
+            settings.agentic_retrieval_timeout_ms = Math.max(1000, Math.min(60000, v || 30000));
             Object.assign(extension_settings.vecthareplus, settings);
             saveSettingsDebounced();
         });
