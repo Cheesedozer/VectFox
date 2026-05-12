@@ -242,16 +242,45 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
 
     scored.sort((a, b) => b._finalScore - a._finalScore);
 
-    // 5. Duplicate suppression (same event_type + character overlap >= 60%)
+    // 5. Duplicate suppression — same event_type + character overlap >= 60%
+    //    AND temporal proximity (source windows within DUPLICATE_WINDOW_GAP messages).
+    //
+    //    Why temporal proximity matters: without it, two completely distinct scenes
+    //    between the same characters (e.g. a relationship_change between Critblade
+    //    and Mayla in 1577-08-29 vs. another in 1577-09-23) get falsely flagged as
+    //    duplicates because they share event_type + characters. The temporal gate
+    //    only catches *real* ingestion artifacts where the same scene was extracted
+    //    by overlapping windows. Two events 50 days / 1000 messages apart are
+    //    obviously different scenes even with the same cast.
+    //
+    //    DUPLICATE_WINDOW_GAP is intentionally small (20 messages). Real ingestion
+    //    duplicates come from overlapping windows during extraction (window size
+    //    is typically 2-6 messages, so adjacent windows are within a few messages).
+    //    Anything beyond 20 messages is almost certainly a distinct narrative beat.
+    const DUPLICATE_WINDOW_GAP = 20;
     const dedupedEvents = [];
     for (const candidate of scored) {
         let isDuplicate = false;
         for (const accepted of dedupedEvents) {
-            if (
-                accepted.event_type === candidate.event_type &&
-                _characterOverlap(accepted.characters || [], candidate.characters || []) >= 0.6
-            ) {
+            if (accepted.event_type !== candidate.event_type) continue;
+            if (_characterOverlap(accepted.characters || [], candidate.characters || []) < 0.6) continue;
+
+            // Temporal proximity check: only suppress when source windows are close.
+            // When either event is missing source_window_end (unknown timing), we
+            // can't verify proximity — fall back to the old behavior (suppress) to
+            // stay safe against unannotated duplicates.
+            const aEnd = accepted.source_window_end;
+            const cEnd = candidate.source_window_end;
+            const haveTiming = typeof aEnd === 'number' && typeof cEnd === 'number';
+            const withinWindow = haveTiming
+                ? Math.abs(aEnd - cEnd) <= DUPLICATE_WINDOW_GAP
+                : true;  // unknown timing → treat as duplicate (legacy safety)
+
+            if (withinWindow) {
                 isDuplicate = true;
+                if (debugLog) {
+                    console.log(`[EventBase] Dedup: "${candidate.event_type}" suppressed (chars overlap, ${haveTiming ? `windows ${Math.abs(aEnd - cEnd)} msgs apart` : 'no timing info'})`);
+                }
                 break;
             }
         }
