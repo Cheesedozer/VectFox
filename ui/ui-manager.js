@@ -61,6 +61,7 @@ export function renderSettings(containerId, settings, callbacks) {
                             <button class="vecthare-tab-btn" data-tab="autosync">AutoSync</button>
                             <button class="vecthare-tab-btn" data-tab="worldinfo">WorldInfo</button>
                             <button class="vecthare-tab-btn" data-tab="rag">RAG</button>
+                            <button class="vecthare-tab-btn" data-tab="agentmode">AgentMode</button>
                         </div>
                     </div>
 
@@ -1103,6 +1104,114 @@ export function renderSettings(containerId, settings, callbacks) {
                                     <i class="fa-solid fa-list"></i>
                                     <span>Open Event Browser</span>
                                 </button>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- AgentMode Card -->
+                    <div class="vecthare-card" data-vecthare-tab="agentmode">
+                        <div class="vecthare-card-header">
+                            <h3 class="vecthare-card-title">
+                                <span class="vecthare-icon"><i class="fa-solid fa-robot"></i></span>
+                                AgentMode — Agentic Retrieval
+                            </h3>
+                            <p class="vecthare-card-subtitle">An optional LLM-planner step that runs between pre-search and re-rank. It reads recent chat context plus pre-search candidates, then fans out 1-4 follow-up queries in parallel against Qdrant. Purely additive — never replaces the normal flow.</p>
+                        </div>
+                        <div class="vecthare-card-body">
+
+                            <!-- Master toggle -->
+                            <div class="vecthare-form-group">
+                                <label class="checkbox_label" for="vecthare_agentic_retrieval_enabled">
+                                    <input id="vecthare_agentic_retrieval_enabled" type="checkbox" />
+                                    <span><b>Enable AgentMode</b></span>
+                                </label>
+                                <small class="vecthare_hint" style="display:block; margin-top:6px;">
+                                    Requires Qdrant backend (A3). Adds ~$0.0002 and ~300ms per turn. Always merged with normal search — never replaces it. Falls back gracefully on any failure.
+                                </small>
+                            </div>
+
+                            <!-- LLM Provider (inheritance from summarizer) -->
+                            <p class="vecthare-section-label" style="margin-top:16px;"><strong>LLM Provider</strong></p>
+                            <small class="vecthare_hint" style="display:block; margin-bottom:8px;">
+                                Leave any field blank to inherit from <b>Summarize Before Store</b> settings. Use a cheaper model here (e.g. <code>anthropic/claude-haiku-4-5</code>) to save cost.
+                            </small>
+
+                            <div class="vecthare-form-group">
+                                <label for="vecthare_agentic_provider"><small>Provider</small></label>
+                                <select id="vecthare_agentic_provider" class="vecthare-select">
+                                    <option value="">(Inherit from summarizer)</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                    <option value="vllm">vLLM</option>
+                                </select>
+                            </div>
+
+                            <div class="vecthare-form-group">
+                                <label for="vecthare_agentic_model"><small>Model</small></label>
+                                <input type="text" id="vecthare_agentic_model" class="vecthare-input"
+                                    placeholder="(empty → inherit summarizer model)" />
+                                <small class="vecthare_hint">e.g. <code>anthropic/claude-haiku-4-5</code> for OpenRouter.</small>
+                            </div>
+
+                            <div class="vecthare-form-group" id="vecthare_agentic_openrouter_row">
+                                <label for="vecthare_agentic_openrouter_apikey"><small>OpenRouter API Key</small></label>
+                                <input type="password" id="vecthare_agentic_openrouter_apikey" class="vecthare-input"
+                                    placeholder="(empty → inherit summarize key)" autocomplete="off" />
+                            </div>
+
+                            <div class="vecthare-form-group" id="vecthare_agentic_vllm_row" style="display:none;">
+                                <label for="vecthare_agentic_vllm_url"><small>vLLM Base URL</small></label>
+                                <input type="text" id="vecthare_agentic_vllm_url" class="vecthare-input"
+                                    placeholder="(empty → inherit summarize URL)" />
+                                <label for="vecthare_agentic_vllm_apikey" style="margin-top:8px;"><small>vLLM API Key</small></label>
+                                <input type="password" id="vecthare_agentic_vllm_apikey" class="vecthare-input"
+                                    placeholder="(empty → inherit summarize key)" autocomplete="off" />
+                            </div>
+
+                            <!-- Retrieval Tuning -->
+                            <p class="vecthare-section-label" style="margin-top:16px;"><strong>Retrieval Tuning</strong></p>
+
+                            <div class="vecthare-form-group">
+                                <label class="vecthare-label">Past chat turns sent to planner: <span id="vecthare_agentic_chat_depth_val">5</span></label>
+                                <input type="range" id="vecthare_agentic_chat_depth" min="3" max="15" step="1" class="vecthare-range" />
+                                <small class="vecthare_hint">How many recent non-system chat turns are included as narrative context for the planner.</small>
+                            </div>
+
+                            <div class="vecthare-form-group">
+                                <label class="vecthare-label">Candidates shown to planner: <span id="vecthare_agentic_candidates_val">12</span></label>
+                                <input type="range" id="vecthare_agentic_candidates" min="5" max="20" step="1" class="vecthare-range" />
+                                <small class="vecthare_hint">How many top pre-search events the planner sees when deciding what extra queries to run.</small>
+                            </div>
+
+                            <div class="vecthare-form-group">
+                                <label class="vecthare-label">Max planner queries: <span id="vecthare_agentic_max_queries_val">4</span></label>
+                                <input type="range" id="vecthare_agentic_max_queries" min="1" max="4" step="1" class="vecthare-range" />
+                                <small class="vecthare_hint">Hard ceiling on how many follow-up queries the planner can emit. Each query is one Qdrant call per live collection.</small>
+                            </div>
+
+                            <div class="vecthare-form-group">
+                                <label for="vecthare_agentic_timeout"><small>Planner LLM Timeout (ms)</small></label>
+                                <input type="number" id="vecthare_agentic_timeout" class="vecthare-input" min="1000" max="30000" step="500" />
+                                <small class="vecthare_hint">Hard timeout for the planner call. On timeout, agent mode falls back to pre-search only.</small>
+                            </div>
+
+                            <!-- Debug -->
+                            <p class="vecthare-section-label" style="margin-top:16px;"><strong>Debug</strong></p>
+                            <div class="vecthare-form-group">
+                                <label class="checkbox_label" for="vecthare_agentic_debug">
+                                    <input id="vecthare_agentic_debug" type="checkbox" />
+                                    <span>Enable agent-mode debug logging</span>
+                                </label>
+                                <small class="vecthare_hint" style="display:block; margin-top:6px;">
+                                    Logs: mode marker, narrative context preview (~50 words per turn), full LLM prompt, LLM round-trip ms, Qdrant fanout ms, total agent overhead ms, per-query hit counts.
+                                </small>
+                            </div>
+
+                            <!-- Phase 1 note -->
+                            <div style="margin-top:16px; padding:10px 12px; border-left:3px solid var(--grey50); background:rgba(0,0,0,0.05); border-radius:4px;">
+                                <small style="opacity:0.85;">
+                                    <b>Phase 1 note:</b> the planner may emit payload filter hints in its output, but they are not yet applied to queries. Each planner query runs as a standard Qdrant hybrid search. Filter routing through Similharity is on the Phase 1.5 roadmap.
+                                </small>
                             </div>
 
                         </div>
@@ -2231,6 +2340,133 @@ function bindSettingsEvents(settings, callbacks) {
             updateSummarizeORKeyDisplay();
         }
     });
+
+    // ─── AgentMode (Agentic Retrieval) ─────────────────────────────────────
+    // Toggle provider-specific rows in the AgentMode tab. Treats empty provider
+    // as "inherit from summarizer" — both row blocks hide in that case so the
+    // user is reminded inheritance is in effect.
+    const updateAgenticUI = (provider) => {
+        const resolved = String(provider || '').trim();
+        $('#vecthare_agentic_openrouter_row').toggle(resolved === 'openrouter');
+        $('#vecthare_agentic_vllm_row').toggle(resolved === 'vllm');
+    };
+
+    $('#vecthare_agentic_retrieval_enabled')
+        .prop('checked', !!settings.agentic_retrieval_enabled)
+        .on('change', function() {
+            settings.agentic_retrieval_enabled = $(this).prop('checked');
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#vecthare_agentic_provider')
+        .val(settings.agentic_retrieval_provider || '')
+        .on('change', function() {
+            settings.agentic_retrieval_provider = String($(this).val());
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+            updateAgenticUI(settings.agentic_retrieval_provider);
+        });
+    updateAgenticUI(settings.agentic_retrieval_provider || '');
+
+    $('#vecthare_agentic_model')
+        .val(settings.agentic_retrieval_model || '')
+        .on('input change', function() {
+            settings.agentic_retrieval_model = String($(this).val()).trim();
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+
+    // AgentMode OpenRouter API key — same masked-paste pattern as summarize key
+    const updateAgenticORKeyDisplay = () => {
+        const savedKey = settings.agentic_retrieval_openrouter_api_key;
+        if (savedKey) {
+            const masked = savedKey.length > 4
+                ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
+                : '*'.repeat(savedKey.length);
+            $('#vecthare_agentic_openrouter_apikey').attr('placeholder', `Key saved: ${masked}`);
+        } else {
+            $('#vecthare_agentic_openrouter_apikey').attr('placeholder', '(empty → inherit summarize key)');
+        }
+    };
+    updateAgenticORKeyDisplay();
+    $('#vecthare_agentic_openrouter_apikey').on('change', function() {
+        const value = String($(this).val()).trim();
+        if (value) {
+            settings.agentic_retrieval_openrouter_api_key = value;
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+            toastr.success('AgentMode OpenRouter key saved');
+            $(this).val('');
+            updateAgenticORKeyDisplay();
+        }
+    });
+
+    $('#vecthare_agentic_vllm_url')
+        .val(settings.agentic_retrieval_vllm_url || '')
+        .on('change', function() {
+            settings.agentic_retrieval_vllm_url = String($(this).val()).trim();
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+
+    const updateAgenticVllmKeyDisplay = () => {
+        const savedKey = settings.agentic_retrieval_vllm_api_key;
+        if (savedKey) {
+            const masked = savedKey.length > 4
+                ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
+                : '*'.repeat(savedKey.length);
+            $('#vecthare_agentic_vllm_apikey').attr('placeholder', `Key saved: ${masked}`);
+        } else {
+            $('#vecthare_agentic_vllm_apikey').attr('placeholder', '(empty → inherit summarize key)');
+        }
+    };
+    updateAgenticVllmKeyDisplay();
+    $('#vecthare_agentic_vllm_apikey').on('change', function() {
+        const value = String($(this).val()).trim();
+        if (value) {
+            settings.agentic_retrieval_vllm_api_key = value;
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+            toastr.success('AgentMode vLLM key saved');
+            $(this).val('');
+            updateAgenticVllmKeyDisplay();
+        }
+    });
+
+    // Sliders — chat depth, candidates, max queries
+    const bindAgenticSlider = (inputId, valSpanId, settingKey, defaultVal) => {
+        const startVal = Number(settings[settingKey] ?? defaultVal);
+        $(inputId).val(startVal);
+        $(valSpanId).text(startVal);
+        $(inputId).on('input', function() {
+            const v = Number($(this).val());
+            settings[settingKey] = v;
+            $(valSpanId).text(v);
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+    };
+    bindAgenticSlider('#vecthare_agentic_chat_depth', '#vecthare_agentic_chat_depth_val', 'agentic_retrieval_chat_depth', 5);
+    bindAgenticSlider('#vecthare_agentic_candidates', '#vecthare_agentic_candidates_val', 'agentic_retrieval_candidates_to_show', 12);
+    bindAgenticSlider('#vecthare_agentic_max_queries', '#vecthare_agentic_max_queries_val', 'agentic_retrieval_max_queries', 4);
+
+    $('#vecthare_agentic_timeout')
+        .val(Number(settings.agentic_retrieval_timeout_ms ?? 5000))
+        .on('change input', function() {
+            const v = Number($(this).val());
+            settings.agentic_retrieval_timeout_ms = Math.max(1000, Math.min(30000, v || 5000));
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#vecthare_agentic_debug')
+        .prop('checked', !!settings.agentic_retrieval_debug_logging)
+        .on('change', function() {
+            settings.agentic_retrieval_debug_logging = $(this).prop('checked');
+            Object.assign(extension_settings.vecthareplus, settings);
+            saveSettingsDebounced();
+        });
 
     // Chunk size (for adaptive strategy)
     $('#vecthare_chunk_size')

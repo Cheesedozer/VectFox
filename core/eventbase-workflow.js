@@ -22,6 +22,7 @@ import { extractEvents } from './eventbase-extractor.js';
 import { insertEvents, isWindowAlreadyExtracted, markWindowExtracted, clearWindowCacheForChat, buildEventBaseCollectionId, isLastWindowExtracted } from './eventbase-store.js';
 import { getSavedHashes } from './core-vector-api.js';
 import { retrieveEvents } from './eventbase-retrieval.js';
+import { retrieveEventsWithAgent } from './agentic-retrieval.js';
 import { formatEventsForInjectionDetailed } from './eventbase-injection.js';
 import { isCollectionEnabled, isCollectionLockedToChat } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
@@ -449,7 +450,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     // cannot be compared to the current chat length — skip the context-dedup step entirely.
     const isCrossChat = lockedLiveCollections.some(c => !c.collectionId.includes(uuid));
 
-    const { events, debug } = await retrieveEvents({
+    // When `agentic_retrieval_enabled` is true and backend is Qdrant, route through
+    // retrieveEventsWithAgent — it runs the pre-search itself, calls the planner,
+    // fans out parallel queries, and re-feeds everything through retrieveEvents'
+    // canonical re-ranker. Otherwise it returns the pre-search output unchanged,
+    // making it a safe drop-in replacement.
+    const retrieveFn = settings.agentic_retrieval_enabled ? retrieveEventsWithAgent : retrieveEvents;
+    const { events, debug } = await retrieveFn({
         searchText,
         keywordQuery,
         chatLength: getContext().chat?.length || chat?.length || 0,

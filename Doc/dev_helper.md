@@ -443,3 +443,116 @@ Activation Triggers and Advanced Conditions (Collection Settings → Activation 
 ### If CJK keyword matching is needed
 
 Add CJK terms to `EMOTION_KEYWORDS` in `core/conditional-activation.js`, or extend `matchesEmotionPatterns()` to use `\p{L}` Unicode word boundaries (requires the `u` flag on the regex). Neither is implemented as of 2026-05-11.
+
+---
+
+## 10) AgentMode — Agentic Retrieval
+
+Optional LLM-planner step that runs between EventBase pre-search and re-rank. Sees the pre-search candidates plus recent chat context, then fans out 1-4 follow-up queries in parallel against Qdrant. **Purely additive — never replaces the existing flow.** A3 (Qdrant) only.
+
+Plan document: [plans/agentic-retrieval-plan.md](../plans/agentic-retrieval-plan.md).
+
+### Files
+
+| File | Role |
+|---|---|
+| [core/agentic-prompt.js](../core/agentic-prompt.js) | System prompt + 2 few-shot examples (1 English, 1 CJK `贖身` case). Also builds the user-message portion (recent chat + current message + candidate summaries). |
+| [core/agentic-retrieval.js](../core/agentic-retrieval.js) | Public `retrieveEventsWithAgent(params)`. Runs pre-search, calls planner LLM, fans out queries, merges, re-feeds through canonical re-ranker. Includes `_resolveAgenticLLMConfig()` for inheritance from summarize_* fields. |
+| [core/eventbase-workflow.js](../core/eventbase-workflow.js) | Switches between `retrieveEvents` and `retrieveEventsWithAgent` based on `settings.agentic_retrieval_enabled`. |
+| [ui/ui-manager.js](../ui/ui-manager.js) | "AgentMode" tab (peer of Core/EventBase/etc.) with provider/model inheritance, sliders, debug toggle. |
+
+### Flow
+
+```
+retrieveEventsWithAgent(params)
+ ├─ STAGE 1 — retrieveEvents(params)              (existing pre-search, unchanged)
+ ├─ STAGE 2 — early-exit if disabled or non-Qdrant → return pre-search
+ ├─ STAGE 3 — _callPlanner({system, user, llmCfg, timeoutMs})
+ │    LLM input: recent N turns + current user message + top-K candidate summaries
+ │    LLM output: { queries: string[], filters?: {...}, rationale: string }
+ ├─ STAGE 4 — Promise.all of queryCollection per (collection × planner-query)
+ └─ STAGE 5 — retrieveEvents({skipLiveQuery: true, additionalCandidates: [...]})
+              re-runs 4-weight rerank / dedup / context-dedup / top-K trim
+```
+
+### Phase 1 limitations (intentional)
+
+- **Planner-emitted filters are NOT applied** to queries yet. The planner may emit `characters_any`, `concepts_any`, `importance_gte` etc. in its JSON output, but the agentic-retrieval module ignores those fields and runs unfiltered hybrid search. Phase 1.5 will extend Similharity's [`_buildHybridFilter`](../../similharity/qdrant-backend.js) to translate the `*_any` shape into Qdrant `should` clauses.
+- **OpenRouter only** for the planner LLM in practice. vLLM code path exists in `_resolveAgenticLLMConfig` but is untested in Phase 1.
+- **Anchor boost is disabled** in [core/eventbase-retrieval.js:222](../core/eventbase-retrieval.js#L222) to give AgentMode an unbiased baseline during benchmarking. Re-enable / drop / make-configurable decision deferred until benchmarks land — see plan §9 Phase 2.
+
+### Settings (all in `index.js` defaults)
+
+```js
+agentic_retrieval_enabled                false       // master toggle
+agentic_retrieval_provider               ''          // '' → inherit summarize_provider
+agentic_retrieval_model                  ''          // '' → inherit summarize_model
+agentic_retrieval_openrouter_api_key     ''          // '' → inherit summarize_openrouter_api_key
+agentic_retrieval_vllm_url               ''          // '' → inherit summarize_vllm_url
+agentic_retrieval_vllm_api_key           ''          // '' → inherit summarize_vllm_api_key
+agentic_retrieval_chat_depth             5           // slider 3-15
+agentic_retrieval_candidates_to_show     12          // slider 5-20
+agentic_retrieval_max_queries            4           // slider 1-4
+agentic_retrieval_timeout_ms             5000        // hard timeout for planner call
+agentic_retrieval_debug_logging          false       // separate from eventbase_debug_logging
+```
+
+Inheritance is centralized in `_resolveAgenticLLMConfig(settings)` — read it once, no scattered `||` checks elsewhere.
+
+### Debug log shape (when `agentic_retrieval_debug_logging` is true)
+
+All lines prefixed `[VectHarePlus-Agentic]` so they're greppable and distinct from `[EventBase]` / `[Qdrant]`.
+
+Per retrieval round emits, in order:
+1. `mode=ON trigger=user_message_len=<N>`
+2. `Pre-search returned <N> candidates (top score=<x.xx>)`
+3. `Past chat turns sent to planner: <depth>`
+4. `Narrative context preview` — one ~50-word snippet per turn (matches what the planner actually sees, and the count equals `agentic_retrieval_chat_depth`)
+5. Full system + user prompt dump between `─── SYSTEM ───` / `─── USER ───` separators
+6. `LLM call complete: <ms>ms`
+7. `Planner output:` (pretty-printed JSON)
+8. `Qdrant fanout: <N> queries × <M> collections = <X> parallel calls`
+9. `Qdrant fanout complete: <ms>ms`
+10. `Per-query hits:` — one line per query with top score
+11. `Agentic-only hits (not already in pre-search): <N>`
+12. `Final merged candidates: <pre> + <agentic> = <total> → <final> after rerank/dedup/trim`
+13. `Total wall-clock for agent overhead: <ms>ms (LLM=<ms>ms, fanout=<ms>ms)`
+
+Timing buckets:
+- LLM call ms (measured around `_callPlanner`)
+- Qdrant fanout ms (measured around the `Promise.all` of `queryCollection` calls)
+- Total agent overhead ms (measured from agent-stage entry through stage 5 return)
+- Embedding batch ms — implicit inside each `queryCollection` call; not separately timed in Phase 1
+
+### Failure modes — all fall back to pre-search
+
+| Failure | Outcome |
+|---|---|
+| `agentic_retrieval_enabled = false` | Skip stages 2-5; identical to today |
+| `vector_backend !== 'qdrant'` | Skip; log `mode=SKIPPED reason=requires_qdrant_backend` |
+| Missing model or API key | Skip; log `mode=SKIPPED reason=missing_model` / `missing_openrouter_api_key` |
+| Planner LLM throws / times out / returns invalid JSON | Log warn; return pre-search only |
+| Planner returns 0 valid queries (after `_validateAndTrimQueries`) | Log; return pre-search only |
+| One of N Qdrant queries fails | Per-promise `.catch(err) → []`; other queries still merge |
+| All Qdrant queries fail | `agenticHits = []`; pre-search events still feed stage 5 re-rank |
+| `liveCollectionIds` empty | Skip stages 4-5; return pre-search |
+
+**Invariant:** AgentMode MUST NEVER produce a worse result than today's flow. The drop-in shape of `retrieveEventsWithAgent` is designed so that on any failure the return value is exactly what `retrieveEvents` would have returned.
+
+### Debug return shape
+
+When AgentMode runs successfully, the returned `debug` object gains:
+
+```js
+{
+  agenticMode: true,
+  agenticQueries: string[],     // validated planner queries that actually ran
+  agenticRationale: string,     // planner's one-sentence rationale (for diagnostics)
+  agenticLLMMs: number,
+  agenticFanoutMs: number,
+  agenticTotalMs: number,
+  agenticHitCount: number,      // events the agentic stage contributed before merge/rerank
+}
+```
+
+Use these fields in future benchmark / diagnostic tooling.

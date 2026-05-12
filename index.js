@@ -182,6 +182,23 @@ const defaultSettings = {
     eventbase_rerank_w_importance: 0.20,
     eventbase_rerank_w_persist: 0.15,
     eventbase_rerank_w_recency: 0.10,
+
+    // ─── AgentMode (Agentic Retrieval) ──────────────────────────────────
+    // Optional LLM planner step that consumes pre-search candidates plus
+    // recent chat context and emits 1-4 follow-up queries which fan out in
+    // parallel against Qdrant. Purely additive — never replaces the existing
+    // flow. A3 (Qdrant) only. See plans/agentic-retrieval-plan.md.
+    agentic_retrieval_enabled: false,                  // Master toggle (default OFF)
+    agentic_retrieval_provider: '',                    // '' → inherit summarize_provider
+    agentic_retrieval_model: '',                       // '' → inherit summarize_model
+    agentic_retrieval_openrouter_api_key: '',          // '' → inherit summarize_openrouter_api_key
+    agentic_retrieval_vllm_url: '',                    // '' → inherit summarize_vllm_url
+    agentic_retrieval_vllm_api_key: '',                // '' → inherit summarize_vllm_api_key
+    agentic_retrieval_chat_depth: 5,                   // # of past chat turns sent to planner (slider 3-15)
+    agentic_retrieval_candidates_to_show: 12,          // Pre-search slice shown to planner (slider 5-20)
+    agentic_retrieval_max_queries: 4,                  // Hard ceiling on planner output (slider 1-4)
+    agentic_retrieval_timeout_ms: 5000,                // Planner LLM call timeout
+    agentic_retrieval_debug_logging: false,            // Separate debug toggle from eventbase_debug_logging
 };
 
 // Runtime settings (merged with saved settings)
