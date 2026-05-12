@@ -1,38 +1,41 @@
-
 [Qdrant-debug] hybridQueryNative: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?""
+[Qdrant-debug] Query text: "Mayla 與Critblade的金錢交易"
 [Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 8 tokens, top-5 by weight: [155974701:1.000, 868034723:1.000, 2822298187:1.000, 3741420880:1.000, 3774705617:1.000]
+[Qdrant-debug] Sparse: 4 tokens, top-5 by weight: [155974701:1.000, 1057975302:1.000, 1162363898:1.000, 2871517408:1.000]
 [Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.8333, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
-[Qdrant-debug] [2] score=0.5000, hash=10947450, text="[item_acquired] 卡希雅利用高魅力、商人背景與專業知識，將幻影絲綢禮服從120金幣砍價至100金幣，並以未來生意威脅與誘惑說服老闆成交。Critb"
-[Qdrant-debug] [3] score=0.4583, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [4] score=0.2700, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [5] score=0.2500, hash=34754885, text="[dialogue_significant] Critblade對Kashier提出藍聯商會未來主要收入來源：借錢給平民買廉價公寓，每戶100金幣，10金首付，"
-[Qdrant-debug] [6] score=0.2345, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [7] score=0.2222, hash=22502052, text="[location_change] Critblade拒付午餐帳單，稱先前20000金幣足夠，拖住Mayla離開天上人間。這是Mayla真正離開牢籠，結束街頭拉"
-[Qdrant-debug] [8] score=0.2067, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [9] score=0.2000, hash=42370674, text="[side_quest_update] Master下令索林繼續建造第2期住宅，30棟不夠即蓋50棟，打造最堅固的大型監獄。同時向卡希雅重述房地產金融方案：10"
-[Qdrant-debug] [10] score=0.1845, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
+[Qdrant-debug] [1] score=0.5313, hash=22502052, text="[location_change] Critblade拒付午餐帳單，稱先前20000金幣足夠，拖住Mayla離開天上人間。這是Mayla真正離開牢籠，結束街頭拉"
+[Qdrant-debug] [2] score=0.5286, hash=90670612, text="[promise_or_oath] Critblade不論薇拉故事真假，宣告她無需戴面具，以真實性格思想面對人際，就算闖禍他都會頂下，這是主人責任，讓她安心做真"
+[Qdrant-debug] [3] score=0.4762, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
+[Qdrant-debug] [4] score=0.3929, hash=23937047, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
+[Qdrant-debug] [5] score=0.3690, hash=19848356, text="[revelation] 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla "
+[Qdrant-debug] [6] score=0.2870, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
+[Qdrant-debug] [7] score=0.2667, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
+[Qdrant-debug] [8] score=0.2500, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
+[Qdrant-debug] [9] score=0.2000, hash=14062515, text="[relationship_change] 薇拉在理解Critblade的眷屬規則後，主動以頂級口技侍奉，視為成為正式眷屬的轉正申請與試煉，用行動證明自身價值與"
+[Qdrant-debug] [10] score=0.1961, hash=31214503, text="[dialogue_significant] Critblade 向 Valerie 詢問曾離開魔王領一段時間後返回的魅魔，懷疑其為 Mayla 的生父。Val"
+[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
+[Qdrant-debug] [1] score=0.5385, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
+[Qdrant-debug] [2] score=0.5000, hash=58908944, text="[side_quest_update] 主角扶起奈克絲，歡迎加入『壞孩子聯盟』，解釋來黑鐵鎮真為交易而非踩場，讓奈克絲帶路見公會老頑固。指示菲倫負責交涉，確保穩"
+[Qdrant-debug] [3] score=0.3810, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
+[Qdrant-debug] [4] score=0.3636, hash=23937047, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
+[Qdrant-debug] [5] score=0.3111, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
+[Qdrant-debug] [6] score=0.2778, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
+[Qdrant-debug] [7] score=0.2500, hash=32641761, text="[dialogue_significant] Critblade低聲指示Kashier確保柯拉莉亞地位穩定下推Mayla為下一任女皇，利用交易把戲。Kashie"
+[Qdrant-debug] [8] score=0.2167, hash=28125157, text="[dialogue_significant] Critblade指示英妮給莉婭一個healing，並命令縮在一旁的Mayla與莉婭在屋外平地一對一對決。Mayl"
+[Qdrant-debug] [9] score=0.2000, hash=19848356, text="[revelation] 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla "
+[Qdrant-debug] [10] score=0.1863, hash=88826628, text="[character_state_change] 薇拉崩潰後，Critblade叫Mayla召老闆進來，支付20000金幣贖身薇拉，宣告她現在是他的。Mayla"
 [Qdrant-debug] hybridQueryNative: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "我對 Mayla 説 "你記得我當時為甚麼為你付2萬金幣嗎?"
-
-好，來仔細思考一下這次的劇情！
-
-- 回顧當前情況
-  * 時間：20:15，晚上
-  * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia）
-  * 人物關係：Mayla剛剛崩"
+[Qdrant-debug] Query text: "Mayla 為何付2萬金幣"
 [Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 751 tokens, top-5 by weight: [155974701:24.000, 1057975302:17.000, 2766195286:10.000, 796727698:9.000, 894223461:8.000]
+[Qdrant-debug] Sparse: 4 tokens, top-5 by weight: [155974701:1.000, 1566594727:1.000, 1895739630:1.000, 3863477842:1.000]
 [Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.8333, hash=14478502, text="[character_state_change] Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦"
-[Qdrant-debug] [2] score=0.5625, hash=20228385, text="[relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公"
-[Qdrant-debug] [3] score=0.4500, hash=39473333, text="[promise_or_oath] Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾"
-[Qdrant-debug] [4] score=0.3611, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [5] score=0.3522, hash=23163450, text="[promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改"
-[Qdrant-debug] [6] score=0.2526, hash=12379189, text="[character_state_change] Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北"
-[Qdrant-debug] [7] score=0.2167, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [8] score=0.2024, hash=20567150, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] [9] score=0.1494, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [10] score=0.1434, hash=28125157, text="[dialogue_significant] Critblade指示英妮給莉婭一個healing，並命令縮在一旁的Mayla與莉婭在屋外平地一對一對決。Mayl"
+[Qdrant-debug] [1] score=0.5417, hash=62345237, text="[promise_or_oath] 卡希雅在高潮餘韻中囈語承諾會騙回三十萬金幣，全部騙回來換取主人每天用大雞巴肏得她爽死，並希望不拔出來就這樣插著。 TIME:"
+[Qdrant-debug] [2] score=0.5200, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
+[Qdrant-debug] [3] score=0.3690, hash=10982237, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
+[Qdrant-debug] [4] score=0.3509, hash=22502052, text="[location_change] Critblade拒付午餐帳單，稱先前20000金幣足夠，拖住Mayla離開天上人間。這是Mayla真正離開牢籠，結束街頭拉"
+[Qdrant-debug] [5] score=0.2623, hash=88826628, text="[character_state_change] 薇拉崩潰後，Critblade叫Mayla召老闆進來，支付20000金幣贖身薇拉，宣告她現在是他的。Mayla"
+[Qdrant-debug] [6] score=0.2500, hash=21878857, text="[item_lost] Critblade掏出沉甸甸的錢袋扔在桌上，支付兩萬金幣贖身薇拉，金幣滾出反射光芒，足以買下半個天上人間。 TIME: 1577-08-"
+[Qdrant-debug] [7] score=0.2500, hash=69709384, text="[side_quest_update] 卡希雅指出大型基建需龐大資金，Critblade指示發行『藍色城邦定居債券』集資30萬金幣，全數交由卡希雅管理用於『中央"
+[Qdrant-debug] [8] score=0.2000, hash=40887112, text="[promise_or_oath] Critblade回報布洛克交付武器的人情，承諾讓卡希雅準備資金支持地下魔導列車項目，並確認三萬矮人即將搬遷至bluewat"
+[Qdrant-debug] [9] score=0.2000, hash=10001106, text="[revelation] Critblade在系統面板中查看Mayla資料，好感度100%正式眷屬後解鎖秘密：她的真實身份是深海之國亞特蘭蒂斯的遺失公主，她本人"
+[Qdrant-debug] [10] score=0.1667, hash=34059090, text="[side_quest_update] Critblade指示卡希雅發行『藍色城邦定居債券』集資三十萬金幣，用於建設『中央魔導數據庫』和Project: Und"

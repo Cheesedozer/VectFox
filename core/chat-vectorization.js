@@ -1891,10 +1891,18 @@ export async function rearrangeChat(chat, settings, type) {
             console.log(`VectHare: Skipped ${preEmptyFilter - activeCollections.length} empty collection(s) from retrieval`);
         }
 
-        // Allow WI-only mode even if no regular collections pass filters
+        // Allow WI-only mode even if no regular collections pass filters.
+        // Note: ChunkBase (lorebook/docs/URLs/wiki) is entirely optional —
+        // users who rely only on EventBase for chat memory will always have
+        // zero active ChunkBase collections, which is the intended setup,
+        // not an error. The earlier alarming "⚠️ chunks cannot be injected!"
+        // log was removed because it implied lorebook setup was required.
+        // EventBase injection happens on its own path (eventbase-workflow.js)
+        // and is unaffected by this branch.
         if (activeCollections.length === 0 && !canQueryWI) {
-            console.log('⚠️ VectHare: No collections passed activation conditions and World Info disabled - chunks cannot be injected!');
-            console.log('   💡 Check your collection activation conditions in VectHare settings');
+            if (settings.eventbase_debug_logging) {
+                console.log('[VectHare ChunkBase] No active Standard/ChunkBase collections and World Info disabled — skipping non-chat chunk injection (this is normal if you only use EventBase).');
+            }
             return;
         }
         if (activeCollections.length > 0) {

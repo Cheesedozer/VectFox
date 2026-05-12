@@ -135,7 +135,18 @@ export async function retrieveEventsWithAgent(params) {
     const tLlmMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tLlmStart));
 
     if (agenticDebug) {
-        console.log(`[VectHarePlus-Agentic] LLM call complete: ${tLlmMs}ms`);
+        // Surface real token usage from the API response (when the provider
+        // returns it — OpenRouter/OpenAI-compatible APIs do). The chars/4
+        // estimate above is a rough guess; this is the truth from the provider.
+        const usage = plan && plan.__usage;
+        if (usage && usage.prompt_tokens != null) {
+            const tokPerSec = usage.completion_tokens != null && tLlmMs > 0
+                ? (usage.completion_tokens / (tLlmMs / 1000)).toFixed(1)
+                : '—';
+            console.log(`[VectHarePlus-Agentic] LLM call complete: ${tLlmMs}ms — prompt=${usage.prompt_tokens} tok, completion=${usage.completion_tokens ?? '?'} tok, total=${usage.total_tokens ?? '?'} tok (${tokPerSec} tok/s output)`);
+        } else {
+            console.log(`[VectHarePlus-Agentic] LLM call complete: ${tLlmMs}ms (provider did not return usage data)`);
+        }
         console.log('[VectHarePlus-Agentic] Planner output:');
         console.log(JSON.stringify(plan, null, 2));
     }
@@ -328,13 +339,28 @@ async function _callPlanner({ systemPrompt, userMessage, llmCfg, timeoutMs }) {
         throw new Error('LLM returned empty content');
     }
 
+    // Capture real token usage from the API response (OpenAI/OpenRouter-compatible
+    // schema). Lets the debug log distinguish "long prompt, fast model" from
+    // "short prompt, slow model" — important when diagnosing latency.
+    const usage = data?.usage ? {
+        prompt_tokens: data.usage.prompt_tokens ?? null,
+        completion_tokens: data.usage.completion_tokens ?? null,
+        total_tokens: data.usage.total_tokens ?? null,
+    } : null;
+
     // Some providers wrap in markdown fences despite response_format=json_object.
     const cleaned = String(content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    let parsed;
     try {
-        return JSON.parse(cleaned);
+        parsed = JSON.parse(cleaned);
     } catch (err) {
         throw new Error(`Planner output is not valid JSON: ${err.message}. Got: ${cleaned.slice(0, 200)}`);
     }
+
+    // Attach usage as a non-enumerable property so callers can read it without
+    // polluting the planner JSON contract (queries / filters / rationale).
+    Object.defineProperty(parsed, '__usage', { value: usage, enumerable: false });
+    return parsed;
 }
 
 // ============================================================================
