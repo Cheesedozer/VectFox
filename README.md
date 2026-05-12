@@ -2,7 +2,9 @@
 
 > *Perfect memory for your roleplay conversations.* VectHarePlus brings LLM-extracted chat events, native sparse-vector hybrid search, and smart memory decay to SillyTavern.
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Status](https://img.shields.io/badge/status-Active-brightgreen)
+![License](https://img.shields.io/badge/license-GPLv3-blue) ![Status](https://img.shields.io/badge/status-Active-brightgreen)
+
+**Languages:** **English** | [繁體中文](README_ZH.md) | [日本語](README_JP.md) | [한국어](README_KR.md)
 
 ---
 
@@ -10,13 +12,13 @@
 
 Branched from the original VectHare project, VectHarePlus is an **advanced Retrieval-Augmented Generation (RAG) system** for SillyTavern, now featuring newly added, optimized support for English, Japanese, Korean, Traditional Chinese, and Simplified Chinese.
 
-I branched the original VectHare to handle the massive scale of my personal MVU Game Maker projects, which feature:
+I branched the original VectHare to handle the massive scale of my personal [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker) projects, which feature:
 - **Extreme scale: 2,000+ replies per story, with 1,000+ words per reply. Summary retrieval returns in less than 3 seconds**
 - Non-English language support (Japanese, Korean, Traditional/Simplified Chinese). It supports English by default.
-- Strip out all functional tag from MVU Game Maker.
+- Strip out all functional tag from [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker).
 - Super long term memory that actually works (2000+ messages)
 
-Ordinary SillyTavern memory extensions completely buckle under this load, especially when there are a lot of functional tags reside inside the story used by MVU Game Maker, which is useless for memory lookup. So, I need something that is able to clean up all these functional tags while maintain high speed vectorization on extreme scale.
+Ordinary SillyTavern memory extensions completely buckle under this load, especially when there are a lot of functional tags reside inside the story used by [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker), which is useless for memory lookup. So, I need something that is able to clean up all these functional tags while maintain high speed vectorization on extreme scale.
 
 Most memory extensions are designed for chats with 100 messages or fewer, and they work perfectly well at that scale. But as the chat grows past that, they're forced to summarize older messages more and more aggressively. You end up with full detail on recent history and a heavily compressed blur for everything older — and there's no real way around it, because you simply can't fit 100+ messages worth of raw context into the prompt or auto-created lorebook entries. Old memory *has* to be compressed, which means detail is lost.
 
@@ -26,8 +28,8 @@ To tackle this, VectHarePlus uses a dedicated vector database that stores **ever
 
 ### The Problem It Solves
 
-- 😩 Strip out all functional tags used by MVU Game Maker before memory storage.
-- 🧠 Adding story based memory on top of character based memory in MVU Game Maker.
+- 😩 Strip out all functional tags used by [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker) before memory storage.
+- 🧠 Adding story based memory on top of character based memory in [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker).
 - 💸 Long conversations choke your token budget with irrelevant history
 - ✍️ You manually edit context to remind characters of key events
 
@@ -99,7 +101,7 @@ Most existing memory extensions use one of two approaches. Both lose detail as t
 
 **The core insight:** rolling summaries lose detail because they *throw away* old content to make room. Raw chunking loses detail because *retrieval breaks* at scale. EventBase keeps every meaningful event around forever — and lets vector + keyword search decide which 5–10 of them are worth showing the AI right now. Detail isn't compressed; **irrelevance is filtered**.
 
-> 💡 **The way you phrase your message has a big impact on what gets retrieved.** Because retrieval is driven by the text of your reply, the words you use matter. For example, *"Mayla, Do you remember why I paid the ransom?"* and *"Mayla, Do you remember why I paid 2,000 bucks?"* will return very different events — "ransom" pulls in every event tied to that storyline (the kidnapping, the negotiation, the drop-off), while "2,000 bucks" mostly matches events that literally mention the number 2,000. If you want the AI to recall a specific scene, anchor your message with the **story-meaningful words** from that scene rather than incidental details like exact numbers.  Having said that, I did the testing and A3 Path still manage to find the ransom event in 1500+ events in the DB on both replies while A1 and A2 Path failed on the 2nd input.  The first reply with correct anchor wording defintely get better quality of retrieval result for A3 Path though.
+> 💡 **The way you phrase your message has a big impact on what gets retrieved.** Because retrieval is driven by the text of your reply, the words you use matter. For example, *"Mayla, Do you remember why I paid the ransom?"* and *"Mayla, Do you remember why I paid 2,000 bucks?"* will return very different events — "ransom" pulls in every event tied to that storyline (the kidnapping, the negotiation, the drop-off), while "2,000 bucks" mostly matches events that literally mention the number 2,000. If you want the AI to recall a specific scene, anchor your message with the **story-meaningful words** from that scene rather than incidental details like exact numbers.  Having said that, I did the testing and A3 Path still manage to find the ransom event in 1500+ events in the DB on both replies while A1 and A2 Path (See Path explaination below) failed on the 2nd input.  The first reply with correct anchor wording defintely get better quality of retrieval result for A3 Path though.
 
 ---
 
@@ -126,7 +128,7 @@ Same as A1, but adds:
 
 **Tradeoff:** Better fusion on browser with a faster computer, but still limited to the vector top-K 100 candidate pool. (It's still top 100 sample)
 
-### A3 — Qdrant native sparse + server-side RRF (best)
+### A3 — Qdrant native sparse + server-side RRF (best accuracy)
 Both searches run **inside Qdrant vector database in a single API call**. Each stored point has two vectors: a dense one (meaning) and a sparse one (keyword frequencies). Qdrant computes BM25 weights across the **full corpus** (true IDF, not biased), then fuses with native RRF. The keyword side isn't capped at the dense search's top results — if an event contains your query words, it's eligible, even if its meaning vector wasn't a close match. And the BM25 word-importance weights are calculated using statistics from **every event** in the database (not just a top-100 sample), so rare words get scored correctly.
 
 **Example:** Searching "I cast Fireball at the dragon." Qdrant searches its dense index (for spell/attack meanings) and sparse index (for the literal words "Fireball" and "dragon") at the same time, fuses server-side, returns one ranked list.
@@ -283,13 +285,14 @@ That's it! VectHarePlus will be downloaded and enabled automatically.
 ### Step 3: (Needed for Qdrant backends ONLY) Install Similharity Plugin
 
 ```bash
+Open Command prompt on Windows or Terminal on Linux/Mac or Get into Console if you are on docker
 cd SillyTavern/plugins
 git clone -b Similharity-Plugin https://github.com/KritBlade/VectHarePlus.git similharity
 cd similharity
 npm install
 ```
 
-Add to `config.yaml`:
+Search the following key in `config.yaml` and change to true:  (Windows will be at SillyTavern\config.yaml while linux/Mac should be at SillyTavern\config\config.yaml)
 ```yaml
 enableServerPlugins: true
 ```
@@ -303,6 +306,8 @@ Restart SillyTavern.
 VectHarePlus has `auto_update: true` in its manifest. If you installed via `git clone`, SillyTavern will automatically check for and apply updates!
 
 Look for the update notification in the Extensions panel, or manually check with the "Check for Updates" button.
+
+Setting enableServerPlugin to true is required for Qdrant backend.
 
 ---
 
@@ -354,7 +359,7 @@ Scene support was removed (it was a chunk-based-chat-era feature, and chat now r
 
 **VectHarePlus** is branched from VectHare, originally created by **Coneja Chibi**. Thanks to the SillyTavern community for feedback and testing.
 
-MIT License — see LICENSE.
+GPLv3 License — see LICENSE.
 
 ---
 
