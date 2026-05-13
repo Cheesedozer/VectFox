@@ -39,9 +39,11 @@ const CJK_TOKENIZER_MODES = Object.freeze({
 
 const DEFAULT_CJK_TOKENIZER_MODE = CJK_TOKENIZER_MODES.intl;
 const JIEBA_WASM_MODULE_URL = 'https://cdn.jsdelivr.net/gh/cxumol/jieba-wasm-html@gh-pages/jieba_rs_wasm.js';
-const JIEBA_TW_WASM_MODULE_URL = 'https://cdn.jsdelivr.net/npm/jieba-wasm@2.4.0/pkg/web/jieba_rs_wasm.js';
-const JIEBA_TW_WASM_BINARY_URL = 'https://cdn.jsdelivr.net/npm/jieba-wasm@2.4.0/pkg/web/jieba_rs_wasm_bg.wasm';
-const JIEBA_TW_DICT_URL = 'https://cdn.jsdelivr.net/gh/ldkrsi/jieba-zh_TW@master/jieba/dict.txt';
+// TW assets served locally from node_modules/jieba-wasm (no CDN dependency at runtime).
+const _JIEBA_TW_BASE = new URL('../node_modules/jieba-wasm/pkg/web/', import.meta.url).href;
+const JIEBA_TW_WASM_MODULE_URL = _JIEBA_TW_BASE + 'jieba_rs_wasm.js';
+const JIEBA_TW_WASM_BINARY_URL = _JIEBA_TW_BASE + 'jieba_rs_wasm_bg.wasm';
+const JIEBA_TW_DICT_URL = _JIEBA_TW_BASE + 'dict.txt';
 
 let cjkTokenizerMode = DEFAULT_CJK_TOKENIZER_MODE;
 let jiebaCutFunction = null;
