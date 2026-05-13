@@ -162,7 +162,11 @@ async function _runOneLiveQuery({
                 if (compareMode) {
                     const tJsStart = performance.now();
                     try {
-                        const jsRes = await queryCollection(colId, queryText, topK, ebSettings);
+                        const JS_COMPARE_TIMEOUT_MS = 15_000;
+                        const timeoutPromise = new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error(`JS compare timed out after ${JS_COMPARE_TIMEOUT_MS}ms`)), JS_COMPARE_TIMEOUT_MS)
+                        );
+                        const jsRes = await Promise.race([queryCollection(colId, queryText, topK, ebSettings), timeoutPromise]);
                         const jsMs = (performance.now() - tJsStart).toFixed(1);
                         const jsCandidates = (jsRes.hashes || []).map((h, i) => {
                             const m = jsRes.metadata?.[i] || {};

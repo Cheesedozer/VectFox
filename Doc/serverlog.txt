@@ -1,21 +1,4 @@
 
-Instantiated the tokenizer for gemma
-[Qdrant-debug] hybridQueryNativeWithRerank: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, prefetchLimit=80, hybridLimit=40
-[Qdrant-debug] weights: cosine=0.550 importance=0.200 persist=0.150 recency=0.100 rrfScoreScale=1
-[Qdrant-debug] recency: origin=2116, halfLife=423.20000000000005; filter: minImportance=1, visibleThreshold=-1
-[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?""
-[Qdrant-debug] Dense: dim=4096; Sparse: 9 tokens, top-5 by weight: [155974701:1.000, 868034723:1.000, 2822298187:1.000, 1335592929:1.000, 3741420880:1.000]
-[Qdrant] Native hybrid + rerank returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] formulaScore=0.7916, imp=8, persist=true, swe=1227, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
-[Qdrant-debug] [2] formulaScore=0.6898, imp=7, persist=true, swe=1841, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
-[Qdrant-debug] [3] formulaScore=0.6234, imp=8, persist=true, swe=1861, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [4] formulaScore=0.5625, imp=7, persist=true, swe=1821, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
-[Qdrant-debug] [5] formulaScore=0.5386, imp=7, persist=true, swe=1897, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [6] formulaScore=0.5096, imp=7, persist=true, swe=1829, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
-[Qdrant-debug] [7] formulaScore=0.4964, imp=9, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [8] formulaScore=0.4863, imp=8, persist=true, swe=1903, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [9] formulaScore=0.4860, imp=9, persist=true, swe=1837, text="[revelation] 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla "
-[Qdrant-debug] [10] formulaScore=0.4792, imp=9, persist=true, swe=1823, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
 [Qdrant-debug] hybridQueryNativeWithRerank: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, prefetchLimit=80, hybridLimit=40
 [Qdrant-debug] weights: cosine=0.550 importance=0.200 persist=0.150 recency=0.100 rrfScoreScale=1
 [Qdrant-debug] recency: origin=2116, halfLife=423.20000000000005; filter: minImportance=1, visibleThreshold=-1
@@ -29,18 +12,49 @@ Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的
 我沒有立刻安撫她。
 
 只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的"
-[Qdrant-debug] Dense: dim=4096; Sparse: 550 tokens, top-5 by weight: [155974701:9.000, 2581063290:7.000, 1235396903:7.000, 3398287155:6.000, 2618142234:6.000]
+[Qdrant-debug] Dense: dim=4096; Sparse: 525 tokens, top-5 by weight: [155974701:9.000, 1235396903:7.000, 3398287155:6.000, 2618142234:6.000, 1346767097:6.000]
 [Qdrant] Native hybrid + rerank returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
 [Qdrant-debug] [1] formulaScore=0.9795, imp=9, persist=true, swe=2113, text="[promise_or_oath] Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾"
 [Qdrant-debug] [2] formulaScore=0.7762, imp=8, persist=true, swe=2113, text="[character_state_change] Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦"
 [Qdrant-debug] [3] formulaScore=0.5759, imp=7, persist=true, swe=1897, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
 [Qdrant-debug] [4] formulaScore=0.5427, imp=8, persist=true, swe=1865, text="[relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公"
 [Qdrant-debug] [5] formulaScore=0.5128, imp=8, persist=true, swe=1827, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] [6] formulaScore=0.5068, imp=9, persist=true, swe=2081, text="[revelation] 老闆描述港口出現深紫長髮火辣小麥色皮膚魅魔，到處尋找18年前失蹤強大魅魔影翼，常在港口酒館徘徊，甚至去瀛洲群島扎赫拉巴德打聽。Mayl"
-[Qdrant-debug] [7] formulaScore=0.4995, imp=8, persist=true, swe=1857, text="[promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴"
-[Qdrant-debug] [8] formulaScore=0.4911, imp=9, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [9] formulaScore=0.4835, imp=8, persist=true, swe=1859, text="[character_state_change] Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北"
-[Qdrant-debug] [10] formulaScore=0.4788, imp=8, persist=true, swe=2079, text="[revelation] 混血市集三族早點攤老闆透露最近港口來了一個奇怪的魅魔，到處找失蹤很多年的親人。Mayla聽聞後青色眼眸瞬間睜大，內心懷疑與生父影翼有關"
+[Qdrant-debug] [6] formulaScore=0.5114, imp=8, persist=true, swe=2111, text="[revelation] 薇拉向Critblade崩潰吐露內心，透露在新希望港有魅魔四處尋找失蹤十八年的影翼，此人與她父親同名同失蹤時間。她恐懼Critblad"
+[Qdrant-debug] [7] formulaScore=0.5068, imp=9, persist=true, swe=2081, text="[revelation] 老闆描述港口出現深紫長髮火辣小麥色皮膚魅魔，到處尋找18年前失蹤強大魅魔影翼，常在港口酒館徘徊，甚至去瀛洲群島扎赫拉巴德打聽。Mayl"
+[Qdrant-debug] [8] formulaScore=0.5038, imp=8, persist=true, swe=1857, text="[promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴"
+[Qdrant-debug] [9] formulaScore=0.4925, imp=8, persist=true, swe=2079, text="[revelation] 混血市集三族早點攤老闆透露最近港口來了一個奇怪的魅魔，到處找失蹤很多年的親人。Mayla聽聞後青色眼眸瞬間睜大，內心懷疑與生父影翼有關"
+[Qdrant-debug] [10] formulaScore=0.4852, imp=9, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
+[Qdrant-debug] hybridQueryNativeWithRerank: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, prefetchLimit=80, hybridLimit=40
+[Qdrant-debug] weights: cosine=0.550 importance=0.200 persist=0.150 recency=0.100 rrfScoreScale=1
+[Qdrant-debug] recency: origin=2116, halfLife=423.20000000000005; filter: minImportance=1, visibleThreshold=-1
+[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?""
+[Qdrant-debug] Dense: dim=4096; Sparse: 6 tokens, top-5 by weight: [155974701:1.000, 2822298187:1.000, 1335592929:1.000, 3741420880:1.000, 3997698794:1.000]
+[Qdrant] Native hybrid + rerank returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
+[Qdrant-debug] [1] formulaScore=0.7916, imp=8, persist=true, swe=1227, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
+[Qdrant-debug] [2] formulaScore=0.6898, imp=7, persist=true, swe=1841, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
+[Qdrant-debug] [3] formulaScore=0.6234, imp=8, persist=true, swe=1861, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
+[Qdrant-debug] [4] formulaScore=0.5640, imp=7, persist=true, swe=1821, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
+[Qdrant-debug] [5] formulaScore=0.5281, imp=9, persist=true, swe=1823, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
+[Qdrant-debug] [6] formulaScore=0.5203, imp=7, persist=true, swe=1897, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
+[Qdrant-debug] [7] formulaScore=0.5096, imp=7, persist=true, swe=1829, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
+[Qdrant-debug] [8] formulaScore=0.4948, imp=9, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
+[Qdrant-debug] [9] formulaScore=0.4847, imp=8, persist=true, swe=1903, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
+[Qdrant-debug] [10] formulaScore=0.4783, imp=9, persist=true, swe=1837, text="[revelation] 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla "
+[Qdrant-debug] hybridQueryNative: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
+[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?""
+[Qdrant-debug] Dense: dim=4096
+[Qdrant-debug] Sparse: 6 tokens, top-5 by weight: [155974701:1.000, 2822298187:1.000, 1335592929:1.000, 3741420880:1.000, 3997698794:1.000]
+[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
+[Qdrant-debug] [1] score=0.8333, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
+[Qdrant-debug] [2] score=0.6111, hash=10982237, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
+[Qdrant-debug] [3] score=0.4500, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
+[Qdrant-debug] [4] score=0.3860, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
+[Qdrant-debug] [5] score=0.2917, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
+[Qdrant-debug] [6] score=0.2857, hash=40351995, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
+[Qdrant-debug] [7] score=0.2476, hash=23937047, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
+[Qdrant-debug] [8] score=0.2198, hash=88826628, text="[character_state_change] 薇拉崩潰後，Critblade叫Mayla召老闆進來，支付20000金幣贖身薇拉，宣告她現在是他的。Mayla"
+[Qdrant-debug] [9] score=0.1894, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
+[Qdrant-debug] [10] score=0.1818, hash=20567150, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
 [Qdrant-debug] hybridQueryNative: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
 [Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?"
 
@@ -53,192 +67,15 @@ Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的
 
 只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的"
 [Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 550 tokens, top-5 by weight: [155974701:9.000, 2581063290:7.000, 1235396903:7.000, 3398287155:6.000, 2618142234:6.000]
+[Qdrant-debug] Sparse: 525 tokens, top-5 by weight: [155974701:9.000, 1235396903:7.000, 3398287155:6.000, 2618142234:6.000, 1346767097:6.000]
 [Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
 [Qdrant-debug] [1] score=1.0000, hash=39473333, text="[promise_or_oath] Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾"
 [Qdrant-debug] [2] score=0.6667, hash=14478502, text="[character_state_change] Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦"
 [Qdrant-debug] [3] score=0.3929, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
 [Qdrant-debug] [4] score=0.3026, hash=20228385, text="[relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公"
 [Qdrant-debug] [5] score=0.2556, hash=20567150, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] [6] score=0.2256, hash=46176928, text="[promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴"
-[Qdrant-debug] [7] score=0.1961, hash=12379189, text="[character_state_change] Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北"
-[Qdrant-debug] [8] score=0.1732, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [9] score=0.1667, hash=23163450, text="[promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改"
-[Qdrant-debug] [10] score=0.1497, hash=39032314, text="[revelation] 老闆描述港口出現深紫長髮火辣小麥色皮膚魅魔，到處尋找18年前失蹤強大魅魔影翼，常在港口酒館徘徊，甚至去瀛洲群島扎赫拉巴德打聽。Mayl"
-[Qdrant-debug] hybridQueryNative: collection=vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?""
-[Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 9 tokens, top-5 by weight: [155974701:1.000, 868034723:1.000, 2822298187:1.000, 1335592929:1.000, 3741420880:1.000]
-[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vecthare_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.8333, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
-[Qdrant-debug] [2] score=0.6111, hash=10982237, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
-[Qdrant-debug] [3] score=0.4500, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [4] score=0.3833, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
-[Qdrant-debug] [5] score=0.3250, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [6] score=0.2857, hash=40351995, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
-[Qdrant-debug] [7] score=0.2436, hash=88826628, text="[character_state_change] 薇拉崩潰後，Critblade叫Mayla召老闆進來，支付20000金幣贖身薇拉，宣告她現在是他的。Mayla"
-[Qdrant-debug] [8] score=0.1923, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [9] score=0.1829, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [10] score=0.1742, hash=20567150, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-
-<VectHareMemory>
-# Event 1
-event_type: relationship_change
-importance: 8
-summary: Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的Mayla宣告「現在你是見習眷屬」，邀請提問所有疑問，包括為何用20000金幣從天上人間贖身、拿到奴隸契約簽名後撕掉整個契約、20000金幣1秒內消失，並指在場眷屬皆可回答。
-DateTime: 1577-08-29T14:40:00.000Z
-cause: Mayla有許多疑問，SQ_71未完成。
-result: Mayla正式成為見習眷屬，開放疑問解答。
-characters: Critblade, Mayla
-locations: 巢穴
-factions: 眷屬
-items: 奴隸契約
-concepts: 見習眷屬, 贖身
-keywords: Mayla, 見習眷屬, 贖身, 20000金幣, 天上人間, 奴隸契約, 撕掉, 契約簽名, 金幣消失, 疑問, 眷屬, SQ_71, 灰燼市場的相遇, 對話
-open_threads: Mayla的問題, SQ_71完成
-should_persist: true
-
-# Event 2
-event_type: promise_or_oath
-importance: 9
-summary: Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾人喊話徵求同意。Kashier承諾動用藍聯商會情報網絡，Fern提供貴族圈八卦，Lia誓言找到活的或死的，Engni奉獻神術追蹤審問，Valerie建議抓人審問，索拉雅以星象魔法回應，所有眷屬紛紛表態支持，形成團隊共識。
-DateTime: -
-cause: Mayla崩潰大哭擔心父親影翼消失如Critblade可能離開。
-result: 尋找影翼成為團隊共同任務，每人貢獻專長，強化團隊凝聚。
-characters: Critblade, Mayla, Kashier, Fern, Lia, Engni, Valerie, 索拉雅, 影翼
-locations: 新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房
-factions: 藍聯商會
-items: -
-concepts: 團隊承諾, 生要見人死要見屍
-keywords: 影翼, 父親, 承諾, 生要見人死要見屍, 團隊支持, 情報網絡, 星象魔法, 神術, 審問, 藍聯商會, 眷屬, 領導宣言, 團隊承諾
-open_threads: 找到影翼的下落, 利用藍聯資源編織情報網
-should_persist: true
-
-# Event 3
-event_type: revelation
-importance: 7
-summary: 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷屬，透露過去在枷鎖城被不破勇希兩萬金幣贖身救出，視其為生命之光。莉莉安從恐懼絕望轉為震驚感激，理解女兒安全。
-DateTime: 1577-09-24T18:30:00.000Z
-cause: 莉莉安誤以為女兒被奴役而乞求釋放。
-result: 莉莉安認知改變，感激不破勇希救女並找母，重塑對Mayla關係理解。
-characters: 不破勇希, 莉莉安, Mayla
-locations: 亞特蘭蒂斯, 囚室
-factions: 亞特蘭蒂斯
-items: 心靈印記
-concepts: 心靈印記, 靈魂契約, 眷屬, 贖身
-keywords: 不破勇希, 莉莉安, Mayla, 心靈印記, 靈魂契約, 眷屬, 自願, 枷鎖城, 贖身, 兩萬金幣, 生命之光, 震驚, 感激
-open_threads: -
-should_persist: true
-
-# Event 4
-event_type: revelation
-importance: 8
-summary: Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋棄如影翼拋棄母親，自我貶低為廢物。Critblade傾聽握手安慰。
-DateTime: 1577-09-25T10:45:00.000Z
-cause: Critblade敲門關心Mayla情緒。
-result: Mayla情緒崩潰安靜哭泣，開始轉向接受自我價值。
-characters: Critblade, Mayla, 莉莉安, 影翼, 柯拉莉亞
-locations: 藍色大宅, Mayla的房間, 藍色瞭望村
-factions: 亞特蘭蒂斯
-items: -
-concepts: 娼妓過去, 公主身份, 自我價值, 恐懼拋棄
-keywords: Mayla, 公主, 娼妓, 枷鎖城, 潮音鎮, 贖身, 影翼, 拋棄, 羞恥, 廢物, 玷污, 血統, 恐懼, 配不上, 自我擁抱, 娼妓過去, 公主身份, 自我價值, 恐懼拋棄
-open_threads: Mayla恐懼是否完全化解
-should_persist: true
-
-# Event 5
-event_type: character_state_change
-importance: 8
-summary: Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦醒，擦乾眼淚站起身，面對眾人道歉並展現影之軍師本色，承諾整理完整行動計劃，包括在新希望港接觸魅魔套取線索及利用藍聯資源。
-DateTime: -
-cause: Critblade的安撫與嚴厲教導，喚醒Mayla智力262的軍師潛力。
-result: Mayla重拾冷靜智慧，轉為主動領導任務，眾人如Kashier認可她甦醒。
-characters: Critblade, Mayla, Kashier, 魅魔
-locations: 新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房, 新希望港
-factions: 藍聯商會
-items: -
-concepts: 領導力, 影之軍師, 行動計劃
-keywords: Mayla甦醒, 領導能力, 影之軍師, 智力262, 行動計劃, 接觸魅魔, 情報網, 愁眉苦臉, 擦乾眼淚, 道歉, 策略, 領導力
-open_threads: 制定完整行動計劃, 從魅魔口中套出影翼線索
-should_persist: true
-
-# Event 6
-event_type: revelation
-importance: 7
-summary: Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領行程準備物品，如藥水、法袍、靴子，但內心極度不安。最終轉身坦露對見生父影翼的恐懼：擔心新大陸太大找不到他、找到後不認她、覺得她因枷鎖城妓院過去而骯髒、嫌棄身高僅152公分且母親都不記得。她的青色眼眸直視Critblade，眼眶泛紅但克制不哭，展現新任亞特蘭蒂斯公主身份與過去掙扎的脆弱轉折。
-DateTime: 1577-09-26T19:30:00.000Z
-cause: 即將前往魔王領尋找影翼，Mayla不適應公主身份並回想過去。
-result: Mayla向Critblade吐露心聲，情緒從壓抑轉為坦白，加深彼此連結。
-characters: Critblade, Mayla, 影翼, 莉莉安, 柯拉莉亞
-locations: 藍色大宅, Mayla房間
-factions: -
-items: 勾魂
-concepts: 亞特蘭蒂斯公主, 生父, 妓院過去, 身份掙扎
-keywords: Mayla, 影翼, 生父, 恐懼, 認同, 骯髒, 妓院, 枷鎖城, 公主身份, 勾魂, 藍色寶石, 魔王領, 行李準備, 情感吐露, 眼眶泛紅, 新大陸, 亞特蘭蒂斯公主, 妓院過去, 身份掙扎
-open_threads: 影翼是否認Mayla, 如何面對生父, 魔王領行程影響
-should_persist: true
-
-# Event 7
-event_type: relationship_change
-importance: 7
-summary: Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手拉她下車，安慰「妳不是一個人」「妳是我的眷屬，沒人能傷害妳」。Mayla從恐懼轉為堅定，決心面對過去。
-DateTime: 1577-09-23T13:35:00.000Z
-cause: 潮音鎮為Mayla出生地及被賣之地，首次成年後返回。
-result: Mayla擦淚，緊握Critblade之手走向鎮中心，心理面具崩解後重塑。
-characters: Critblade, Mayla
-locations: 潮音鎮
-factions: -
-items: 勾魂
-concepts: 眷屬, 面對過去, 恐懼, 堅定
-keywords: Mayla, 恐懼, 被賣, 妓女, 握手, 安慰, 眷屬, 淚水, 顫抖, 決心, 面對過去, 童年回憶, 心理掙扎, 堅定
-open_threads: Mayla過去細節
-should_persist: true
-
-# Event 8
-event_type: relationship_change
-importance: 8
-summary: Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公主/女皇（Issy、Kashier、Floris、Mayla、Lia、Fern、Engni），強調眷屬價值來自為其他眷屬貢獻而得到認可，而非僅為Master服務，眷屬是壞孩子聯盟團隊。Lia從恐懼困惑轉為理解釋然，內化團隊價值觀，立刻制定幫助每個眷屬的具體計劃（如為Mina建情報網、為Kashier清競爭對手等），決心證明自身價值。Lia主動輕吻Critblade並詢問晚上可否去其房間，隨後離開執行計劃，心態永久轉變，不再綁定單一服務對象。
-DateTime: 1577-09-25T10:55:00.000Z
-cause: Lia害怕因Mayla地位提升而被Master拋棄。
-result: Lia病嬌邏輯重塑為團隊導向，開始行動貢獻眷屬，好色度90%→92%，恐懼消除。
-characters: Critblade, Lia, Issy, Kashier, Floris, Mayla, Fern, Engni, Mina
-locations: Lia房間, 走廊, 藍色大宅
-factions: 眷屬, 壞孩子聯盟
-items: 羊皮紙
-concepts: 團隊價值, 公主女皇, 壞孩子聯盟
-keywords: 深吻, 大笑, 拋棄恐懼, 公主女皇, 7個, Issy, Kashier, Floris, Mayla, Fern, Engni, 團隊價值, 認可, 情報網, 清理對手, 叛亂貴族, 狩獵怪物, 黑料, 陪發瘋, 輕吻, 晚上房間, 計劃執行, 壞孩子聯盟
-open_threads: Lia晚上來Critblade房間, Lia為各眷屬執行幫助計劃, 三天後出發魔王領
-should_persist: true
-
-# Event 9
-event_type: revelation
-importance: 9
-summary: 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla 手中勾魂並確認 Critblade 為從枷鎖城救出 Mayla 之人。她揚起冰冷笑容，表示將開始審問，因眾人不能說謊。Mayla 震驚顫抖失語。
-DateTime: 1577-09-24T07:45:00.000Z
-cause: 通過真言誓約後進入內殿謁見。
-result: 揭露柯拉莉亞與 Mayla 家族關係，開啟審問劇情，重塑 Mayla 身世認知。
-characters: 柯拉莉亞, Mayla, Critblade, 莉莉安
-locations: 亞特蘭蒂斯內殿, 祭壇
-factions: 亞特蘭蒂斯
-items: 勾魂
-concepts: 小姨, 海神女巫, 莉莉安女兒
-keywords: 柯拉莉亞, 海神女巫, 小姨, 莉莉安, Mayla, 歡迎回家, 審問, 不能說謊, 枷鎖城, 冰冷笑容, 銀白長髮, 亞特蘭蒂斯最高精神領袖, 家族關係, 莉莉安女兒
-open_threads: 柯拉莉亞囚禁莉莉安原因, 即將審問內容與後果
-should_persist: true
-
-# Event 10
-event_type: character_state_change
-importance: 8
-summary: Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北方蠻族前公主、埃拉西亞女皇伊絲、魔王領魔王公主惠娜里、妖精之森女皇科蘭斯、精靈之森女皇莉婭、亞人聯合酋長國總督之女菲倫齊名，使家中出現七位不同種族公主。眾眷屬反應各異：Engni溫柔關懷、Kashier優雅商業、Issy傲嬌吐槽、米娜系統更新、Fern裝可愛計、Nyx粗暴質疑、Lia沉默觀察、Floris溫柔審視。Mayla全程沉默疲憊，最終請求獨處返回房間。此宣布確立Mayla新地位，影響家族動態。
-DateTime: 1577-09-25T10:00:00.000Z
-cause: 從亞特蘭蒂斯皇殿返回後，Mayla獲公主身份確認。
-result: Mayla身份標籤更新為亞特蘭蒂斯公主，全家知曉並產生不同反應，家中公主數增至七。
-characters: Critblade, Mayla, Kashier, Valerie, 米娜, Engni, Issy, Fern, Nyx, Lia, Floris
-locations: 藍色瞭望村, 藍色大宅, 客廳, 亞特蘭蒂斯皇殿
-factions: 亞特蘭蒂斯皇室
-items: 暗星
-concepts: 公主身份, 眷屬, 不同種族
-keywords: 亞特蘭蒂斯公主, Mayla, 宣布, 七個公主, 不同種族, 眷屬反應, Engni, Kashier, Issy, 米娜, Fern, Nyx, Lia, Floris, 沉默, 獨處, 身份更新, 藍色大宅, 暗星, 車程沉默, 公主身份, 眷屬
-open_threads: Mayla情緒沉澱, 公主身份整合
-should_persist: true
-</VectHareMemory>
+[Qdrant-debug] [6] score=0.2333, hash=46176928, text="[promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴"
+[Qdrant-debug] [7] score=0.1859, hash=13624918, text="[revelation] 薇拉向Critblade崩潰吐露內心，透露在新希望港有魅魔四處尋找失蹤十八年的影翼，此人與她父親同名同失蹤時間。她恐懼Critblad"
+[Qdrant-debug] [8] score=0.1667, hash=23163450, text="[promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改"
+[Qdrant-debug] [9] score=0.1625, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
+[Qdrant-debug] [10] score=0.1595, hash=22015413, text="[revelation] 混血市集三族早點攤老闆透露最近港口來了一個奇怪的魅魔，到處找失蹤很多年的親人。Mayla聽聞後青色眼眸瞬間睜大，內心懷疑與生父影翼有關"
