@@ -239,19 +239,6 @@ function createModal() {
                                         <span>20 msgs</span>
                                     </div>
                                 </div>
-                                <!-- Group request size - only shown for message_group_batch strategy -->
-                                <div class="vecthare-cv-slider-row" id="vecthare_cv_group_batch_size_row" style="display:none;">
-                                    <label>
-                                        Messages per AI Request
-                                        <span class="vecthare-cv-value" id="vecthare_cv_group_batch_size_val">10</span>
-                                    </label>
-                                    <input type="range" id="vecthare_cv_group_batch_size"
-                                           min="6" max="30" step="1" value="10">
-                                    <div class="vecthare-cv-slider-hints">
-                                        <span>6 msgs</span>
-                                        <span>30 msgs</span>
-                                    </div>
-                                </div>
                             </div>
 
                             <!-- Parallel Windows - EventBase/chat only -->
@@ -810,13 +797,9 @@ function updateChunkingSection(type) {
     $('#vecthare_cv_overlap_val').text(chunkOverlap === 0 ? 'Off' : chunkOverlap);
 
     const batchSize = currentSettings.batchSize || defaults.batchSize || 4;
-    const groupBatchSize = Math.min(30, Math.max(6, Number(currentSettings.groupBatchSize || defaults.groupBatchSize || 10)));
-    currentSettings.groupBatchSize = groupBatchSize;
 
     $('#vecthare_cv_batch_size').val(batchSize);
     $('#vecthare_cv_batch_size_val').text(batchSize);
-    $('#vecthare_cv_group_batch_size').val(groupBatchSize);
-    $('#vecthare_cv_group_batch_size_val').text(groupBatchSize);
 
     // Chat history now follows EventBase extraction settings from the dedicated GUI,
     // so keep the legacy strategy selector populated for internal compatibility but
@@ -846,18 +829,16 @@ function updateSizeControlsVisibility() {
     const needsSize = strategy?.needsSize ?? false;
     const needsOverlap = strategy?.needsOverlap ?? false;
 
-    const needsMessageBatchControl = strategyId === 'message_batch' || strategyId === 'message_group_batch';
-    const needsGroupBatchControl = strategyId === 'message_group_batch';
+    const needsMessageBatchControl = strategyId === 'message_batch';
 
     // Show/hide size controls based on strategy requirements
     const hasAnyControls = needsSize || needsOverlap;
-    $('#vecthare_cv_size_controls').toggle(hasAnyControls || needsMessageBatchControl || needsGroupBatchControl);
+    $('#vecthare_cv_size_controls').toggle(hasAnyControls || needsMessageBatchControl);
 
     // Show/hide individual controls
     $('#vecthare_cv_chunk_size_row').toggle(needsSize);
     $('#vecthare_cv_overlap_row').toggle(needsOverlap);
     $('#vecthare_cv_batch_size_row').toggle(needsMessageBatchControl);
-    $('#vecthare_cv_group_batch_size_row').toggle(needsGroupBatchControl);
 
     // Update description when strategy changes
     $('#vecthare_cv_strategy_desc').text(strategy?.description || '');
@@ -1297,14 +1278,6 @@ function bindEvents() {
         const val = parseInt($(this).val());
         $('#vecthare_cv_batch_size_val').text(val);
         currentSettings.batchSize = val;
-    });
-
-    $('#vecthare_cv_group_batch_size').on('input', function() {
-        const raw = parseInt($(this).val());
-        const val = Math.min(30, Math.max(6, raw));
-        $(this).val(val);
-        $('#vecthare_cv_group_batch_size_val').text(val);
-        currentSettings.groupBatchSize = val;
     });
 
     $('#vecthare_cv_parallel_windows').on('input', function() {
@@ -2491,7 +2464,6 @@ async function previewChunks() {
             chunkSize: currentSettings.chunkSize || type.defaults.chunkSize,
             chunkOverlap: currentSettings.chunkOverlap || type.defaults.chunkOverlap,
             batchSize: currentSettings.batchSize || 4,
-            groupBatchSize: currentSettings.groupBatchSize || 10,
         });
 
         // Handle empty or undefined chunks
@@ -2792,7 +2764,6 @@ async function _runEventBaseBackfill() {
 
         const legacyStrategy = currentSettings.strategy || 'per_message';
         const legacyBatchSize = Number(currentSettings.batchSize) || 4;
-        const legacyGroupBatchSize = Number(currentSettings.groupBatchSize) || 10;
 
         // Reuse legacy chunk math so progress aligns with the Vectorize Content modal.
         const legacyChunks = await chunkText(messages, {
@@ -2800,7 +2771,6 @@ async function _runEventBaseBackfill() {
             chunkSize: currentSettings.chunkSize || 1000,
             chunkOverlap: currentSettings.chunkOverlap || 200,
             batchSize: legacyBatchSize,
-            groupBatchSize: legacyGroupBatchSize,
         });
         const legacyTotalChunks = Array.isArray(legacyChunks) ? legacyChunks.length : 0;
 

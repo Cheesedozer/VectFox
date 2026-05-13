@@ -1,0 +1,138 @@
+# Remove `message_group_batch` Strategy — Cleanup Plan
+
+## Background
+
+Per `Doc/dev_helper.md` §4, the `message_group_batch` chunking strategy is
+**dead code for chat** — `synchronizeChat()` in `core/chat-vectorization.js`
+returns at the top via the DEAD-CHUNK-CHAT guard before any chunking strategy
+runs. EventBase is now the exclusive chat retrieval pipeline.
+
+However, `message_group_batch` is still selectable in the **Vectorize Content**
+modal (`ui/content-vectorizer.js`) for non-chat content types, and the
+supporting code remains scattered across the codebase. This plan removes the
+strategy entirely, including the GUI strategy-dropdown entry, the
+`group_batch_size` slider, and all backing code.
+
+`summarizeTextGroup()` in `core/summarizer.js` becomes unused once
+`message_group_batch` is gone and will be deleted as part of this cleanup.
+
+## Scope
+
+In-scope: full removal of `message_group_batch` strategy, `group_batch_size` /
+`groupBatchSize` settings, the GUI slider, and dependent helpers.
+
+Out-of-scope: other strategies (`per_message`, `conversation_turns`,
+`message_batch`, `adaptive` remain). EventBase pipeline untouched.
+
+## Files & Edits
+
+### 1. `index.js`
+- Remove `group_batch_size: 10` default (line ~83).
+- Remove `message_group_batch` from the strategy comment on line ~81.
+
+### 2. `core/content-types.js`
+- Remove the `message_group_batch` strategy entry (lines ~54–?).
+- Remove `'message_group_batch'` from the `chunkingStrategies` arrays
+  (line ~196 — chat content type, and any other content types listing it).
+
+### 3. `core/chunking.js`
+- Remove the `message_group_batch` strategy handler (lines ~191–~215).
+
+### 4. `core/chat-vectorization.js`
+- Remove the `case 'message_group_batch':` block in `groupMessagesByStrategy()`
+  (lines ~230–~310).
+- Remove `summarizeTextGroup` from the `./summarizer.js` import (line ~29).
+- Remove `'message_group_batch'` from the JSDoc strategy list (line ~147).
+- Note: `synchronizeChat()` is already dead per the DEAD-CHUNK-CHAT guard, but
+  the dead `groupMessagesByStrategy` call site at line ~585 stays — it still
+  serves other strategies if the guard is ever lifted for non-chat callers.
+
+### 5. `core/content-vectorization.js`
+- Remove the `if (settings.strategy === 'message_group_batch') { ... }` block
+  (lines ~160–~210) that runs the summarizer pipeline.
+- Drop `'message_group_batch'` from the `message_batch || message_group_batch`
+  check at line ~688 (keep `message_batch`).
+- Remove the commented-out summarizer import line at line 30 (now fully dead).
+
+### 6. `core/eventbase-workflow.js`
+- Remove the `case 'message_group_batch':` arm in
+  `_estimateProcessedLegacyChunks()` (line ~559). EventBase doesn't use this
+  strategy so the arm is dead anyway.
+
+### 7. `core/summarizer.js`
+- Remove `summarizeTextGroup()` (line 186) and its private helpers
+  (`_buildGroupPrompt`, `_buildGroupCorrectionPrompt`, `_stripCodeFences`,
+  `_parseGroupedResponse`, `_fallbackSummarizePerItem`) — none have other
+  callers.
+- Keep `summarizeText()` and shared helpers (`_callSummaryProvider`,
+  `_extractReply`, `_getOpenRouterApiKey`, `_callOpenRouter`, `_callVLLM`,
+  `_buildBody`, `_estimateSummaryTokenBudget`, `DEFAULT_MAX_TOKENS`,
+  `DEFAULT_TIMEOUT_MS`, `SummarizationFatalError`,
+  `isSummarizationFatalError`, `getSummarizationConfigFingerprint`).
+- Verify no other module imports the removed helpers (grep before deletion).
+
+### 8. `ui/content-vectorizer.js`
+- Remove the `vecthare_cv_group_batch_size_row` slider block (lines ~242–~252).
+- Remove the `groupBatchSize` initialisation lines (lines ~813–~819).
+- Remove `needsGroupBatchControl` and the `toggle(...)` call (lines ~850, ~860).
+- Remove the `vecthare_cv_group_batch_size` `input` event handler
+  (lines ~1302–~1308).
+- Remove the `groupBatchSize` field from the settings payload (line ~2494).
+- Remove the `legacyGroupBatchSize` read at line ~2795 (and downstream usage if
+  any — verify).
+- Ensure the strategy `<select>` for chat / other content no longer lists
+  `message_group_batch` (it's driven by `getChunkingStrategies()` from
+  `content-types.js`, so removing the entry in §2 handles this automatically;
+  confirm by inspection).
+
+### 9. `ui/ui-manager.js`
+- Remove the "Message Group Batch settings" block
+  (`vecthare_group_batch_size` slider, label, and value span) at lines
+  ~912–~917.
+- Remove any associated visibility-toggle JS / settings binding for that slider
+  (grep `group_batch_size` and `vecthare_group_batch_size` in this file).
+
+### 10. `Doc/dev_helper.md`
+- Replace §4 "Group Batch Message Settings — DEAD for chat (chunk-based
+  legacy)" with a one-line tombstone noting that `message_group_batch` and
+  `summarizeTextGroup()` were removed in this cleanup, with date and link to
+  this plan. Keep the section number stable so downstream references don't
+  shift.
+
+### 11. `.github/copilot-instructions.md`
+- Auto-generated by SigMap (`gen-context.js`). No manual edit; will refresh
+  on next `node gen-context.js` run after the source changes land.
+
+## Verification Steps
+
+1. `grep -r "message_group_batch" VectHare/` → expect zero matches outside
+   `plans/remove-message-group-batch.md` and the dev_helper tombstone line.
+2. `grep -r "group_batch_size\|groupBatchSize" VectHare/` → expect zero matches.
+3. `grep -r "summarizeTextGroup" VectHare/` → expect zero matches.
+4. Open Vectorize Content modal in SillyTavern; confirm:
+   - Strategy dropdown no longer shows "Message Group Batch" for any content
+     type.
+   - The Messages-per-Request slider is gone from the Options panel.
+5. Run existing tests: `npm test` (vitest). No tests should reference the
+   removed strategy — confirm with grep in `tests/`.
+6. Regenerate signatures: `node gen-context.js`. Confirm
+   `summarizeTextGroup`, `groupMessagesByStrategy`'s `message_group_batch`
+   case, and `group_batch_size` no longer appear.
+7. Smoke-test vectorizing a small lorebook with `message_batch` strategy to
+   confirm the remaining strategies still work.
+
+## Rollback
+
+This is a pure deletion — no schema migration, no on-disk state changes.
+Revert the commit if any regression appears. Stored user settings still
+containing `group_batch_size: 10` or `groupBatchSize: 10` will be silently
+ignored after the cleanup (orphan-but-harmless, like the post-Scenes data
+in §11 of `dev_helper.md`).
+
+## Notes
+
+- No collection on disk encodes `message_group_batch` in chunk metadata that
+  the runtime reads at retrieval time. The strategy is metadata-only on chunk
+  records and is never consulted post-ingestion.
+- `summarizeText()` (single-text path) remains in use by other call sites
+  (verify via grep before merging).

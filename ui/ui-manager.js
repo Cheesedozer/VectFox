@@ -909,15 +909,6 @@ export function renderSettings(containerId, settings, callbacks) {
                                 Chat Auto-Sync follows the EventBase extraction settings. Legacy chat chunking controls are hidden because chat history no longer uses the old chunk-based retrieval path.
                             </small>
 
-                            <!-- Message Group Batch settings (only shown for message_group_batch strategy) -->
-                            <div id="vecthare_group_batch_settings" style="display: none; margin-top: 10px;">
-                                <label for="vecthare_group_batch_size">
-                                    <small>Messages per Request: <span id="vecthare_group_batch_size_value">10</span></small>
-                                </label>
-                                <input type="range" id="vecthare_group_batch_size" class="vecthare-slider" min="6" max="30" step="1" />
-                                <small class="vecthare_hint">How many chat messages are summarized in one grouped LLM request</small>
-                            </div>
-
                         </div>
                     </div>
 

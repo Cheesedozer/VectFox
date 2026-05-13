@@ -51,15 +51,6 @@ export const CHUNKING_STRATEGIES = {
         needsBatchSize: true,
         bestFor: ['chat'],
     },
-    message_group_batch: {
-        id: 'message_group_batch',
-        name: 'Message Group Batch',
-        description: 'Groups N messages together and summarizes each batch in a single LLM call. Configurable batch size.',
-        needsSize: false,
-        needsOverlap: false,
-        needsBatchSize: true,
-        bestFor: ['chat'],
-    },
     // =========================================================================
     // CONTENT STRATEGIES (unit-based, no size controls)
     // =========================================================================
@@ -193,13 +184,12 @@ export const CONTENT_TYPES = {
         // *** will be remove in future version because no longer used by eventbased path ***
         // These remain in the registry for backward compatibility, but EventBase-only chat
         // retrieval means they are no longer surfaced in the chat Auto-Sync GUI.
-        chunkingStrategies: ['per_message', 'conversation_turns', 'message_batch', 'message_group_batch', 'adaptive'],
+        chunkingStrategies: ['per_message', 'conversation_turns', 'message_batch', 'adaptive'],
         defaultStrategy: 'per_message',
 
         defaults: {
             chunkSize: 500,
             batchSize: 4,
-            groupBatchSize: 10,
             temporalDecay: { enabled: true, halfLife: 50, floor: 0.3 },
             autoKeywords: false,
         },

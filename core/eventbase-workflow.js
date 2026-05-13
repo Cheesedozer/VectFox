@@ -556,7 +556,6 @@ function _estimateProcessedLegacyChunks({ coveredMessages, totalMessages, totalC
             processed = Math.ceil(covered / 2);
             break;
         case 'message_batch':
-        case 'message_group_batch':
             processed = Math.ceil(covered / Math.max(1, batchSize));
             break;
         default: {

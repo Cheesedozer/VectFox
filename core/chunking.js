@@ -183,43 +183,6 @@ const STRATEGIES = {
     },
 
     /**
-     * Message Group Batch - same unit construction as message_batch.
-     * Grouped summarization is handled later in content/chat vectorization pipelines.
-     * @param {Array} messages - Array of message objects
-     * @param {object} options - Must include batchSize
-     */
-    message_group_batch: (messages, options) => {
-        if (!Array.isArray(messages) || messages.length === 0) {
-            return [];
-        }
-
-        const batchSize = options.batchSize || 4;
-        const chunks = [];
-
-        for (let i = 0; i < messages.length; i += batchSize) {
-            const batch = messages.slice(i, i + batchSize);
-
-            const combinedText = batch.map(m => {
-                const role = m.is_user ? 'User' : (m.name || 'Character');
-                const text = m.text || m.mes || '';
-                return `[${role}]: ${text}`;
-            }).join('\n\n');
-
-            chunks.push({
-                text: combinedText,
-                metadata: {
-                    strategy: 'message_group_batch',
-                    batchSize: batch.length,
-                    messageIds: batch.map(m => m.index ?? m.id),
-                    startIndex: batch[0].index ?? batch[0].id,
-                    endIndex: batch[batch.length - 1].index ?? batch[batch.length - 1].id,
-                },
-            });
-        }
-        return chunks;
-    },
-
-    /**
      * Adaptive - intelligent splitting at natural boundaries
      * Tries paragraphs first, then sentences, then words
      */

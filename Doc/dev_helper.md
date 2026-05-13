@@ -81,16 +81,17 @@ Exact constant names:
 - `DEFAULT_MAX_TOKENS`
 - `DEFAULT_TIMEOUT_MS`
 
-## 4) Group Batch Message Settings (going to demise as this is chunk based logic)
-Located in: `core/summarizer.js`
+## 4) Group Batch Message Settings — REMOVED
 
-Exact variable names used in grouped summarize flow:
-- `groupMaxTokens`
-- `groupTimeoutMs`
-
-Notes:
-- `groupMaxTokens` is computed from per-item budget and count, capped at 8192.
-- `groupTimeoutMs` is computed as base timeout + per-item scaling, capped at 180000 ms.
+The `message_group_batch` chunking strategy, its `group_batch_size` /
+`groupBatchSize` setting, the GUI slider in the Vectorize Content modal, and
+the `summarizeTextGroup()` helper (plus its private support functions in
+`core/summarizer.js`) were removed in the
+[plans/remove-message-group-batch.md](../plans/remove-message-group-batch.md)
+cleanup. Pre-existing collection chunks may still carry
+`metadata.strategy: 'message_group_batch'` — that field is no longer read by
+any code path and is silently ignored, the same orphan-but-harmless pattern as
+the post-Scenes data in §11.
 
 ## 5) Collection Active State — Two Separate Controls
 
@@ -418,7 +419,7 @@ This ensures ChunkBase's `keyword_scoring_method` never leaks into EventBase que
 | Query Keyword Budget | `hybrid_keyword_level` | A1 only | ✅ used | ❌ full query tokenized | ❌ sparse encoder tokenizes everything |
 | Fusion Method (RRF / Weighted) | `hybrid_fusion_method` | A2 only | ❌ not used (A1 always weighted) | ✅ used | ❌ Qdrant always RRF (server-side) |
 | RRF K | `hybrid_rrf_k` | A2 RRF mode only | ❌ not used | ✅ used | ❌ Qdrant uses its own default |
-| CJK Tokenizer Mode | `cjk_tokenizer_mode` | A3 (locked per Qdrant collection) | n/a | n/a | ✅ locked into collection at upsert via sentinel point |
+| CJK Tokenizer Mode | `cjk_tokenizer_mode` | All paths | ✅ used for client-side BM25 tokenization (no locking) | ✅ used for client-side BM25 tokenization (no locking) | ✅ locked into collection at upsert via sentinel point; mismatch modal on query if changed |
 | Prefer Native Backend Hybrid | `hybrid_native_prefer` | Hidden settings escape hatch | n/a | n/a | Default `true`. Flip to `false` via settings.json to force Qdrant onto A2 for testing. No UI. |
 
 ### Key observations
@@ -497,7 +498,7 @@ Add CJK terms to `EMOTION_KEYWORDS` in `core/conditional-activation.js`, or exte
 
 Optional LLM-planner step that runs between EventBase pre-search and re-rank. Sees the pre-search candidates plus recent chat context, then fans out 1-4 follow-up queries in parallel against Qdrant. **Purely additive — never replaces the existing flow.** A3 (Qdrant) only.
 
-Plan document: [plans/agentic-retrieval-plan.md](../plans/agentic-retrieval-plan.md).
+Plan document: [plans/executed/agentic-retrieval-plan.md](../plans/executed/agentic-retrieval-plan.md).
 
 ### Files
 
@@ -525,8 +526,6 @@ retrieveEventsWithAgent(params)
 ### Phase 1 limitations (intentional)
 
 - **Planner-emitted filters are NOT applied** to queries yet. The planner may emit `characters_any`, `concepts_any`, `importance_gte` etc. in its JSON output, but the agentic-retrieval module ignores those fields and runs unfiltered hybrid search. Phase 1.5 will extend Similharity's [`_buildHybridFilter`](../../similharity/qdrant-backend.js) to translate the `*_any` shape into Qdrant `should` clauses.
-- **OpenRouter only** for the planner LLM in practice. vLLM code path exists in `_resolveAgenticLLMConfig` but is untested in Phase 1.
-- **Anchor boost is disabled** in [core/eventbase-retrieval.js:222](../core/eventbase-retrieval.js#L222) to give AgentMode an unbiased baseline during benchmarking. Re-enable / drop / make-configurable decision deferred until benchmarks land — see plan §9 Phase 2.
 
 ### Settings (all in `index.js` defaults)
 

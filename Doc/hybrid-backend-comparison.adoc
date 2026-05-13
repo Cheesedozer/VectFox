@@ -369,7 +369,7 @@ a single server-side pass over the top `prefetchLimit` (80) candidates.
 
 What **still runs client-side** regardless of this path:
 
-* **Anchor boost** — multi-token keyword phrases (e.g. `贖身的儀式`) require JavaScript
+* **Anchor boost** — multi-token keyword phrases (e.g. `身請けの儀式`) require JavaScript
   substring matching; Qdrant's tokenized any-of would miss them.
 * **Pairwise dedup** — stateful per-candidate comparison across the merged event list.
 * **Cross-collection merge** — `Promise.all` per collection, concat-dedup-trim client-side.
