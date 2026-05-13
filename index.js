@@ -89,7 +89,7 @@ const defaultSettings = {
     // Number of top results to retrieve from vector DB (top-K)
     top_k: 10,
     retrieval_popup_on_start: true,    // Show popup when retrieval starts
-    retrieval_popup_on_result: false,  // Show popup with number of retrieved results
+    retrieval_popup_on_result: true,   // Show popup with number of retrieved results
     query: 2,
     chunk_size: 500, // For adaptive strategy only
     score_threshold: 0.25,
@@ -207,7 +207,7 @@ const defaultSettings = {
     // Default off until eval window passes. Requires Qdrant 1.13+; falls back
     // gracefully to the JS re-rank pipeline when the route returns an error.
     // See plans/qdrant-native-eventbase-rerank-formula.md.
-    eventbase_native_rerank: false,
+    eventbase_native_rerank: true,
     // Compare mode: when native rerank is on, also run the JS pipeline in
     // parallel and log per-(collection,queryText) rank correlation + overlap.
     // Doubles per-collection cost when on — debug only. Requires

@@ -513,21 +513,9 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <div style="margin-top: 12px;">
                                     <label class="checkbox_label" for="VectFox_eventbase_native_rerank">
                                         <input id="VectFox_eventbase_native_rerank" type="checkbox" />
-                                        <span>Push EventBase re-rank to Qdrant (experimental)</span>
+                                        <span>Push EventBase re-rank to Qdrant</span>
                                     </label>
                                     <small class="VectFox_hint">A3 (Qdrant) only. Computes importance/persist/recency weighted scoring inside Qdrant via a formula query, in the same /query call as the dense+sparse hybrid. Anchor boost and pairwise dedup still run locally. Requires Qdrant 1.13+; falls back gracefully when unavailable. Re-tune the cosine weight if recall changes — see plans/qdrant-native-eventbase-rerank-formula.md.</small>
-
-                                    <label class="checkbox_label" for="VectFox_eventbase_compare_rerank" style="margin-top: 6px; display: flex;">
-                                        <input id="VectFox_eventbase_compare_rerank" type="checkbox" />
-                                        <span>Compare native vs JS re-rank (debug)</span>
-                                    </label>
-                                    <small class="VectFox_hint">Requires native re-rank ON and Debug Logging ON. Runs the JS pipeline in parallel for each (collection, queryText) and logs top-K overlap + Spearman ρ + timings. Doubles per-collection cost — debug only.</small>
-
-                                    <label class="checkbox_label" for="VectFox_eventbase_compare_rerank_verbose" style="margin-top: 6px; display: flex;">
-                                        <input id="VectFox_eventbase_compare_rerank_verbose" type="checkbox" />
-                                        <span>Verbose compare logs (per-event breakdown)</span>
-                                    </label>
-                                    <small class="VectFox_hint">Adds per-event score-component breakdowns for events present in both top-K lists. Verbose — enable only when investigating a specific divergence.</small>
                                 </div>
 
                                 <div style="margin-top: 12px;">
@@ -1003,6 +991,17 @@ export function renderSettings(containerId, settings, callbacks) {
                             </label>
                             <small class="VectFox_hint">Log [VectFox-Agentic] details: mode marker, narrative context preview (~50 words per turn), LLM round-trip ms, planner output JSON, Qdrant fanout ms, total agent overhead ms, per-query hit counts. Only fires when Agent Mode is enabled (AgentMode tab).</small>
 
+                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank" style="margin-top: 12px;">
+                                <input type="checkbox" id="VectFox_eventbase_compare_rerank" />
+                                <span>Compare native vs JS re-rank (debug)</span>
+                            </label>
+                            <small class="VectFox_hint">Requires native re-rank ON and Debug Logging ON. Runs the JS pipeline in parallel for each (collection, queryText) and logs top-K overlap + Spearman ρ + timings. Doubles per-collection cost — debug only.</small>
+
+                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank_verbose" style="margin-top: 12px;">
+                                <input type="checkbox" id="VectFox_eventbase_compare_rerank_verbose" />
+                                <span>Verbose compare logs (per-event breakdown)</span>
+                            </label>
+                            <small class="VectFox_hint">Adds per-event score-component breakdowns for events present in both top-K lists. Verbose — enable only when investigating a specific divergence.</small>
 
                         </div>
                     </div>

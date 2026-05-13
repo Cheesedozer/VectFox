@@ -152,13 +152,14 @@ async function _runOneLiveQuery({
                 // Fire JS comparison in parallel with native rerank so its latency
                 // is hidden behind the native query rather than added on top.
                 const JS_COMPARE_TIMEOUT_MS = 15_000;
+                let jsCompletedAt = null;
                 const jsQueryPromise = compareMode
                     ? Promise.race([
                         queryCollection(colId, queryText, topK, ebSettings),
                         new Promise((_, reject) =>
                             setTimeout(() => reject(new Error(`JS compare timed out after ${JS_COMPARE_TIMEOUT_MS}ms`)), JS_COMPARE_TIMEOUT_MS)
                         ),
-                    ])
+                    ]).then(res => { jsCompletedAt = performance.now(); return res; })
                     : null;
 
                 const { hashes, metadata } = await backend.hybridQueryWithRerank(
@@ -174,7 +175,7 @@ async function _runOneLiveQuery({
                 if (compareMode) {
                     try {
                         const jsRes = await jsQueryPromise;
-                        const jsMs = (performance.now() - tStart).toFixed(1);
+                        const jsMs = (jsCompletedAt != null ? jsCompletedAt - tStart : performance.now() - tStart).toFixed(1);
                         const jsCandidates = (jsRes.hashes || []).map((h, i) => {
                             const m = jsRes.metadata?.[i] || {};
                             return { ...m, _hash: h, _jsFinal: _jsFinalScore(m, rerankWeights, chatLength, anchorText, anchorBoostAmount) };
