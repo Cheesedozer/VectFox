@@ -148,6 +148,19 @@ async function _runOneLiveQuery({
                 : await getBackend(settings);
             if (backend && typeof backend.hybridQueryWithRerank === 'function') {
                 const tStart = performance.now();
+
+                // Fire JS comparison in parallel with native rerank so its latency
+                // is hidden behind the native query rather than added on top.
+                const JS_COMPARE_TIMEOUT_MS = 15_000;
+                const jsQueryPromise = compareMode
+                    ? Promise.race([
+                        queryCollection(colId, queryText, topK, ebSettings),
+                        new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error(`JS compare timed out after ${JS_COMPARE_TIMEOUT_MS}ms`)), JS_COMPARE_TIMEOUT_MS)
+                        ),
+                    ])
+                    : null;
+
                 const { hashes, metadata } = await backend.hybridQueryWithRerank(
                     colId, queryText, topK, ebSettings, rerankParams
                 );
@@ -158,16 +171,10 @@ async function _runOneLiveQuery({
                     _rerankApplied: !!metadata[i]?.rerankApplied,
                 }));
 
-                // Compare mode: run the JS path in parallel for logging only.
                 if (compareMode) {
-                    const tJsStart = performance.now();
                     try {
-                        const JS_COMPARE_TIMEOUT_MS = 15_000;
-                        const timeoutPromise = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error(`JS compare timed out after ${JS_COMPARE_TIMEOUT_MS}ms`)), JS_COMPARE_TIMEOUT_MS)
-                        );
-                        const jsRes = await Promise.race([queryCollection(colId, queryText, topK, ebSettings), timeoutPromise]);
-                        const jsMs = (performance.now() - tJsStart).toFixed(1);
+                        const jsRes = await jsQueryPromise;
+                        const jsMs = (performance.now() - tStart).toFixed(1);
                         const jsCandidates = (jsRes.hashes || []).map((h, i) => {
                             const m = jsRes.metadata?.[i] || {};
                             return { ...m, _hash: h, _jsFinal: _jsFinalScore(m, rerankWeights, chatLength, anchorText, anchorBoostAmount) };
@@ -577,7 +584,11 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
             // which routinely lands at 0.8-1.5+ for important persistent events —
             // applying the same 0.75 threshold would ALWAYS escape dedup and let
             // ingestion duplicates fill every slot (see Qdrant duplicate-fill bug).
-            if (!candidate._rerankApplied) {
+            // Score override only applies when the accepted event is also on the JS
+            // path (not formula-scored). If accepted._rerankApplied is true, its
+            // formula score is authoritative and a high-cosine sibling chunk must not
+            // escape — that's the exact scenario that causes duplicate chunk injection.
+            if (!candidate._rerankApplied && !accepted._rerankApplied) {
                 const candSim = _candidateSimScore(candidate);
                 if (candSim >= DUPLICATE_SCORE_OVERRIDE) {
                     if (debugLog) {

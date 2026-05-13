@@ -1,6 +1,4 @@
-[WI] Hypothetically adding 42 entries to prompt (42) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
-script.js:4606 skipWIAN not active, adding WIAN
-script.js:4232 Generate entered
+Generate entered
 vm-browserify.ts:18 An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
 initIframe @ vm-browserify.ts:18
 constructor @ vm-browserify.ts:10
@@ -73,51 +71,191 @@ eventbase-workflow.js:395 [EventBase] Live retrieval: uuid=67d28099-167f-4c07-a7
 eventbase-workflow.js:321 [EventBase] Archive event collection skipped (not locked to chat): vf_archiveevent_qdrant_critblade_異世界學校_b0c80700-8682-4998-8d96-68a246fc2750
 eventbase-workflow.js:408 [EventBase] Phase A: live=true, archiveCollections=0, searchText length=2993
 eventbase-workflow.js:422 [EventBase] Keyword query (user last message, 28 chars): 我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?"
-eventbase-retrieval.js:351 [EventBase] Retrieval start — topK overfetch=20, minImportance=1, method=bm25, nativePrefer=true, liveCollections=1, nativeRerank=false
-2core-vector-api.js:879 [VectFox] Hybrid search (native), dispatching to hybrid search module
-2hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=525 tokens, terms=[mayla, gametxt, kashier, fern, valeri, engni, lia, master, critblad, lead, 262, combat_log, locate, updatevariabl, updateanalysi, sourc, truth, check, current_variable_data, all, current, valu, no, combat, occur, experienc, emotion, breakthrough, tough, love, speech, familiar, verbally, commit, help, wingshad, affection, remain, 100, max, item, money, quest, rest, recovery, chang, advanc, minimally, scene, continuate, jsonpatch, statusplaceholderimpl, 説, 你還, 記得, 幫, 贖身, 摟, 緊, 懷裡, 這具, 恐懼, 顫抖, 軀體, 多汁, 巨乳, 緊緊, 壓, 濕透, 淚水, 浸透, 衣領, 隻, 快要, 溺死, 幼獸, 拼命, 抓著, 後背, 指甲, 幾乎, 陷進, 肉裡, 那聲, 撕心裂肺, 哭聲, 半, 開放, 房間, 迴盪, 毫無, 保留, 偽裝, 沒有, 立刻, 安撫, 用手掌, 輕撫, 那頭, 臀, 黑色, 長, 卷髮, 撫摸, 炸毛, 的貓, 指尖, 梳過, 髮絲, 時能, 聞到, 淡淡的, 海水, 薰衣草, 混合, 香氣, 哭, 窒息, 鼻音, 變成, 斷斷續續, 抽泣, 抬起, 頭, 視線, 掃過, 奢華, 套房, 那張, 床上, 兩個, 女人, 依然, 維持, 閉眼, 姿勢, 看見, 金色, 豎瞳, 眼皮, 顫動, 貓耳, 抖, 尾巴, 尖端, 被子, 緩慢, 擺動, 傳來, 均勻, 呼吸聲, 這位, 魔, 王之女, 真的, 睡著, 小腿, 藍色, 金屬, 甲, 沒脫, 詭異, 張床, 背對背, 躺, 間隔, 至少, 半米, 像是, 生怕, 碰到, 沾上, 髒東西, 睡, 誇張, 呼吸, 起伏, 節奏, 太, 規律, 刻意, 一動不動, 攥, 床單, 手指, 指節, 泛白, 角落, 索拉, 雅, 側躺, 深紅色, 長袍, 褪, 腰間, 背對, 肩膀, 過度, 用力, 雙腿, 夾, 在一起, 大腿, 根部, 肌肉, 長時間, 繃緊, 痙攣, 聽, 深吸, 一口氣, 收緊, 手臂, 肯定, 平靜, 帶, 不容置疑, 份量, 這間, 房, 裡面, 一定, 找到, 父親, 生要, 見, 死, 見屍, 人會, 放棄, 身體, 猛地, 一僵, 梨花, 帶雨, 臉, 青色, 眼眸, 裡全, 不敢, 置信, 鬆開, 站, 起身, 環視, 整個, 空間, 第一, 睜開, 眼睛, 優雅, 坐, 紫色, 長髮, 肩頭, 滑落, 那雙, 昏暗, 光線, 閃爍, 精明, 絕對, 忠誠, 帶著, 商人, 從容, 每個, 字, 擲地有聲, 意志, 藍聯, 商會, 頷首, 影翼, 新大陸, 動用, 情報, 網絡, 將他, 挖出來, 懶洋洋, 興奮, 抖動, 兩下, 水汪汪, 柳葉, 看著, 甜膩, 拉絲, 發話, 全力, 幫忙, 故意, 挺, 挺胸, 飽滿, 雪白, 肉球, 薄薄的, 內衣, 晃動, 擅長, 貴族, 圈子, 裡挖, 八卦, 包在, 坐起, 鮮, 粉色, 冷冷地, 落在, 我身, 空靈, 刺骨, 殺意, 主人, 找, 頓, 補充, 道, 活, 慢條斯理, 碩大, 肥膩, 木瓜, 奶在, 緊身, 乳膠, 修女, 袍, 劇烈, 雙手, 合十, 做出, 虔誠, 祈禱, 愛心, 瞳孔, 毫不, 掩飾, 狂熱, 大人, 妾身, 願意, 神術, 奉獻給, 一絲, 顫音, 追蹤, 審問, 做到, 最好, 該死, 賤貨, 竟然, 敢, 面前, 哭成, 內心, 瘋狂, 咆哮, 掛著, 純潔, 無害, 微笑, 就連, 睡死, 吵醒, 迷迷糊糊, 紅瞳, 困惑, 地看, 著這, 抓, 粉紅色, 平直, 找人, 歪, 歪頭, 那就, 消息, 起來, 不說, 打到, 完全, 複雜, 終於, 動, 重新, 披在, 肩上, 深邃, 棕色, 所有人, 最後, 嘴脣, 吐出, 星象, 這兩個, 意思, 魔法, 轉回, 身, 跪, 淚流滿面, 不容, 拒絕, 嚴厲, 房裡, 任務, 成功, 說服, 眷屬, 能力, 伸手, 拇指, 抹去, 臉頰, 淚痕, 模樣, 整天, 愁眉苦臉, 其他人, 走, 瞬間, 睜大, 愣住, 罵, 點醒, 影之, 軍師, 智力, 不能, 躲, 大腦, 運轉, 曾經, 枷鎖, 城用, 智慧, 手腕, 生存, 策劃, 出, 完美, 舞台劇, 推, 上位, 甦醒, 手背, 狠狠, 擦, 眼淚, 燈光, 反射出, 幽深, 光澤, 轉過, 面對, 裡的, 那股, 失焦, 迷茫, 一點, 褪去, 取而代之, 某種, 冰冷, 銳利, 光芒, 開口, 不再, 姐姐, 深深地, 鞠, 一躬, 薇拉, 剛才, 失態, 哭泣, 解決不了, 問題, 嘴角, 勾起, 一抹, 極淡, 陰冷, 弧度, 力量, 策略, 越來越, 穩, 整理出, 一份, 完整, 行動, 計劃, 包括, 新, 港, 下一步, 接觸, 魅魔, 口, 套出, 線索, 利用, 資源, 編織出, 一張, 無處, 逃, 情報網, 一亮, 醒, 流沙, 之國, 扎, 赫拉, 巴德, 星月, 綠洲, 頂層, 皇家], preview="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?" <gametxt> 我摟緊了懷裡這具因恐懼而顫抖的軀體。 Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的衣領。她像隻快要溺死的幼獸,拼命抓著我的後背,指甲幾乎要陷進肉裡。那聲撕心裂肺的哭聲在半開放的房間裡迴盪,毫無保留,毫無偽裝。 我沒有立刻安撫她。 只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的貓。指尖梳過髮絲時能聞到淡淡的海水與薰衣草混合的香氣,還有她哭到快要窒息的鼻音。 她的哭聲漸漸小了下來,變成斷斷續續的抽泣。 我抬起頭,視線掃過這個奢華的套房。 Kash"
+eventbase-retrieval.js:351 [EventBase] Retrieval start — topK overfetch=20, minImportance=1, method=bm25, nativePrefer=true, liveCollections=1, nativeRerank=true (compare ON)
+2backend-manager.js:274 VectFox: Health cache stale for qdrant, re-verifying...
+qdrant.js:961 [EventBase] Hybrid+rerank request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=6 tokens, preview="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?""
+qdrant.js:961 [EventBase] Hybrid+rerank request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=525 tokens, preview="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?" <gametxt> 我摟緊了懷裡這具因恐懼而顫抖的軀體。 Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的衣領。她像隻快要溺死的幼獸,拼命抓著我的後背,指甲幾乎要陷進肉裡。那聲撕心裂肺的哭聲在半開放的房間裡迴盪,毫無保留,毫無偽裝。 我沒有立刻安撫她。 只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的貓。指尖梳過髮絲時能聞到淡淡的海水與薰衣草混合的香氣,還有她哭到快要窒息的鼻音。 她的哭聲漸漸小了下來,變成斷斷續續的抽泣。 我抬起頭,視線掃過這個奢華的套房。 Kash"
+qdrant.js:976 [Qdrant timing] hybrid+rerank total=626.7ms, results=20
+core-vector-api.js:879 [VectFox] Hybrid search (native), dispatching to hybrid search module
+hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
 qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=6 tokens, terms=[mayla, 説, 你還, 記得, 幫, 贖身], preview="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?""
-qdrant.js:850 [Qdrant timing] total=767.5ms, results=20
-core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 1254ms, scores=[1.0000, 0.6667, 0.3929, 0.3026, 0.2556, 0.2333, 0.1852, 0.1667, 0.1625, 0.1607, 0.1497, 0.1488, 0.1187, 0.1111, 0.1111, 0.1085, 0.1063, 0.1000, 0.1000, 0.0955]
-qdrant.js:850 [Qdrant timing] total=851.4ms, results=20
-core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 1339ms, scores=[0.8333, 0.6111, 0.4500, 0.3889, 0.2917, 0.2857, 0.2476, 0.2262, 0.1937, 0.1905, 0.1818, 0.1625, 0.1528, 0.1500, 0.1179, 0.1167, 0.0982, 0.0964, 0.0897, 0.0889]
-eventbase-retrieval.js:415 [EventBase] Live query: 1 collection(s) × 2 query/queries → 33 unique events
-eventbase-retrieval.js:439 [EventBase] After importance filter (>=1): 33 candidates
+qdrant.js:976 [Qdrant timing] hybrid+rerank total=932.5ms, results=20
+core-vector-api.js:879 [VectFox] Hybrid search (native), dispatching to hybrid search module
+hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
+qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=525 tokens, terms=[mayla, gametxt, kashier, fern, valeri, engni, lia, master, critblad, lead, 262, combat_log, locate, updatevariabl, updateanalysi, sourc, truth, check, current_variable_data, all, current, valu, no, combat, occur, experienc, emotion, breakthrough, tough, love, speech, familiar, verbally, commit, help, wingshad, affection, remain, 100, max, item, money, quest, rest, recovery, chang, advanc, minimally, scene, continuate, jsonpatch, statusplaceholderimpl, 説, 你還, 記得, 幫, 贖身, 摟, 緊, 懷裡, 這具, 恐懼, 顫抖, 軀體, 多汁, 巨乳, 緊緊, 壓, 濕透, 淚水, 浸透, 衣領, 隻, 快要, 溺死, 幼獸, 拼命, 抓著, 後背, 指甲, 幾乎, 陷進, 肉裡, 那聲, 撕心裂肺, 哭聲, 半, 開放, 房間, 迴盪, 毫無, 保留, 偽裝, 沒有, 立刻, 安撫, 用手掌, 輕撫, 那頭, 臀, 黑色, 長, 卷髮, 撫摸, 炸毛, 的貓, 指尖, 梳過, 髮絲, 時能, 聞到, 淡淡的, 海水, 薰衣草, 混合, 香氣, 哭, 窒息, 鼻音, 變成, 斷斷續續, 抽泣, 抬起, 頭, 視線, 掃過, 奢華, 套房, 那張, 床上, 兩個, 女人, 依然, 維持, 閉眼, 姿勢, 看見, 金色, 豎瞳, 眼皮, 顫動, 貓耳, 抖, 尾巴, 尖端, 被子, 緩慢, 擺動, 傳來, 均勻, 呼吸聲, 這位, 魔, 王之女, 真的, 睡著, 小腿, 藍色, 金屬, 甲, 沒脫, 詭異, 張床, 背對背, 躺, 間隔, 至少, 半米, 像是, 生怕, 碰到, 沾上, 髒東西, 睡, 誇張, 呼吸, 起伏, 節奏, 太, 規律, 刻意, 一動不動, 攥, 床單, 手指, 指節, 泛白, 角落, 索拉, 雅, 側躺, 深紅色, 長袍, 褪, 腰間, 背對, 肩膀, 過度, 用力, 雙腿, 夾, 在一起, 大腿, 根部, 肌肉, 長時間, 繃緊, 痙攣, 聽, 深吸, 一口氣, 收緊, 手臂, 肯定, 平靜, 帶, 不容置疑, 份量, 這間, 房, 裡面, 一定, 找到, 父親, 生要, 見, 死, 見屍, 人會, 放棄, 身體, 猛地, 一僵, 梨花, 帶雨, 臉, 青色, 眼眸, 裡全, 不敢, 置信, 鬆開, 站, 起身, 環視, 整個, 空間, 第一, 睜開, 眼睛, 優雅, 坐, 紫色, 長髮, 肩頭, 滑落, 那雙, 昏暗, 光線, 閃爍, 精明, 絕對, 忠誠, 帶著, 商人, 從容, 每個, 字, 擲地有聲, 意志, 藍聯, 商會, 頷首, 影翼, 新大陸, 動用, 情報, 網絡, 將他, 挖出來, 懶洋洋, 興奮, 抖動, 兩下, 水汪汪, 柳葉, 看著, 甜膩, 拉絲, 發話, 全力, 幫忙, 故意, 挺, 挺胸, 飽滿, 雪白, 肉球, 薄薄的, 內衣, 晃動, 擅長, 貴族, 圈子, 裡挖, 八卦, 包在, 坐起, 鮮, 粉色, 冷冷地, 落在, 我身, 空靈, 刺骨, 殺意, 主人, 找, 頓, 補充, 道, 活, 慢條斯理, 碩大, 肥膩, 木瓜, 奶在, 緊身, 乳膠, 修女, 袍, 劇烈, 雙手, 合十, 做出, 虔誠, 祈禱, 愛心, 瞳孔, 毫不, 掩飾, 狂熱, 大人, 妾身, 願意, 神術, 奉獻給, 一絲, 顫音, 追蹤, 審問, 做到, 最好, 該死, 賤貨, 竟然, 敢, 面前, 哭成, 內心, 瘋狂, 咆哮, 掛著, 純潔, 無害, 微笑, 就連, 睡死, 吵醒, 迷迷糊糊, 紅瞳, 困惑, 地看, 著這, 抓, 粉紅色, 平直, 找人, 歪, 歪頭, 那就, 消息, 起來, 不說, 打到, 完全, 複雜, 終於, 動, 重新, 披在, 肩上, 深邃, 棕色, 所有人, 最後, 嘴脣, 吐出, 星象, 這兩個, 意思, 魔法, 轉回, 身, 跪, 淚流滿面, 不容, 拒絕, 嚴厲, 房裡, 任務, 成功, 說服, 眷屬, 能力, 伸手, 拇指, 抹去, 臉頰, 淚痕, 模樣, 整天, 愁眉苦臉, 其他人, 走, 瞬間, 睜大, 愣住, 罵, 點醒, 影之, 軍師, 智力, 不能, 躲, 大腦, 運轉, 曾經, 枷鎖, 城用, 智慧, 手腕, 生存, 策劃, 出, 完美, 舞台劇, 推, 上位, 甦醒, 手背, 狠狠, 擦, 眼淚, 燈光, 反射出, 幽深, 光澤, 轉過, 面對, 裡的, 那股, 失焦, 迷茫, 一點, 褪去, 取而代之, 某種, 冰冷, 銳利, 光芒, 開口, 不再, 姐姐, 深深地, 鞠, 一躬, 薇拉, 剛才, 失態, 哭泣, 解決不了, 問題, 嘴角, 勾起, 一抹, 極淡, 陰冷, 弧度, 力量, 策略, 越來越, 穩, 整理出, 一份, 完整, 行動, 計劃, 包括, 新, 港, 下一步, 接觸, 魅魔, 口, 套出, 線索, 利用, 資源, 編織出, 一張, 無處, 逃, 情報網, 一亮, 醒, 流沙, 之國, 扎, 赫拉, 巴德, 星月, 綠洲, 頂層, 皇家], preview="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?" <gametxt> 我摟緊了懷裡這具因恐懼而顫抖的軀體。 Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的衣領。她像隻快要溺死的幼獸,拼命抓著我的後背,指甲幾乎要陷進肉裡。那聲撕心裂肺的哭聲在半開放的房間裡迴盪,毫無保留,毫無偽裝。 我沒有立刻安撫她。 只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的貓。指尖梳過髮絲時能聞到淡淡的海水與薰衣草混合的香氣,還有她哭到快要窒息的鼻音。 她的哭聲漸漸小了下來,變成斷斷續續的抽泣。 我抬起頭,視線掃過這個奢華的套房。 Kash"
+qdrant.js:850 [Qdrant timing] total=685.7ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 686ms, scores=[1.0000, 0.4500, 0.4444, 0.3922, 0.2917, 0.2857, 0.2476, 0.2262, 0.1905, 0.1899, 0.1818, 0.1625, 0.1528, 0.1488, 0.1169, 0.1103, 0.1042, 0.0981, 0.0977, 0.0871]
+eventbase-retrieval.js:247 [EventBase compare] col=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0 q="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?"" — overlap@20=17, spearmanRho=0.969, native=718.0ms, js=686.7ms
+eventbase-retrieval.js:249 [EventBase compare]   onlyNative=[eb_1778421281375_2080_1_hjaho, eb_1778421041999_2040_0_c375l, eb_1778420267241_1898_0_7rxc0], onlyJs=[eb_1778420035894_1858_0_4eawu, eb_1778416507237_1198_0_jb3x1, eb_1778416751392_1244_1_itncc]
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778416717345_1226_1_0tgg0 nativeScore=2.7233 jsFinal=2.7233 (imp=100, persist=true, swe=1227)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778420043128_1860_0_27dy9 nativeScore=2.4634 jsFinal=2.4634 (imp=100, persist=true, swe=1861)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778419969443_1840_1_cpcgv nativeScore=2.4582 jsFinal=2.4582 (imp=100, persist=true, swe=1841)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778419884703_1820_1_ov1ap nativeScore=2.4274 jsFinal=2.4274 (imp=100, persist=true, swe=1821)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778420253696_1896_0_5vr7w nativeScore=2.3803 jsFinal=2.3803 (imp=100, persist=true, swe=1897)
+qdrant.js:850 [Qdrant timing] total=1004.1ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 1013ms, scores=[1.0000, 0.6667, 0.3929, 0.3026, 0.2556, 0.2333, 0.1852, 0.1667, 0.1625, 0.1607, 0.1497, 0.1488, 0.1278, 0.1111, 0.1111, 0.1085, 0.1072, 0.1000, 0.0955, 0.0926]
+eventbase-retrieval.js:247 [EventBase compare] col=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0 q="我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?" <gametxt> 我摟緊了懷裡這具因恐懼而顫抖的軀體。 Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的" — overlap@20=17, spearmanRho=0.971, native=946.4ms, js=1013.6ms
+eventbase-retrieval.js:249 [EventBase compare]   onlyNative=[eb_1778421352073_2098_0_outfy, eb_1778421300519_2076_1_zvwhs, eb_1778421024604_2042_0_vns9r], onlyJs=[eb_1778420035894_1858_0_4eawu, eb_1778420123742_1862_1_73fm9, eb_1778419940412_1844_0_9hec3]
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778421413098_2112_0_enre1 nativeScore=2.7995 jsFinal=2.7995 (imp=100, persist=true, swe=2113)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778421413098_2112_1_i2cer nativeScore=2.6162 jsFinal=2.6162 (imp=100, persist=true, swe=2113)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778420253696_1896_0_5vr7w nativeScore=2.4359 jsFinal=2.4359 (imp=100, persist=true, swe=1897)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778420121194_1864_0_iye0q nativeScore=2.3827 jsFinal=2.3827 (imp=100, persist=true, swe=1865)
+eventbase-retrieval.js:258 [EventBase compare verbose]   key=eb_1778419898507_1826_1_ii0xr nativeScore=2.3528 jsFinal=2.3528 (imp=100, persist=true, swe=1827)
+eventbase-retrieval.js:415 [EventBase] Live query: 1 collection(s) × 2 query/queries → 32 unique events
+eventbase-retrieval.js:439 [EventBase] After importance filter (>=1): 32 candidates
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=2.353 [formula], windows 6 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=2.327 [formula], windows 2 msgs apart)
 eventbase-retrieval.js:632 [EventBase] Final events after dedup + trim: 10
-eventbase-retrieval.js:634   [0] type=undefined imp=100 score=2.553 persist=undefined
-eventbase-retrieval.js:634   [1] type=undefined imp=100 score=2.461 persist=undefined
-eventbase-retrieval.js:634   [2] type=undefined imp=100 score=2.370 persist=undefined
-eventbase-retrieval.js:634   [3] type=undefined imp=100 score=2.339 persist=undefined
-eventbase-retrieval.js:634   [4] type=undefined imp=100 score=2.251 persist=undefined
-eventbase-retrieval.js:634   [5] type=undefined imp=100 score=2.219 persist=undefined
-eventbase-retrieval.js:634   [6] type=undefined imp=100 score=2.217 persist=undefined
-eventbase-retrieval.js:634   [7] type=undefined imp=100 score=2.170 persist=undefined
-eventbase-retrieval.js:634   [8] type=undefined imp=100 score=2.160 persist=undefined
-eventbase-retrieval.js:634   [9] type=undefined imp=100 score=2.144 persist=undefined
-eventbase-workflow.js:471 [EventBase] Retrieval debug: {dualQuery: true, keywordScoringMethod: 'bm25', nativeHybridPrefer: true, fusionMethod: 'rrf', nativeRerank: false, …}
-eventbase-workflow.js:515 [EventBase] Injected 10 event(s) (requested 10), text length: 3456
+eventbase-retrieval.js:634   [0] type=promise_or_oath imp=100 score=2.800 persist=true
+eventbase-retrieval.js:634   [1] type=relationship_change imp=100 score=2.723 persist=true
+eventbase-retrieval.js:634   [2] type=character_state_change imp=100 score=2.616 persist=true
+eventbase-retrieval.js:634   [3] type=revelation imp=100 score=2.463 persist=true
+eventbase-retrieval.js:634   [4] type=revelation imp=100 score=2.458 persist=true
+eventbase-retrieval.js:634   [5] type=revelation imp=100 score=2.436 persist=true
+eventbase-retrieval.js:634   [6] type=relationship_change imp=100 score=2.427 persist=true
+eventbase-retrieval.js:634   [7] type=relationship_change imp=100 score=2.383 persist=true
+eventbase-retrieval.js:634   [8] type=revelation imp=100 score=2.370 persist=true
+eventbase-retrieval.js:634   [9] type=revelation imp=100 score=2.351 persist=true
+agentic-retrieval.js:76 [VectFox-Agentic] mode=ON  trigger=user_message_len=28
+agentic-retrieval.js:77 [VectFox-Agentic] Pre-search returned 10 candidates (top score=2.800)
+agentic-retrieval.js:82 [VectFox-Agentic] Past chat turns sent to planner: 3
+agentic-retrieval.js:83 [VectFox-Agentic] Narrative context preview (one ~50-word snippet per turn):
+agentic-retrieval.js:87   [-3] {{user}}: 我抱住Mayla 説 "我肯定跟你説, 這間房裡面的人, 一定會幫你找到你的父親, 生要見人死要見屍. 沒有人會放棄你." 我大聲對房內的人説 "對吧?" 我對Mayla 説 "你要這個任務成功, 你首先要説服其他眷屬你有能力去lead 我們去完成. 你這個模樣, 整天愁眉苦臉, 你要其他人怎樣跟着你走?"
+agentic-retrieval.js:87   [-2] ArtificRealm創世域: <konatan_planning~> 好，來仔細思考一下這次的劇情！ - 回顧當前情況 * 時間：20:15，晚上 * 位置：新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房，9個人分配好床位（Critblade+Mayla一張，索拉雅單獨，阿斯蒙蒂斯單獨，Kashier+Fern，Valerie單獨，Engni+Lia） * 人物關係：Mayla剛剛崩潰大哭，擔心Critblade會像她父親影翼一樣消失。Critblade現在要鼓勵她，並對房間內所有人喊話 - 當前劇情的主線是？暗線是？ * 主線：Critblade安撫Mayla，告訴她所有人都會幫她找父親，但同時點醒她——她需要展現領導能力，不能整天愁眉苦臉 * 暗線：索拉雅在角落忍受淫紋發作，Engni和Lia表面裝睡但其實在偷聽，Kashier和Fern也在聽，所有人對Mayla的崩潰都有不同反應 - 如何使用最新輸入內容？ * Critblade抱住Mayla說「這間房裡面的人，一定會幫你找到你的父親，生要見人死要見屍。沒有人會放棄你。」然後大聲對房內的人說「對吧？」最後對Mayla說「你要這個任務成功，你首先要說服其他眷屬你有能力去lead我們去完成。你這個模樣，整天愁眉苦臉，你要其他人怎樣跟著你走？」 * 這段話要完整復述，不能省略，是Critblade的核心發言 - 回顧角色性格特質 * Mayla：極度依賴Critblade，內心有強烈不安全感，但她其實智力262，是影之軍師，只是現在被恐懼壓垮了 * Kashier：精明商人，對Critblade絕對忠誠，會第一個響應 * Fern：裝傻賣萌但內心精明，會用撒嬌方式響應 * Engni：病態M，嫉妒Mayla但表面會裝得很虔誠 * Lia：病嬌刺客，冷漠但對Critblade忠誠 * Valerie：魔王之女，不懂人類情感，可能會說出很直接但不得體的話 * 索拉雅：極度寡言，宿命論者，正在忍受淫紋折磨 - 角色之間的化學反應 * Mayla vs Engni：兩個都想獨佔Critblade，但Mayla剛剛贏了床位爭奪戰，Engni心裡肯定在咒罵 * Kashier + Fern：兩個精明人結盟，會用最得體的方式響應 * Lia：病嬌本質會讓她用極端方式表達忠誠...
+agentic-retrieval.js:87   [-1] {{user}}: 我對Mayla 説 "你還記得為我怎樣幫你贖身的嗎?"
+agentic-retrieval.js:106 [VectFox-Agentic] LLM prompt size: system+user approx 2860 tokens (8310+3129 chars)
+agentic-retrieval.js:146 [VectFox-Agentic] LLM call complete: 5110ms — prompt=4135 tok, completion=158 tok, total=4293 tok (30.9 tok/s output)
+agentic-retrieval.js:150 [VectFox-Agentic] Planner output:
+agentic-retrieval.js:151 {
+  "queries": [
+    "Mayla 贖身 過程",
+    "Mayla 恐懼 父親消失",
+    "Critblade 鼓勵 Mayla 領導能力",
+    "Mayla 內心掙扎 過去"
+  ],
+  "filters": {
+    "characters_any": [
+      "Mayla",
+      "Critblade"
+    ],
+    "concepts_any": [
+      "贖身",
+      "恐懼",
+      "領導力"
+    ]
+  },
+  "rationale": "用戶在問Mayla的贖身過程，需回顧相關事件及她的情感狀態，並引出Critblade的鼓勵和Mayla的內心掙扎。"
+}
+4core-vector-api.js:879 [VectFox] Hybrid search (native), dispatching to hybrid search module
+4hybrid-search.js:91 [HybridSearch] Using native hybrid search (QdrantBackend)
+qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=3 tokens, terms=[mayla, 贖身, 過程], preview="Mayla 贖身 過程"
+qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=4 tokens, terms=[mayla, 恐懼, 父親, 消失], preview="Mayla 恐懼 父親消失"
+qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=5 tokens, terms=[critblad, mayla, 鼓勵, 領導, 能力], preview="Critblade 鼓勵 Mayla 領導能力"
+qdrant.js:832 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, sparse=4 tokens, terms=[mayla, 內心, 掙扎, 過去], preview="Mayla 內心掙扎 過去"
+qdrant.js:850 [Qdrant timing] total=389.8ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 392ms, scores=[1.0000, 0.3810, 0.3333, 0.2917, 0.2770, 0.2500, 0.2175, 0.2020, 0.2000, 0.1714, 0.1667, 0.1625, 0.1554, 0.1411, 0.1361, 0.1224, 0.1222, 0.1144, 0.1000, 0.0970]
+qdrant.js:850 [Qdrant timing] total=437.5ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 439ms, scores=[1.0000, 0.5833, 0.4167, 0.3088, 0.3000, 0.2338, 0.2263, 0.2143, 0.1859, 0.1845, 0.1778, 0.1776, 0.1387, 0.1227, 0.1169, 0.1111, 0.1065, 0.1009, 0.0976, 0.0969]
+qdrant.js:850 [Qdrant timing] total=574.6ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 577ms, scores=[0.7500, 0.7500, 0.6667, 0.3667, 0.2833, 0.1984, 0.1905, 0.1813, 0.1635, 0.1546, 0.1500, 0.1435, 0.1378, 0.1167, 0.1126, 0.1111, 0.1042, 0.1000, 0.0948, 0.0942]
+qdrant.js:850 [Qdrant timing] total=1756.8ms, results=20
+core-vector-api.js:889 [VectFox] Hybrid search (RRF) response: 20 result(s) in 1758ms, scores=[0.5370, 0.5204, 0.4583, 0.3929, 0.3512, 0.3429, 0.2635, 0.2193, 0.2000, 0.1825, 0.1667, 0.1623, 0.1595, 0.1455, 0.1339, 0.1303, 0.1288, 0.1187, 0.1111, 0.1003]
+agentic-retrieval.js:203 [VectFox-Agentic] Qdrant fanout: 4 queries × 1 collection(s) = 4 parallel calls
+agentic-retrieval.js:204 [VectFox-Agentic] Qdrant fanout complete: 1759ms
+agentic-retrieval.js:205 [VectFox-Agentic] Per-query hits:
+agentic-retrieval.js:208   Q1 "Mayla 贖身 過程" → 20 hits (top score=1.000)
+agentic-retrieval.js:208   Q2 "Mayla 恐懼 父親消失" → 20 hits (top score=0.537)
+agentic-retrieval.js:208   Q3 "Critblade 鼓勵 Mayla 領導能力" → 20 hits (top score=1.000)
+agentic-retrieval.js:208   Q4 "Mayla 內心掙扎 過去" → 20 hits (top score=0.750)
+agentic-retrieval.js:212 [VectFox-Agentic] Agentic-only hits (not already in pre-search): 58
+eventbase-retrieval.js:351 [EventBase] Retrieval start — topK overfetch=20, minImportance=1, method=bm25, nativePrefer=true, liveCollections=0, nativeRerank=true (compare ON)
+eventbase-retrieval.js:372 [EventBase] Live query skipped (no locked collection or paused)
+eventbase-retrieval.js:425 [EventBase] Merged 90 archive event(s) into 0 live candidates
+eventbase-retrieval.js:439 [EventBase] After importance filter (>=1): 90 candidates
+eventbase-retrieval.js:584 [EventBase] Dedup: "relationship_change" ESCAPED dedup via score override (sim=1.000 >= 0.75, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=2.616 [formula], windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.583, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.458, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=2.463 [formula], windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.417, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=2.436 [formula], windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.393, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=2.427 [formula], windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.343, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.309, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.277, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.283, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=2.351 [formula], windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.234, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.226, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "promise_or_oath" suppressed (sim=0.214, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.219, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.202, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.200, windows 8 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "promise_or_oath" suppressed (sim=0.119, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.117, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.181, windows 8 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.171, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.178, windows 6 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.178, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.167, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.167, windows 6 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.163, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "promise_or_oath" suppressed (sim=0.159, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.141, windows 4 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.155, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.138, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.150, windows 6 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "dialogue_significant" suppressed (sim=0.145, windows 8 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "side_quest_update" suppressed (sim=0.144, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.139, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.134, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.122, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "promise_or_oath" suppressed (sim=0.117, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.114, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.111, windows 8 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "character_state_change" suppressed (sim=0.111, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.107, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "dialogue_significant" suppressed (sim=0.101, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "dialogue_significant" suppressed (sim=0.100, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "promise_or_oath" suppressed (sim=0.095, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.094, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "revelation" suppressed (sim=0.183, windows 2 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.097, windows 6 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "side_quest_update" suppressed (sim=0.098, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "relationship_change" suppressed (sim=0.130, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "dialogue_significant" suppressed (sim=0.104, windows 0 msgs apart)
+eventbase-retrieval.js:593 [EventBase] Dedup: "dialogue_significant" suppressed (sim=0.097, windows 0 msgs apart)
+eventbase-retrieval.js:632 [EventBase] Final events after dedup + trim: 10
+eventbase-retrieval.js:634   [0] type=promise_or_oath imp=100 score=2.800 persist=true
+eventbase-retrieval.js:634   [1] type=character_state_change imp=100 score=2.800 persist=true
+eventbase-retrieval.js:634   [2] type=relationship_change imp=100 score=2.723 persist=true
+eventbase-retrieval.js:634   [3] type=relationship_change imp=100 score=2.723 persist=true
+eventbase-retrieval.js:634   [4] type=revelation imp=100 score=2.632 persist=true
+eventbase-retrieval.js:634   [5] type=revelation imp=100 score=2.628 persist=true
+eventbase-retrieval.js:634   [6] type=relationship_change imp=100 score=2.578 persist=true
+eventbase-retrieval.js:634   [7] type=dialogue_significant imp=100 score=2.509 persist=true
+eventbase-retrieval.js:634   [8] type=revelation imp=100 score=2.506 persist=true
+eventbase-retrieval.js:634   [9] type=revelation imp=100 score=2.458 persist=true
+agentic-retrieval.js:234 [VectFox-Agentic] Final merged candidates: 10 pre-search + 80 agentic = 90 total → 10 after rerank/dedup/trim
+agentic-retrieval.js:235 [VectFox-Agentic] Total wall-clock for agent overhead: 9164ms (LLM=5110ms, fanout=1759ms)
+eventbase-workflow.js:471 [EventBase] Retrieval debug: {dualQuery: true, keywordScoringMethod: 'bm25', nativeHybridPrefer: true, fusionMethod: 'rrf', nativeRerank: true, …}
+eventbase-workflow.js:515 [EventBase] Injected 10 event(s) (requested 10), text length: 4873
 eventbase-workflow.js:516 [EventBase] setExtensionPrompt tag="3_vecthare_eventbase" position=0 depth=2
-eventbase-workflow.js:519 [EventBase] Slot verification — key exists: true, value type: string, length: 3456
-eventbase-workflow.js:520 [EventBase] extension_prompts keys: (11) ['1_memory', '2_floating_prompt', 'QUIET_PROMPT', 'customDepthWI_0_0', 'customDepthWI_0_1', 'customDepthWI_0_2', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'DEPTH_PROMPT', '3_vecthare', '3_vecthare_eventbase']
+eventbase-workflow.js:519 [EventBase] Slot verification — key exists: true, value type: string, length: 4873
+eventbase-workflow.js:520 [EventBase] extension_prompts keys: (10) ['1_memory', '2_floating_prompt', 'QUIET_PROMPT', 'PERSONA_DESCRIPTION', '__STORY_STRING__', '3_vecthare', '3_vecthare_eventbase', '3_vectors', '4_vectors_data_bank', 'DEPTH_PROMPT']
 eventbase-workflow.js:521 [EventBase] Injection preview: <VectFoxMemory>
 # Event 1
-event_type: -
+event_type: promise_or_oath
 importance: 100
 summary: Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾人喊話徵求同意。Kashier承諾動用藍聯商會情報網絡，Fern提供貴族圈八卦，Lia誓言找到活的或死的，Engni奉獻神術追蹤審問，Valerie建議抓人審問，索拉雅以星象魔法回應，所有眷屬紛紛表態支持，形成團隊共識。
 DateTime: -
-cause: -
-result: -
-characters: -
-locations: -
-fact
-chat-vectorization.js:1737 VectFox: Will query 2 collections: (2) ['qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106', 'qdrant:vf_lorebook_qdrant_critblade_story1_1778514888106']
+cause: Mayla崩潰大哭擔心父親影翼消失如Critblade可能
+chat-vectorization.js:1737 VectFox: Will query 1 collections: ['qdrant:vf_lorebook_qdrant_critblade_story1_1778514888106']
 chat-vectorization.js:1756 VectFox: Extracted 8 keywords from query: (8) ['mayla', 'kashier', 'valerie', 'fern', 'lia', 'engni', 'master', 'critblade']
-collection-metadata.js:895 [VECTFOX Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: hasTriggers=false, hasConditions=false
-collection-metadata.js:932 [VECTFOX Activation Filter] Collection qdrant:vecthare_lorebook_qdrant_critblade_story1_1778514888106: ✗ NOT_ACTIVATED (no trigger match, no condition pass, not locked)
 collection-metadata.js:895 [VECTFOX Activation Filter] Collection qdrant:vf_lorebook_qdrant_critblade_story1_1778514888106: hasTriggers=false, hasConditions=false
 collection-metadata.js:932 [VECTFOX Activation Filter] Collection qdrant:vf_lorebook_qdrant_critblade_story1_1778514888106: ✗ NOT_ACTIVATED (no trigger match, no condition pass, not locked)
-collection-metadata.js:953 [VECTFOX Activation Filter] Summary: 2 collections → 0 active
+collection-metadata.js:953 [VECTFOX Activation Filter] Summary: 1 collections → 0 active
 chat-vectorization.js:1791 [VECTFOX ChunkBase] No active Standard/ChunkBase collections and World Info disabled — skipping non-chat chunk injection (this is normal if you only use EventBase).
 script.js:4547 Core/all messages: 2116/2116
 vm-browserify.ts:18 An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
@@ -192,7 +330,3 @@ callWithAsyncErrorHandling @ runtime-core.esm-bundler.js:206
 world-info.js:623 [WI] Processing sticky entry ArtificRealm創世域.42 {hash: 4817494369076791, start: 2116, end: 2117, protected: false}
 world-info.js:627 [WI] Removing sticky entry ArtificRealm創世域.42 from timedWorldInfo: chat not advanced {hash: 4817494369076791, start: 2116, end: 2117, protected: false}
 world-info.js:722 [WI] Adding sticky entry ArtificRealm創世域.42: start=2116, end=2117, protected=false
-world-info.js:5159 [WI] Adding 42 entries to prompt (42) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
-index.js:19 [QR2] calling {args: Array(1), functionToCall: ƒ}
-script.js:4606 skipWIAN not active, adding WIAN
-handler.ts:225 [Prompt Template] start generate after 1072 messages
