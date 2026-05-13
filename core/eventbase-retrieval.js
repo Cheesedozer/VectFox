@@ -171,7 +171,18 @@ async function _runOneLiveQuery({
                         // Filter by min-importance to mirror the server-side filter.
                         const jsFiltered = jsCandidates.filter(m => (m.importance ?? 0) >= rerankParams.minImportance);
                         jsFiltered.sort((a, b) => b._jsFinal - a._jsFinal);
-                        _logRerankComparison(colId, queryText, nativeResults, jsFiltered, nativeMs, jsMs, settings, comparisonLog);
+
+                        // Apples-to-apples: the JS final score includes anchor boost
+                        // (from _jsFinalScore), and the main pipeline ALSO adds anchor
+                        // boost to native results AFTER this helper returns. So for the
+                        // comparison to be meaningful, project the same anchor-boosted
+                        // score onto the native list here. Re-sort by the boosted score
+                        // so the rank-correlation reflects what the user actually sees.
+                        const nativeForCompare = nativeResults
+                            .map(e => ({ ...e, score: (typeof e.score === 'number' ? e.score : 0) + _anchorBoostFor(e, anchorText, anchorBoostAmount) }))
+                            .sort((a, b) => b.score - a.score);
+
+                        _logRerankComparison(colId, queryText, nativeForCompare, jsFiltered, nativeMs, jsMs, settings, comparisonLog);
                     } catch (cmpErr) {
                         console.warn(`[EventBase compare] JS path failed for ${colId}:`, cmpErr.message);
                     }
