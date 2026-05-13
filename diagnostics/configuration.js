@@ -28,7 +28,8 @@ import { getTemporallyBlindCount, getTemporallyBlindChunks, isCollectionEnabled 
 import { getCollectionRegistry } from '../core/collection-loader.js';
 
 // DEAD-CHUNK-CHAT: chunk-based chat is removed; chat runs through the EventBase pipeline.
-// Diagnostics that used to validate `vh:chat:*` collections now report "not applicable".
+// Diagnostics that used to validate chunk-based chat collections now report "not applicable".
+// EventBase (vf_eventbase_*) collections use their own validation rules.
 const CHAT_NOT_APPLICABLE_MESSAGE = 'Not applicable (EventBase mode — chat is not stored as a chunk collection)';
 
 /**
@@ -321,8 +322,8 @@ export function checkVisualizerApiReadiness(settings) {
  * DEAD-CHUNK-CHAT — see function body.
  */
 export function checkCollectionIdFormat() {
-    // DEAD-CHUNK-CHAT: the `vh:chat:<uuid>` ID format only existed for chunk-based chat
-    // collections. EventBase collections use their own naming scheme and don't need
+    // DEAD-CHUNK-CHAT: chunk-based chat collections are no longer used.
+    // EventBase collections use their own naming scheme and don't need
     // this validation.
     return {
         name: 'Collection ID Format',

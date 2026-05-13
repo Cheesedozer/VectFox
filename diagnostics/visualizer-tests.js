@@ -25,9 +25,9 @@ import {
 import { unregisterCollection } from '../core/collection-loader.js';
 import { getStringHash } from '../../../../utils.js';
 
-// Test collection prefix using new vh: format for proper multitenancy parsing
-// Format: vh:{type}:{sourceId} - Qdrant backend parses this correctly
-const TEST_COLLECTION_PREFIX = 'vh:test:visualizer_';
+// Test collection prefix using VectFox vf_ format
+// Format: vf_test_{type}_{sourceId}
+const TEST_COLLECTION_PREFIX = 'vf_test_visualizer_';
 
 /**
  * Full cleanup for test collections - purges vectors AND unregisters from registry
@@ -49,7 +49,8 @@ async function cleanupTestCollection(collectionId, settings) {
 
 /**
  * Generates a unique test collection ID
- * Uses vh:test:visualizer_{timestamp} format for proper Qdrant multitenancy
+ * Uses vf_test_visualizer_{timestamp} format for proper identification
+ * as a diagnostic test collection that should be cleaned up.
  */
 function getTestCollectionId() {
     return `${TEST_COLLECTION_PREFIX}${Date.now()}`;

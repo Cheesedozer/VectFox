@@ -534,20 +534,20 @@ describe('QdrantBackend', () => {
     });
 
     describe('_parseCollectionId', () => {
-        it('should parse new format (vh:type:id)', () => {
-            const result = backend._parseCollectionId('vh:chat:abc123');
+        it('should parse VectFox format (vf_type_id)', () => {
+            const result = backend._parseCollectionId('vf_chat_abc123');
             expect(result.type).toBe('chat');
             expect(result.sourceId).toBe('abc123');
         });
 
-        it('should parse legacy format (vecthare_type_id)', () => {
+        it('should parse legacy VectHare format (vecthare_type_id)', () => {
             const result = backend._parseCollectionId('vecthare_chat_abc123');
             expect(result.type).toBe('chat');
             expect(result.sourceId).toBe('abc123');
         });
 
         it('should handle registry key prefix', () => {
-            const result = backend._parseCollectionId('qdrant:transformers:vh:chat:abc123');
+            const result = backend._parseCollectionId('qdrant:transformers:vf_chat_abc123');
             expect(result.type).toBe('chat');
             expect(result.sourceId).toBe('abc123');
         });
@@ -558,7 +558,7 @@ describe('QdrantBackend', () => {
             fetchMock.mockResolvedValueOnce(mockFetchResponse({ items: [] }));
 
             const settings = { ...defaultSettings, qdrant_multitenancy: true };
-            await backend.getSavedHashes('vh:chat:abc123', settings);
+            await backend.getSavedHashes('vf_chat_abc123', settings);
 
             const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
             expect(callBody.collectionId).toBe('vecthare_multitenancy');
@@ -570,10 +570,10 @@ describe('QdrantBackend', () => {
             fetchMock.mockResolvedValueOnce(mockFetchResponse({ items: [] }));
 
             const settings = { ...defaultSettings, qdrant_multitenancy: false };
-            await backend.getSavedHashes('vh:chat:abc123', settings);
+            await backend.getSavedHashes('vf_chat_abc123', settings);
 
             const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.collectionId).toBe('vh:chat:abc123');
+            expect(callBody.collectionId).toBe('vf_chat_abc123');
             expect(callBody.filter).toBeUndefined();
         });
     });
@@ -583,10 +583,10 @@ describe('QdrantBackend', () => {
             fetchMock.mockResolvedValueOnce(mockFetchResponse({}));
 
             const settings = { ...defaultSettings, qdrant_multitenancy: true };
-            await backend.insertVectorItems('vh:chat:abc123', sampleItems, settings);
+            await backend.insertVectorItems('vf_chat_abc123', sampleItems, settings);
 
             const callBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-            expect(callBody.items[0].metadata.content_type).toBe('vh:chat:abc123');
+            expect(callBody.items[0].metadata.content_type).toBe('vf_chat_abc123');
         });
 
         it('should batch large insertions', async () => {

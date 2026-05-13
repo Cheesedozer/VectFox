@@ -229,7 +229,8 @@ export async function deleteCollection(collectionId, settings, registryKey = nul
 
     // Step 4: Clear EventBase window fingerprint cache if this is an EventBase collection.
     // The UUID is always the last underscore-separated segment of the collection ID.
-    if (collectionId.startsWith(COLLECTION_PREFIXES.VECTHARE_EVENTBASE)) {
+    if (collectionId.startsWith(COLLECTION_PREFIXES.VECTHARE_EVENTBASE) ||
+        collectionId.startsWith(COLLECTION_PREFIXES.VECTFOX_EVENTBASE)) {
         try {
             const { clearWindowCacheForChat } = await import('./eventbase-store.js');
             const chatUUID = collectionId.split('_').pop();
@@ -780,8 +781,6 @@ async function discoverViaFallback(settings) {
         `${COLLECTION_PREFIXES.VECTHARE_LOREBOOK}`,
         // Document patterns
         `${COLLECTION_PREFIXES.VECTHARE_DOCUMENT}`,
-        // File patterns (legacy)
-        `${COLLECTION_PREFIXES.FILE}`,
     ];
 
     // Note: Without filesystem access, we can't discover collections with unknown IDs

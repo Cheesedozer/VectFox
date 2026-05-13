@@ -52,7 +52,8 @@ async function cleanupTestCollection(collectionId, settings) {
 // is owned by diagnostics and safe to drop. Add new patterns here whenever a
 // new check pokes a fresh collection name.
 const DIAGNOSTIC_TEST_COLLECTION_PATTERNS = [
-    /(^|:)vh:test:/,           // production test temp collections
+    /(^|:)vf_test_/,           // production test temp collections
+    /^VectFox_diag/,           // diagnostic temp collections
     /(^|:)VectFox_diag(_|$)/, // infrastructure endpoint probes
     /(^|:)test$/,              // checkVectorsExtension probe
 ];
@@ -63,7 +64,7 @@ function isDiagnosticTestCollection(id) {
 }
 
 /**
- * Sweep any leftover diagnostic probe collections (`vh:test:*`, `VectFox_diag*`,
+ * Sweep any leftover diagnostic probe collections (`vf_test_*`, `VectFox_diag*`,
  * `test`) that were created by previous diagnostic runs and not cleaned up —
  * either because earlier code lacked try/finally, the process was killed
  * mid-run, or the backend creates the collection on first reference of a
@@ -91,7 +92,7 @@ export async function sweepLeftoverTestCollections(settings) {
 
         for (const c of leftovers) {
             const rawId = c.id || c.collectionId || c.name;
-            // Strip backend/source prefix if present (e.g. "qdrant:transformers:vh:test:..." → "vh:test:...").
+            // Strip backend/source prefix if present (e.g. "qdrant:transformers:vf_test_..." → "vf_test_...").
             let cleanId = rawId;
             for (const re of DIAGNOSTIC_TEST_COLLECTION_PATTERNS) {
                 const match = rawId.match(re);
@@ -256,7 +257,7 @@ export async function testEmbeddingGeneration(settings) {
  * Creates a temporary test collection that is cleaned up after the test.
  */
 export async function testVectorStorage(settings) {
-    const testCollectionId = `vh:test:storage_${Date.now()}`;
+    const testCollectionId = `vf_test_storage_${Date.now()}`;
     try {
         const testHash = String(Math.floor(Math.random() * 1000000));
         const testText = 'VectFox storage test message';
@@ -757,7 +758,7 @@ export async function testPluginEmbeddingGeneration(settings) {
         };
     }
 
-    const testCollectionId = `vh:test:embed_${Date.now()}`;
+    const testCollectionId = `vf_test_embed_${Date.now()}`;
     try {
         const testHash = String(Math.floor(Math.random() * 1000000));
         const testText = 'Plugin embedding generation test';

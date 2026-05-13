@@ -243,7 +243,7 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
         categories.production.push(...activationResults);
     }
 
-    // Always run last: drop any diagnostic probe collections (`vh:test:*`,
+    // Always run last: drop any diagnostic probe collections (`vf_test_*`,
     // `VectFox_diag*`, `test`) created during this run by the infrastructure
     // checks or by tests that bailed without cleanup. Listed under infrastructure
     // so users see it whether or not production tests were enabled.

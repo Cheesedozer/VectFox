@@ -42,7 +42,7 @@ import { getStringHash } from '../../../../utils.js';
 const EXPORT_VERSION = '1.0.0';
 
 /** File extension for VectFox exports */
-export const EXPORT_FILE_EXTENSION = '.vecthare.json';
+export const EXPORT_FILE_EXTENSION = '.vectfox.json';
 
 /** Maximum chunks to export at once (for progress updates) */
 const EXPORT_BATCH_SIZE = 100;
@@ -360,8 +360,8 @@ export async function exportMultipleCollections(collectionIds, settings) {
  */
 export function downloadExport(exportData, filename = null) {
     const defaultName = exportData.type === 'multi'
-        ? `vecthare-export-${exportData.stats.totalCollections}-collections`
-        : `vecthare-${exportData.collection?.id || 'collection'}`;
+        ? `vectfox-export-${exportData.stats.totalCollections}-collections`
+        : `vectfox-${exportData.collection?.id || 'collection'}`;
 
     const finalFilename = (filename || defaultName) + EXPORT_FILE_EXTENSION;
 
@@ -816,14 +816,17 @@ async function importCollectionSilent(exportData, settings, options = {}) {
  * @returns {string}
  */
 function detectContentType(collectionId) {
-    if (collectionId.startsWith('vecthare_chat_') || collectionId.includes('_chat_')) {
+    if (collectionId.includes('_chat_') || collectionId.includes('_eventbase_')) {
         return 'chat';
     }
-    if (collectionId.startsWith('vecthare_lorebook_') || collectionId.includes('lorebook')) {
+    if (collectionId.includes('_lorebook_')) {
         return 'lorebook';
     }
-    if (collectionId.startsWith('file_') || collectionId.includes('_file_')) {
-        return 'file';
+    if (collectionId.includes('_document_')) {
+        return 'document';
+    }
+    if (collectionId.includes('_character_')) {
+        return 'character';
     }
     return 'unknown';
 }

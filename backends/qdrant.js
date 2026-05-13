@@ -202,13 +202,9 @@ export class QdrantBackend extends VectorBackend {
      * Handles registry key format: backend:source:collectionId
      * Extracts just the collectionId part and parses it
      *
-     * New format: vh:{type}:{uuid}
-     * Examples:
-     *   "vh:chat:a1b2c3d4-e5f6-7890-abcd-ef1234567890" → {type: "chat", sourceId: "a1b2..."}
-     *   "vh:lorebook:world_info_123" → {type: "lorebook", sourceId: "world_info_123"}
-     *   "vh:doc:char_456" → {type: "doc", sourceId: "char_456"}
-     *
-     * Legacy format: vecthare_{type}_{sourceId}
+     * Supported formats:
+     *   vf_{type}_{sourceId} (VectFox)
+     *   vecthare_{type}_{sourceId} (Legacy VectHare)
      */
     _parseCollectionId(collectionId) {
         // First strip any registry prefix
@@ -217,23 +213,22 @@ export class QdrantBackend extends VectorBackend {
             return { type: 'unknown', sourceId: 'unknown' };
         }
 
-        // Now parse the actual collection ID
-        const idParts = collectionId.split(':');
+        // Parse the actual collection ID
+        const parts = collectionId.split('_');
 
-        // New format: vh:{type}:{sourceId}
-        if (idParts.length >= 3 && idParts[0] === 'vh') {
+        // VectFox format: vf_{type}_{sourceId}
+        if (parts.length >= 3 && parts[0] === 'vf') {
             return {
-                type: idParts[1],
-                sourceId: idParts.slice(2).join(':') // Handle UUIDs that might have colons
+                type: parts[1],
+                sourceId: parts.slice(2).join('_')
             };
         }
 
-        // Legacy format: vecthare_{type}_{sourceId}
-        const legacyParts = collectionId.split('_');
-        if (legacyParts.length >= 3 && legacyParts[0] === 'vecthare') {
+        // Legacy VectHare format: vecthare_{type}_{sourceId}
+        if (parts.length >= 3 && parts[0] === 'vecthare') {
             return {
-                type: legacyParts[1],
-                sourceId: legacyParts.slice(2).join('_')
+                type: parts[1],
+                sourceId: parts.slice(2).join('_')
             };
         }
 

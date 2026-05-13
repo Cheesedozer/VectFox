@@ -33,6 +33,7 @@ To tackle this, VectFox uses a dedicated vector database that stores **every sin
 - 🧠 Adding story-based memory on top of character-based memory in [MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker).
 - 💸 Long conversations choke your token budget with irrelevant history.
 - ✍️ You no longer need to manually edit context to remind characters of key events.
+- 🎯 **Garbage in → Garbage out.** Summarizing raw chat into unstructured text blobs and vectorizing them produces noisy, low-signal retrieval. EventBase enforces a **strict structured format** (`characters`, `items`, `locations`, `concepts`, `keywords`, `importance`, `DateTime`) stored natively in the vector DB — not just text chunks. Agent Mode then queries this highly structured data with **targeted structural queries** (filtering by character, concept, location), dramatically increasing hit rate compared to pure text similarity over unstructured summaries.
 
 **VectFox Solution:** Use **Qdrant** as a dedicated vector database that stores every meaningful event from the chat, no matter how long it gets. For users who aren't ready to run an extra service, a **"light" version using the A1 and A2 paths** runs on SillyTavern's built-in vector store with no additional software — it shares many features of the full vector DB at smaller scale. When you're ready for a real long-term memory system, upgrade to the **A3 path** with Qdrant.
 
@@ -419,6 +420,9 @@ EventBase has its own built-in recency bonus baked into the 4-weight re-ranker. 
 
 **Can I use triggers/emotion conditions on Chinese/Japanese/Korean chats?**
 Not reliably. The keyword dictionary is English-only and regex `\b` word boundaries don't fire between CJK characters. Use "Active for current chat" / Character lock instead, or numeric Message Count / Turn Count conditions.
+
+**How do I delete a collection safely?**
+**ALWAYS use the Database Browser inside VectFox** (Action tab → "Database Browser" button) to delete collections. Click the red "Delete" button on the collection card. This properly cleans up both the vector database **and** VectFox's internal registry + metadata. Never delete collections manually from Qdrant's web UI or by editing SillyTavern's `settings.json` — doing so leaves orphaned metadata that causes sync conflicts, "collection not found" errors, and other strange behavior.
 
 **Why "scene" settings can't be found?  It was in the original VectHare**
 Scene support was removed (it was a chunk-based-chat-era feature, and chat now runs through EventBase). Grouping events together is not quite logical, so the feature was removed.

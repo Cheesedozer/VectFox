@@ -343,7 +343,7 @@ export function getChunkMetadata(hash) {
         return null;
     }
 
-    const key = `vecthare_chunk_meta_${hash}`;
+    const key = `vectfox_chunk_meta_${hash}`;
     return extension_settings.vectfox[key] || null;
 }
 
@@ -357,7 +357,7 @@ export function saveChunkMetadata(hash, metadata) {
         extension_settings.vectfox = {};
     }
 
-    const key = `vecthare_chunk_meta_${hash}`;
+    const key = `vectfox_chunk_meta_${hash}`;
     extension_settings.vectfox[key] = {
         ...metadata,
         updatedAt: Date.now(),
@@ -375,7 +375,7 @@ export function deleteChunkMetadata(hash) {
         return;
     }
 
-    const key = `vecthare_chunk_meta_${hash}`;
+    const key = `vectfox_chunk_meta_${hash}`;
     if (extension_settings.vectfox[key]) {
         delete extension_settings.vectfox[key];
         saveSettingsDebounced();
@@ -392,7 +392,7 @@ export function getAllChunkMetadata() {
     }
 
     const result = {};
-    const prefix = 'vecthare_chunk_meta_';
+    const prefix = 'vectfox_chunk_meta_';
 
     for (const key in extension_settings.vectfox) {
         if (key.startsWith(prefix)) {
@@ -410,7 +410,7 @@ export function getAllChunkMetadata() {
 
 /**
  * Migrates old scattered enabled keys to new collections structure
- * Old format: vecthare_collection_enabled_{collectionId} = true/false
+ * Old format: vectfox_collection_enabled_{collectionId} = true/false
  * New format: collections[collectionId].enabled = true/false
  */
 export function migrateOldEnabledKeys() {
@@ -424,8 +424,8 @@ export function migrateOldEnabledKeys() {
     const keysToDelete = [];
 
     for (const key in extension_settings.vectfox) {
-        if (key.startsWith('vecthare_collection_enabled_')) {
-            const collectionId = key.replace('vecthare_collection_enabled_', '');
+        if (key.startsWith('vectfox_collection_enabled_')) {
+            const collectionId = key.replace('vectfox_collection_enabled_', '');
             const enabled = extension_settings.vectfox[key];
 
             // Only migrate if we don't already have metadata for this collection
@@ -1174,10 +1174,10 @@ export function getTemporallyBlindChunks() {
 
     const blindChunks = [];
     for (const key in extension_settings.vectfox) {
-        if (key.startsWith('vecthare_chunk_meta_')) {
+        if (key.startsWith('vectfox_chunk_meta_')) {
             const meta = extension_settings.vectfox[key];
             if (meta?.temporallyBlind === true) {
-                const hash = key.replace('vecthare_chunk_meta_', '');
+                const hash = key.replace('vectfox_chunk_meta_', '');
                 blindChunks.push(hash);
             }
         }
