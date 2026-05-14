@@ -1689,6 +1689,11 @@ export function refreshWIStatus() {
     }
     import('../core/collection-metadata.js').then(({ getCollectionMeta, isCollectionLockedToChat }) => {
         const chatId = getCurrentChatId();
+        console.log(`[VectFox WI] refreshWIStatus: chatId=${chatId}, lorebookIds=`, lorebookIds);
+        lorebookIds.forEach(id => {
+            const meta = getCollectionMeta(id);
+            console.log(`[VectFox WI]  collection=${id} locks=`, meta?.lockedToChatIds, 'locked?', isCollectionLockedToChat(id, chatId));
+        });
         const lockedIds = chatId ? lorebookIds.filter(id => isCollectionLockedToChat(id, chatId)) : [];
         if (lockedIds.length === 0) {
             const names = lorebookIds.map(id => getCollectionMeta(id)?.sourceName || id);
