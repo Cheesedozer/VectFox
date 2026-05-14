@@ -1525,7 +1525,7 @@ function initializeCollapsibleCards() {
             $(`[data-vectfox-tab="${tab}"]`, '#VectFox_settings').addClass('vectfox-tab-active');
             if (tab === 'action') refreshHealthIndicator();
             if (tab === 'worldinfo') refreshWIStatus();
-            if (tab === 'autosync') refreshAutoSyncCheckbox(settings);
+            if (tab === 'autosync') refreshAutoSyncCheckbox(extension_settings.vectfox);
         });
     }
 
@@ -1736,10 +1736,12 @@ export function refreshAutoSyncCheckbox(settings) {
 
         const totalChunks = allMatches.reduce((sum, m) => sum + (m.chunkCount || 0), 0);
 
+        const { isCollectionAutoSyncEnabled } = await import('../core/collection-metadata.js');
+        const isEnabled = isCollectionAutoSyncEnabled(allMatches[0].collectionId);
+        $checkbox.prop('checked', isEnabled);
+
         if (fullyVectorized) {
             $status.html(`<i class="fa-solid fa-circle-check" style="color: var(--success-color, #27ae60);"></i> Ready (${totalChunks} chunks)`);
-            const { isCollectionAutoSyncEnabled } = await import('../core/collection-metadata.js');
-            $checkbox.prop('checked', isCollectionAutoSyncEnabled(allMatches[0].collectionId));
         } else {
             $status.html(`<i class="fa-solid fa-circle-exclamation" style="color: var(--warning-color, #f39c12);"></i> Partially vectorized (${totalChunks} chunks) — finish vectorization first`);
         }
