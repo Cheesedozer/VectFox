@@ -3638,23 +3638,18 @@ function bindSettingsEvents(settings, callbacks) {
                 const headers = { 'Content-Type': 'application/json' };
                 const apiKey = settings.openrouter_api_key;
                 if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-                const resp = await fetch('https://openrouter.ai/api/v1/models', { method: 'GET', headers });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const data = await resp.json();
-                _openrouterModelCache = (data?.data || []).map(m => ({
-                    id: m.id,
-                    label: m.name ? `${m.id} — ${m.name}` : m.id,
-                    modality: m.architecture?.modality || '',
-                }));
+                // Embedding models use output_modalities=embeddings — not in the standard list
+                const [embResp, allResp] = await Promise.all([
+                    fetch('https://openrouter.ai/api/v1/models?output_modalities=embeddings', { method: 'GET', headers }),
+                    fetch('https://openrouter.ai/api/v1/models', { method: 'GET', headers }),
+                ]);
+                const toEntry = m => ({ id: m.id, label: m.name ? `${m.id} — ${m.name}` : m.id });
+                const embModels = embResp.ok ? (await embResp.json()).data?.map(toEntry) || [] : [];
+                const allModels = allResp.ok ? (await allResp.json()).data?.map(toEntry) || [] : [];
+                _openrouterModelCache = { embeddings: embModels, all: [...embModels, ...allModels] };
             }
 
-            const all = _openrouterModelCache;
-            const isEmbeddingModel = m => {
-                const id = m.id.toLowerCase();
-                const modality = m.modality.toLowerCase();
-                return id.includes('embed') || modality.includes('embed') || modality === 'text->text:embedding';
-            };
-            const embeddings = all.filter(isEmbeddingModel);
+            const { embeddings, all } = _openrouterModelCache;
 
             const renderList = (items, showingAll) => {
                 if (!items.length) {
@@ -3697,10 +3692,8 @@ function bindSettingsEvents(settings, callbacks) {
         // "__toggle__" pseudo-option toggles between embedding-only and all
         if (value === '__toggle__') {
             const showingAll = !!$list.data('showing-all');
-            const all = _openrouterModelCache || [];
-            const items = showingAll
-                ? all.filter(m => { const id = m.id.toLowerCase(); const mod = (m.modality || '').toLowerCase(); return id.includes('embed') || mod.includes('embed') || mod === 'text->text:embedding'; })
-                : all;
+            const cache = _openrouterModelCache || { embeddings: [], all: [] };
+            const items = showingAll ? cache.embeddings : cache.all;
             items.sort((a, b) => a.id.localeCompare(b.id));
             const currentValue = String($('#VectFox_openrouter_model').val() || '').trim();
             const nextShowingAll = !showingAll;
