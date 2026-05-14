@@ -1,388 +1,66 @@
-
-[Qdrant] Initializing with URL: http://10.0.1.249:6333
-[Qdrant] API Key: (not set)
-[Qdrant] Initializing with URL: http://10.0.1.249:6333
-[Qdrant] API Key: (not set)
-[Qdrant] Connection successful
-[Qdrant] Connection successful
-[Qdrant] Server version: 1.18.0 (formula query supported)
-[Qdrant] Server version: 1.18.0 (formula query supported)
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_eventbase_qdrant_rabbit_fuka_shikuzaki_d609a3e2-8a7b-4cc6-a559-5c024c8dd831
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_eventbase_qdrant_rabbit_fuka_shikuzaki_d609a3e2-8a7b-4cc6-a559-5c024c8dd831
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for type (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for sourceId (keyword (tenant))
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingSource (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for embeddingModel (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for characterName (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for chatId (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for keywords (keyword)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for text (text)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for hash (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for timestamp (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for importance (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for source_window_end (integer)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for characters (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for locations (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for factions (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for concepts (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for items (keyword)
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_lorebook_qdrant_rabbit_your_wives_mvu_1778714884927
-[Qdrant] Created index for event_type (keyword)
-[Qdrant] Ensured payload indexes for vf_lorebook_qdrant_rabbit_your_wives_mvu_1778714884927
-[Qdrant-debug] hybridQueryNativeWithRerank: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, prefetchLimit=80, hybridLimit=40
-[Qdrant-debug] weights: cosine=0.550 importance=0.200 persist=0.150 recency=0.100 rrfScoreScale=1
-[Qdrant-debug] recency: origin=2116, halfLife=423.20000000000005; filter: minImportance=1, visibleThreshold=-1
-[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?""
-[Qdrant-debug] Dense: dim=4096; Sparse: 6 tokens, top-5 by weight: [155974701:1.000, 2822298187:1.000, 1335592929:1.000, 3741420880:1.000, 3997698794:1.000]
-[Qdrant] Native hybrid + rerank returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] formulaScore=2.6316, imp=100, persist=true, swe=1227, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
-[Qdrant-debug] [2] formulaScore=2.5498, imp=100, persist=true, swe=1841, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
-[Qdrant-debug] [3] formulaScore=2.4634, imp=100, persist=true, swe=1861, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [4] formulaScore=2.4256, imp=100, persist=true, swe=1821, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
-[Qdrant-debug] [5] formulaScore=2.3803, imp=100, persist=true, swe=1897, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [6] formulaScore=2.3696, imp=100, persist=true, swe=1829, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
-[Qdrant-debug] [7] formulaScore=2.3481, imp=100, persist=true, swe=1823, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
-[Qdrant-debug] [8] formulaScore=2.3271, imp=100, persist=true, swe=1903, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [9] formulaScore=2.3164, imp=100, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [10] formulaScore=2.3081, imp=100, persist=true, swe=1827, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] hybridQueryNativeWithRerank: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, prefetchLimit=80, hybridLimit=40
-[Qdrant-debug] weights: cosine=0.550 importance=0.200 persist=0.150 recency=0.100 rrfScoreScale=1
-[Qdrant-debug] recency: origin=2116, halfLife=423.20000000000005; filter: minImportance=1, visibleThreshold=-1
-[Qdrant-debug] Query text: "我對Mayla  説 "你還記得為我怎樣幫你贖身的嗎?"
-
-<gametxt>
-我摟緊了懷裡這具因恐懼而顫抖的軀體。
-
-Mayla那對多汁的巨乳緊緊壓在我胸口，濕透的淚水浸透了我的衣領。她像隻快要溺死的幼獸,拼命抓著我的後背,指甲幾乎要陷進肉裡。那聲撕心裂肺的哭聲在半開放的房間裡迴盪,毫無保留,毫無偽裝。
-
-我沒有立刻安撫她。
-
-只是用手掌輕撫她那頭及臀的黑色長卷髮,一下,一下,像在撫摸一隻炸毛的"
-[Qdrant-debug] Dense: dim=4096; Sparse: 525 tokens, top-5 by weight: [155974701:9.000, 1235396903:7.000, 3398287155:6.000, 2618142234:6.000, 1346767097:6.000]
-[Qdrant] Native hybrid + rerank returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] formulaScore=2.7995, imp=100, persist=true, swe=2113, text="[promise_or_oath] Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾"
-[Qdrant-debug] [2] formulaScore=2.6162, imp=100, persist=true, swe=2113, text="[character_state_change] Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦"
-[Qdrant-debug] [3] formulaScore=2.4359, imp=100, persist=true, swe=1897, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [4] formulaScore=2.3827, imp=100, persist=true, swe=1865, text="[relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公"
-[Qdrant-debug] [5] formulaScore=2.3528, imp=100, persist=true, swe=1827, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] [6] formulaScore=2.3512, imp=100, persist=true, swe=2111, text="[revelation] 薇拉向Critblade崩潰吐露內心，透露在新希望港有魅魔四處尋找失蹤十八年的影翼，此人與她父親同名同失蹤時間。她恐懼Critblad"
-[Qdrant-debug] [7] formulaScore=2.3438, imp=100, persist=true, swe=1857, text="[promise_or_oath] Critblade對莉莉安承諾會好好照顧Mayla，她已為正式眷屬，將以此身份活下去，並承諾找出影翼真相。同時宣布三天後先赴"
-[Qdrant-debug] [8] formulaScore=2.3325, imp=100, persist=true, swe=2079, text="[revelation] 混血市集三族早點攤老闆透露最近港口來了一個奇怪的魅魔，到處找失蹤很多年的親人。Mayla聽聞後青色眼眸瞬間睜大，內心懷疑與生父影翼有關"
-[Qdrant-debug] [9] formulaScore=2.3268, imp=100, persist=true, swe=2081, text="[revelation] 老闆描述港口出現深紫長髮火辣小麥色皮膚魅魔，到處尋找18年前失蹤強大魅魔影翼，常在港口酒館徘徊，甚至去瀛洲群島扎赫拉巴德打聽。Mayl"
-[Qdrant-debug] [10] formulaScore=2.3052, imp=100, persist=true, swe=1861, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] hybridQueryNative: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "Critblade 幫助 Mayla 恢復信心"
-[Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 5 tokens, top-5 by weight: [1057975302:1.000, 155974701:1.000, 1591931257:1.000, 4055223716:1.000, 1876881853:1.000]
-[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.6429, hash=28125157, text="[dialogue_significant] Critblade指示英妮給莉婭一個healing，並命令縮在一旁的Mayla與莉婭在屋外平地一對一對決。Mayl"
-[Qdrant-debug] [2] score=0.5588, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [3] score=0.3546, hash=23163450, text="[promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改"
-[Qdrant-debug] [4] score=0.3457, hash=23937047, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
-[Qdrant-debug] [5] score=0.2870, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [6] score=0.2692, hash=20228385, text="[relationship_change] Critblade大笑並深吻Lia以打破其緊繃情緒，安慰她不必擔心因Mayla成為公主而被拋棄，列出眷屬中已有7位公"
-[Qdrant-debug] [7] score=0.2476, hash=14478502, text="[character_state_change] Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦"
-[Qdrant-debug] [8] score=0.2429, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [9] score=0.2159, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [10] score=0.2000, hash=19848356, text="[revelation] 眾人進入內殿，見海神女巫柯拉莉亞現身祭壇，自稱莉莉安公主親妹妹及 Mayla 小姨，歡迎 Mayla 回家。柯拉莉亞注視 Mayla "
-[Qdrant-debug] hybridQueryNative: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "眷屬之間的承諾與支持"
-[Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 4 tokens, top-5 by weight: [573760622:1.000, 4239019611:1.000, 3279735952:1.000, 1915221645:1.000]
-[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.7000, hash=23334938, text="[relationship_change] Critblade溫柔親吻卡希雅後，向她做出重若千鈞的承諾：以後你的事就是我的事，她是他的正式眷屬。卡希雅震驚落淚，"
-[Qdrant-debug] [2] score=0.5263, hash=39473333, text="[promise_or_oath] Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾"
-[Qdrant-debug] [3] score=0.4500, hash=18175932, text="[promise_or_oath] Critblade深吻卡希雅，並承諾以後她的事就是他的事，她需要幫助時盡管說。 TIME: 1577-07-17T00:00"
-[Qdrant-debug] [4] score=0.3522, hash=20257795, text="[relationship_change] Kashier理解並接受Critblade將「眷屬」視為比「愛」更深刻的定義，視靈魂綁定的眷屬契約為最高告白。兩人關"
-[Qdrant-debug] [5] score=0.3474, hash=32229212, text="[relationship_change] Critblade提醒伊絲他們在自由港巴拉克初遇，他不知她是流亡公主即邀請為暫時隊員並承諾互幫，為助她奪回埃拉西亞帝"
-[Qdrant-debug] [6] score=0.2823, hash=19781606, text="[promise_or_oath] Critblade感受到Lia帶毒的愛，同意收她為第9名正式眷屬，但提出兩個條件：第一，用合理理性方法管治子民證明將才；第二"
-[Qdrant-debug] [7] score=0.2500, hash=13323990, text="[relationship_change] 卡希雅因Critblade表示保護無需回報僅因眷屬承諾而世界觀崩潰，從利益交換轉為無條件情感臣服，淚崩後主動獻身脫衣"
-[Qdrant-debug] [8] score=0.1685, hash=39549898, text="[relationship_change] Critblade對英妮承諾「你不必再怕被拋棄。我不會離棄任何一個眷屬」，並接納她的心機婊本性，將其轉化為「裝可愛演"
-[Qdrant-debug] [9] score=0.1678, hash=41638129, text="[promise_or_oath] Critblade提議卡希雅成為他的見習眷屬，完全綑綁在一起，他成為她的獨家代理人，她成為他的獨家眷屬，並認真承諾「以後你的"
-[Qdrant-debug] [10] score=0.1667, hash=23163450, text="[promise_or_oath] Mayla擔心迷霧礁無收穫或找到母親後被拒，Critblade兩度承諾「不管發生什麼，我都在妳身邊」及「不管妳是誰，都不會改"
-[Qdrant-debug] hybridQueryNative: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "Mayla 贖身 過程"
-[Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 3 tokens, top-5 by weight: [155974701:1.000, 568836774:1.000, 416286766:1.000]
-[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.8333, hash=24812498, text="[relationship_change] Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的"
-[Qdrant-debug] [2] score=0.5833, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [3] score=0.5833, hash=10982237, text="[revelation] 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷"
-[Qdrant-debug] [4] score=0.3056, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
-[Qdrant-debug] [5] score=0.3000, hash=88826628, text="[character_state_change] 薇拉崩潰後，Critblade叫Mayla召老闆進來，支付20000金幣贖身薇拉，宣告她現在是他的。Mayla"
-[Qdrant-debug] [6] score=0.2429, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [7] score=0.2357, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [8] score=0.2143, hash=40982049, text="[promise_or_oath] Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得"
-[Qdrant-debug] [9] score=0.1955, hash=23937047, text="[revelation] 白髮老人向Critblade一行人揭露Mayla的出身真相：她的母親莉莉安二十多年前從海底國度亞特蘭蒂斯來到潮音鎮，生下Mayla後將"
-[Qdrant-debug] [10] score=0.1863, hash=25951000, text="[main_quest_update] Critblade以兩萬金幣在天上人間向老闆為薇拉贖身，並宣告「她現在是我的」。這一強勢舉動震驚包廂內所有人，老闆權衡貪"
-[Qdrant-debug] hybridQueryNative: collection=vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0, topK=20, fusion=rrf, prefetchLimit=80
-[Qdrant-debug] Query text: "Mayla 過去 恐懼與身份衝突"
-[Qdrant-debug] Dense: dim=4096
-[Qdrant-debug] Sparse: 5 tokens, top-5 by weight: [155974701:1.000, 2827930846:1.000, 3273106697:1.000, 2114673269:1.000, 2453669995:1.000]
-[Qdrant] Native hybrid (fusion=rrf) returned 20 results from vf_eventbase_qdrant_critblade_artificrealm創世域_67d28099-167f-4c07-a7cb-1b62e44f43d0
-[Qdrant-debug] [1] score=0.8333, hash=10154576, text="[revelation] Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋"
-[Qdrant-debug] [2] score=0.8333, hash=35584485, text="[revelation] Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領"
-[Qdrant-debug] [3] score=0.4500, hash=58597131, text="[relationship_change] Mayla回潮音鎮引發童年被賣做妓女的恐懼，回憶賣她的人可能在鎮上，她無法下車，手冷顫抖淚流。Critblade握手"
-[Qdrant-debug] [4] score=0.4500, hash=40351995, text="[revelation] Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，"
-[Qdrant-debug] [5] score=0.2250, hash=20567150, text="[relationship_change] 在潮音鎮旅店大房間，Mayla站窗邊望海突然轉身問主人如果真是海人後裔會如何看待她，主人堅定回答不會改變因為她是眷屬"
-[Qdrant-debug] [6] score=0.2083, hash=24646009, text="[character_state_change] Critblade隔著睡裙舔舐Mayla的乳頭並用手指抽插她的小穴，同時告訴她「老子就愛你是妓女」，挑戰她對過"
-[Qdrant-debug] [7] score=0.2011, hash=12379189, text="[character_state_change] Critblade在藍色大宅客廳召集其餘六位眷屬，正式宣布暗之軍師Mayla新增亞特蘭蒂斯公主身份，與奈克絲北"
-[Qdrant-debug] [8] score=0.1955, hash=33707653, text="[dialogue_significant] 晚上Kashier回來談亞特蘭蒂斯皇室特徵（水中呼吸、彩虹鱗片、水元素操控、魔法信物如傳說級棒）目光掃勾魂試探，M"
-[Qdrant-debug] [9] score=0.1863, hash=32245696, text="[revelation] Mayla向Critblade吐露內心深處恐懼：害怕找到生父影翼後，Master不再需要她，將她拋棄。她承認這想法自私，怕有了家人與亞"
-[Qdrant-debug] [10] score=0.1833, hash=42923162, text="[side_quest_update] Critblade召集Mayla、惠娜里、卡希雅，宣布現在開暗星去潮音鎮搞清楚一些事。Mayla聽到潮音鎮後身體僵硬、握"
-Instantiated the tokenizer for gemma
-
-
-<VectFoxMemory>
-# Event 1
-event_type: promise_or_oath
-importance: 100
-summary: Critblade抱住Mayla承諾這間房裡的所有人一定會幫她找到父親影翼，生要見人死要見屍，沒有人會放棄她，並大聲對房內眾人喊話徵求同意。Kashier承諾動用藍聯商會情報網絡，Fern提供貴族圈八卦，Lia誓言找到活的或死的，Engni奉獻神術追蹤審問，Valerie建議抓人審問，索拉雅以星象魔法回應，所有眷屬紛紛表態支持，形成團隊共識。
-DateTime: -
-cause: Mayla崩潰大哭擔心父親影翼消失如Critblade可能離開。
-result: 尋找影翼成為團隊共同任務，每人貢獻專長，強化團隊凝聚。
-characters: Critblade, Mayla, Kashier, Fern, Lia, Engni, Valerie, 索拉雅, 影翼
-locations: 新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房
-factions: 藍聯商會
-items: -
-concepts: 團隊承諾, 生要見人死要見屍
-keywords: -
-open_threads: 找到影翼的下落, 利用藍聯資源編織情報網
-should_persist: true
-
-# Event 2
-event_type: revelation
-importance: 100
-summary: Critblade晚飯後前往Mayla房間，發現她整理行李時反覆撫摸「勾魂」上的藍色寶石以穩定情緒。Mayla表面用理性語氣列舉魔王領行程準備物品，如藥水、法袍、靴子，但內心極度不安。最終轉身坦露對見生父影翼的恐懼：擔心新大陸太大找不到他、找到後不認她、覺得她因枷鎖城妓院過去而骯髒、嫌棄身高僅152公分且母親都不記得。她的青色眼眸直視Critblade，眼眶泛紅但克制不哭，展現新任亞特蘭蒂斯公主身份與過去掙扎的脆弱轉折。
-DateTime: 1577-09-26T19:30:00.000Z
-cause: 即將前往魔王領尋找影翼，Mayla不適應公主身份並回想過去。
-result: Mayla向Critblade吐露心聲，情緒從壓抑轉為坦白，加深彼此連結。
-characters: Critblade, Mayla, 影翼, 莉莉安, 柯拉莉亞
-locations: 藍色大宅, Mayla房間
-factions: -
-items: 勾魂
-concepts: 亞特蘭蒂斯公主, 生父, 妓院過去, 身份掙扎
-keywords: -
-open_threads: 影翼是否認Mayla, 如何面對生父, 魔王領行程影響
-should_persist: true
-
-# Event 3
-event_type: revelation
-importance: 100
-summary: Mayla向Critblade坦露核心恐懼：過去娼妓身份與公主血統衝突，感到羞恥玷污母親莉莉安與亞特蘭蒂斯，害怕配不上Master被拋棄如影翼拋棄母親，自我貶低為廢物。Critblade傾聽握手安慰。
-DateTime: 1577-09-25T10:45:00.000Z
-cause: Critblade敲門關心Mayla情緒。
-result: Mayla情緒崩潰安靜哭泣，開始轉向接受自我價值。
-characters: Critblade, Mayla, 莉莉安, 影翼, 柯拉莉亞
-locations: 藍色大宅, Mayla的房間, 藍色瞭望村
-factions: 亞特蘭蒂斯
-items: -
-concepts: 娼妓過去, 公主身份, 自我價值, 恐懼拋棄
-keywords: -
-open_threads: Mayla恐懼是否完全化解
-should_persist: true
-
-# Event 4
-event_type: relationship_change
-importance: 100
-summary: Critblade查看system panel發現SQ_71_灰燼市場的相遇未完成，心想需對話後，走過去對躺在床上的Mayla宣告「現在你是見習眷屬」，邀請提問所有疑問，包括為何用20000金幣從天上人間贖身、拿到奴隸契約簽名後撕掉整個契約、20000金幣1秒內消失，並指在場眷屬皆可回答。
-DateTime: 1577-08-29T14:40:00.000Z
-cause: Mayla有許多疑問，SQ_71未完成。
-result: Mayla正式成為見習眷屬，開放疑問解答。
-characters: Critblade, Mayla
-locations: 巢穴
-factions: 眷屬
-items: 奴隸契約
-concepts: 見習眷屬, 贖身
-keywords: -
-open_threads: Mayla的問題, SQ_71完成
-should_persist: true
-
-# Event 5
-event_type: character_state_change
-importance: 100
-summary: Critblade嚴厲點醒Mayla，她不能整天愁眉苦臉而需展現領導能力說服眷屬跟隨。Mayla從恐懼崩潰中甦醒，擦乾眼淚站起身，面對眾人道歉並展現影之軍師本色，承諾整理完整行動計劃，包括在新希望港接觸魅魔套取線索及利用藍聯資源。
-DateTime: -
-cause: Critblade的安撫與嚴厲教導，喚醒Mayla智力262的軍師潛力。
-result: Mayla重拾冷靜智慧，轉為主動領導任務，眾人如Kashier認可她甦醒。
-characters: Critblade, Mayla, Kashier, 魅魔
-locations: 新大陸.流沙之國.扎赫拉巴德.星月綠洲頂層皇家套房, 新希望港
-factions: 藍聯商會
-items: -
-concepts: 領導力, 影之軍師, 行動計劃
-keywords: -
-open_threads: 制定完整行動計劃, 從魅魔口中套出影翼線索
-should_persist: true
-
-# Event 6
-event_type: revelation
-importance: 100
-summary: 不破勇希向莉莉安解釋自己是不破勇希為Mayla主人，展示心靈印記證明靈魂契約，強調Mayla自願託付一切。Mayla堅定承認自願成為眷屬，透露過去在枷鎖城被不破勇希兩萬金幣贖身救出，視其為生命之光。莉莉安從恐懼絕望轉為震驚感激，理解女兒安全。
-DateTime: 1577-09-24T18:30:00.000Z
-cause: 莉莉安誤以為女兒被奴役而乞求釋放。
-result: 莉莉安認知改變，感激不破勇希救女並找母，重塑對Mayla關係理解。
-characters: 不破勇希, 莉莉安, Mayla
-locations: 亞特蘭蒂斯, 囚室
-factions: 亞特蘭蒂斯
-items: 心靈印記
-concepts: 心靈印記, 靈魂契約, 眷屬, 贖身
-keywords: -
-open_threads: -
-should_persist: true
-
-# Event 7
-event_type: relationship_change
-importance: 100
-summary: Critblade溫柔親吻卡希雅後，向她做出重若千鈞的承諾：以後你的事就是我的事，她是他的正式眷屬。卡希雅震驚落淚，卸下二十多年孤獨防備，緊擁Critblade並發誓將智慧、財富、身體、靈魂全部奉獻給他，為他的利益不惜算計世界。她撫摸小腹鮮紅淫紋，將其視為榮耀勳章，正式從盟友轉變為死忠眷屬，身心徹底歸屬。
-DateTime: 1577-07-17T00:05:00.000Z
-cause: 親密後的溫柔互動與無條件承諾擊碎卡希雅心防。
-result: 卡希雅確認承諾，發誓效忠，關係永久升級為主人與死忠眷屬，檔案更新完成。
-characters: 卡希雅, Critblade
-locations: 自由港巴拉克, 中價旅館, Critblade房間
-factions: -
-items: 鮮紅淫紋
-concepts: 眷屬, 承諾, 誓言, 效忠
-keywords: -
-open_threads: -
-should_persist: true
-
-# Event 8
-event_type: dialogue_significant
-importance: 100
-summary: Critblade指示英妮給莉婭一個healing，並命令縮在一旁的Mayla與莉婭在屋外平地一對一對決。Mayla嚇到眼光放大。Critblade心想以此一石二鳥：壓制莉婭並給缺乏自信的Mayla注入信心。
-DateTime: 1577-08-29T15:15:00.000Z
-cause: 延續對莉婭的心理壓制，並提升Mayla自信。
-result: 安排一對一對決，Mayla心理震驚，為後續衝突鋪路。
-characters: Critblade, 英妮, Mayla, 莉婭
-locations: 舊大陸.三不管地帶.枷鎖城.巢穴
-factions: -
-items: -
-concepts: 一石二鳥, 缺乏自信, 高階魔法師
-keywords: -
-open_threads: Mayla vs 莉婭對決結果
-should_persist: true
-
-# Event 9
-event_type: promise_or_oath
-importance: 100
-summary: Critblade重構Mayla價值觀，將18年妓院生涯視為堅韌勳章，列舉其影之軍師功績與早朝打破情感牢籠事例，肯定她最值得被愛。Mayla發誓無論娼妓或公主只屬於Critblade，用所有智慧力量為他掃清障礙，因他是救贖與存在意義。
-DateTime: 1577-09-25T10:45:00.000Z
-cause: Mayla哭泣後抬頭。
-result: Mayla主動吻Critblade，Critblade額頭輕吻結束並約晚上談計劃，Mayla安心柔軟微笑，意識Master要她本人而非僅身體。
-characters: Critblade, Mayla
-locations: 藍色大宅, Mayla的房間
-factions: -
-items: -
-concepts: 影之軍師, 堅韌勳章, 忠誠誓言, 救贖
-keywords: -
-open_threads: 晚上未來計劃討論
-should_persist: true
-
-# Event 10
-event_type: revelation
-importance: 100
-summary: Mayla坐在窗邊回憶童年片段，記得大沙灘、海浪拍打礁石聲、溫柔聲音哼搖籃曲，但記不起人臉，懷疑那是母親。她害怕明天去迷霧礁一無所獲，更怕找到母親後因過去是枷鎖城妓女而被視為骯髒不配做女兒。Critblade握手安慰她不是骯髒而是生存，並強調她現在是眷屬比過去重要。
-DateTime: 1577-09-23T18:00:00.000Z
-cause: Mayla望海面觸發模糊記憶。
-result: Mayla情緒複雜繼續回憶但碎片化，強化對身份與母親的渴望與恐懼。
-characters: Mayla, Critblade
-locations: 潮音鎮, 旅店
-factions: -
-items: 勾魂
-concepts: 童年記憶, 母親, 沙灘, 搖籃曲, 身份恐懼
-keywords: -
-open_threads: 童年記憶真實性, 母親身份確認
-should_persist: true
-</VectFoxMemory>
+[similharity] chunks/hybrid-query-rerank error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1423:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)
+[similharity] chunks/hybrid-query error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1328:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)
+[similharity] chunks/query error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1268:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)
+[similharity] chunks/hybrid-query error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1328:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)
+[similharity] chunks/query error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1268:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)
+[similharity] chunks/query error: ReferenceError: _getVllmEmbedding is not defined
+    at getEmbeddingForSource (file:///home/node/app/plugins/similharity/index.js:1744:13)
+    at file:///home/node/app/plugins/similharity/index.js:1268:32
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at next (/home/node/app/node_modules/express/lib/router/route.js:149:13)
+    at Route.dispatch (/home/node/app/node_modules/express/lib/router/route.js:119:3)
+    at Layer.handle [as handle_request] (/home/node/app/node_modules/express/lib/router/layer.js:95:5)
+    at /home/node/app/node_modules/express/lib/router/index.js:284:15
+    at router.process_params (/home/node/app/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/node/app/node_modules/express/lib/router/index.js:280:10)
+    at router.handle (/home/node/app/node_modules/express/lib/router/index.js:175:3)

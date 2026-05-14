@@ -171,82 +171,22 @@ export function renderSettings(containerId, settings, callbacks) {
                                 </label>
                                 <select id="VectFox_source" class="vectfox-select">
                                     <option value="transformers">Transformers (Local)</option>
-                                    <option value="bananabread">BananaBread</option>
-                                    <option value="openai">OpenAI</option>
                                     <option value="ollama">Ollama</option>
-                                    <option value="cohere">Cohere</option>
-                                    <option value="togetherai">Together AI</option>
-                                    <option value="extras">Extras API</option>
-                                    <option value="electronhub">ElectronHub</option>
                                     <option value="openrouter">OpenRouter</option>
-                                    <option value="llamacpp">LlamaCPP</option>
                                     <option value="vllm">vLLM</option>
-                                    <option value="koboldcpp">KoboldCPP</option>
-                                    <option value="webllm">WebLLM</option>
-                                    <option value="palm">Google PaLM</option>
-                                    <option value="vertexai">Google VertexAI</option>
-                                    <option value="mistral">Mistral AI</option>
-                                    <option value="nomicai">Nomic AI</option>
                                 </select>
 
                                 <!-- Provider-Specific Settings -->
                                 <div id="VectFox_provider_settings">
 
-                                    <!-- ElectronHub Model -->
-                                    <div class="VectFox_provider_setting" data-provider="electronhub">
-                                        <label for="VectFox_electronhub_model">
-                                            <small>ElectronHub Model:</small>
-                                        </label>
-                                        <input type="text" id="VectFox_electronhub_model" class="vectfox-input" placeholder="text-embedding-3-small" />
-                                        <small class="VectFox_hint">Enter ElectronHub-compatible model ID (e.g., text-embedding-3-small, text-embedding-3-large)</small>
-                                    </div>
-
                                     <!-- Alternative Endpoint (for local providers) -->
-                                    <div class="VectFox_provider_setting" data-provider="ollama,vllm,llamacpp,koboldcpp,bananabread">
+                                    <div class="VectFox_provider_setting" data-provider="ollama,vllm">
                                         <label class="checkbox_label">
                                             <input type="checkbox" id="VectFox_use_alt_endpoint" />
                                             <span>Use Alternative Endpoint</span>
                                         </label>
                                         <input type="text" id="VectFox_alt_endpoint_url" class="vectfox-input" placeholder="http://localhost:11434" />
                                         <small class="VectFox_hint">Override default API URL for this provider</small>
-                                    </div>
-
-                                    <!-- BananaBread Info & Reranking -->
-                                    <div class="VectFox_provider_setting" data-provider="bananabread">
-                                        <small class="VectFox_info">
-                                            <i class="fa-solid fa-info-circle"></i>
-                                            BananaBread default: http://localhost:8008. Supports MixedBread AI and Qwen3 embedding models.
-                                        </small>
-                                        <label class="checkbox_label" style="margin-top: 8px;">
-                                            <input type="checkbox" id="VectFox_bananabread_rerank" />
-                                            <span>Enable Reranking</span>
-                                        </label>
-                                        <small class="VectFox_hint">Re-score results using BananaBread's reranker for better relevance</small>
-                                        <label for="VectFox_bananabread_apikey" style="margin-top: 8px;">
-                                            <small>BananaBread API Key:</small>
-                                        </label>
-                                        <input type="password" id="VectFox_bananabread_apikey" class="vectfox-input" placeholder="Paste key here to save..." autocomplete="off" />
-                                    </div>
-
-                                    <!-- WebLLM Model -->
-                                    <div class="VectFox_provider_setting" data-provider="webllm">
-                                        <small class="VectFox_info" id="VectFox_webllm_status">
-                                            <i class="fa-solid fa-spinner fa-spin"></i>
-                                            Checking WebLLM availability...
-                                        </small>
-                                        <label for="VectFox_webllm_model">
-                                            <small>WebLLM Model:</small>
-                                        </label>
-                                        <select id="VectFox_webllm_model" class="vectfox-select"></select>
-                                        <div style="display: flex; gap: 8px; margin-top: 8px;">
-                                            <button id="VectFox_webllm_load" class="menu_button">
-                                                <i class="fa-solid fa-download"></i> Load Model
-                                            </button>
-                                            <button id="VectFox_webllm_install" class="menu_button menu_button_icon">
-                                                <i class="fa-solid fa-puzzle-piece"></i> Install Extension
-                                            </button>
-                                        </div>
-                                        <small class="VectFox_hint">WebLLM requires the WebLLM extension and a WebGPU-compatible browser (Chrome 113+, Edge 113+)</small>
                                     </div>
 
                                     <!-- Ollama Model -->
@@ -262,68 +202,6 @@ export function renderSettings(containerId, settings, callbacks) {
                                         <small class="VectFox_hint">Enter the model name from your local Ollama installation</small>
                                     </div>
 
-                                    <!-- KoboldCPP Info -->
-                                    <div class="VectFox_provider_setting" data-provider="koboldcpp">
-                                        <small class="VectFox_info">
-                                            <i class="fa-solid fa-info-circle"></i>
-                                            KoboldCPP uses the currently loaded model for embeddings. Ensure your model supports embeddings.
-                                        </small>
-                                    </div>
-
-                                    <!-- LlamaCPP Info -->
-                                    <div class="VectFox_provider_setting" data-provider="llamacpp">
-                                        <small class="VectFox_info">
-                                            <i class="fa-solid fa-info-circle"></i>
-                                            LlamaCPP requires the --embedding flag to be enabled. Restart your server with this flag if not already set.
-                                        </small>
-                                    </div>
-
-                                    <!-- OpenAI Model -->
-                                    <div class="VectFox_provider_setting" data-provider="openai">
-                                        <label for="VectFox_openai_model">
-                                            <small>OpenAI Model:</small>
-                                        </label>
-                                        <select id="VectFox_openai_model" class="vectfox-select">
-                                            <option value="text-embedding-ada-002">text-embedding-ada-002</option>
-                                            <option value="text-embedding-3-small">text-embedding-3-small</option>
-                                            <option value="text-embedding-3-large">text-embedding-3-large</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- Cohere Model -->
-                                    <div class="VectFox_provider_setting" data-provider="cohere">
-                                        <label for="VectFox_cohere_model">
-                                            <small>Cohere Model:</small>
-                                        </label>
-                                        <select id="VectFox_cohere_model" class="vectfox-select">
-                                            <option value="embed-english-v3.0">embed-english-v3.0</option>
-                                            <option value="embed-multilingual-v3.0">embed-multilingual-v3.0</option>
-                                            <option value="embed-english-light-v3.0">embed-english-light-v3.0</option>
-                                            <option value="embed-multilingual-light-v3.0">embed-multilingual-light-v3.0</option>
-                                            <option value="embed-english-v2.0">embed-english-v2.0</option>
-                                            <option value="embed-english-light-v2.0">embed-english-light-v2.0</option>
-                                            <option value="embed-multilingual-v2.0">embed-multilingual-v2.0</option>
-                                            <option value="embed-multilingual-light-v2.0">embed-multilingual-light-v2.0</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- TogetherAI Model -->
-                                    <div class="VectFox_provider_setting" data-provider="togetherai">
-                                        <label for="VectFox_togetherai_model">
-                                            <small>Together AI Model:</small>
-                                        </label>
-                                        <select id="VectFox_togetherai_model" class="vectfox-select">
-                                            <option value="togethercomputer/m2-bert-80M-32k-retrieval">togethercomputer/m2-bert-80M-32k-retrieval</option>
-                                            <option value="togethercomputer/m2-bert-80M-8k-retrieval">togethercomputer/m2-bert-80M-8k-retrieval</option>
-                                            <option value="togethercomputer/m2-bert-80M-2k-retrieval">togethercomputer/m2-bert-80M-2k-retrieval</option>
-                                            <option value="WhereIsAI/UAE-Large-V1">WhereIsAI/UAE-Large-V1</option>
-                                            <option value="BAAI/bge-large-en-v1.5">BAAI/bge-large-en-v1.5</option>
-                                            <option value="BAAI/bge-base-en-v1.5">BAAI/bge-base-en-v1.5</option>
-                                            <option value="sentence-transformers/msmarco-bert-base-dot-v5">sentence-transformers/msmarco-bert-base-dot-v5</option>
-                                            <option value="bert-base-uncased">bert-base-uncased</option>
-                                        </select>
-                                    </div>
-
                                     <!-- vLLM Model -->
                                     <div class="VectFox_provider_setting" data-provider="vllm">
                                         <label for="VectFox_vllm_model">
@@ -335,28 +213,6 @@ export function renderSettings(containerId, settings, callbacks) {
                                             <small>vLLM API Key (optional):</small>
                                         </label>
                                         <input type="password" id="VectFox_vllm_api_key" class="vectfox-input" placeholder="Leave blank for local / no-auth deployments" autocomplete="off" />
-                                    </div>
-
-                                    <!-- Google Model (PaLM/VertexAI) -->
-                                    <div class="VectFox_provider_setting" data-provider="palm,vertexai">
-                                        <label for="VectFox_google_model">
-                                            <small>Google Model:</small>
-                                        </label>
-                                        <select id="VectFox_google_model" class="vectfox-select">
-                                            <option value="text-embedding-005">text-embedding-005</option>
-                                            <option value="text-embedding-004">text-embedding-004</option>
-                                            <option value="text-multilingual-embedding-002">text-multilingual-embedding-002</option>
-                                            <option value="textembedding-gecko">textembedding-gecko</option>
-                                            <option value="textembedding-gecko-multilingual">textembedding-gecko-multilingual</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- NomicAI API Key -->
-                                    <div class="VectFox_provider_setting" data-provider="nomicai">
-                                        <button id="VectFox_nomicai_api_key" class="menu_button">
-                                            <i class="fa-solid fa-key"></i> Set Nomic API Key
-                                        </button>
-                                        <small class="VectFox_hint">Configure your Nomic API key in SillyTavern settings</small>
                                     </div>
 
                                     <!-- OpenRouter Model -->

@@ -5,10 +5,28 @@ eventbase-workflow.js:409 [EventBase] Phase A: live=true, archiveCollections=0, 
 eventbase-workflow.js:425 [EventBase] Keyword query (user last message, 9 chars): charlotte
 eventbase-retrieval.js:359 [EventBase] Retrieval start — topK overfetch=20, minImportance=1, method=bm25, nativePrefer=true, liveCollections=1, nativeRerank=true
 backend-manager.js:274 VectFox: Health cache stale for qdrant, re-verifying...
-qdrant.js:966 [EventBase] Hybrid+rerank request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, preview="charlotte"
+backend-manager.js:284 VectFox: Backend qdrant health re-check failed, invalidating cache
+initializeBackend @ backend-manager.js:284
+await in initializeBackend
+getBackend @ backend-manager.js:370
+_runOneLiveQuery @ eventbase-retrieval.js:148
+retrieveEvents @ eventbase-retrieval.js:386
+runEventBaseRetrieval @ eventbase-workflow.js:462
+await in runEventBaseRetrieval
+(anonymous) @ search-debug.js:1749
+await in (anonymous)
+dispatch @ jquery-3.5.1.min.js:2
+v.handle @ jquery-3.5.1.min.js:2
+backend-manager.js:316 VectFox: Initializing qdrant backend...
+qdrant.js:133 VectFox: Initializing local Qdrant: 10.0.1.249:6333
+qdrant.js:136 VectFox: Sending Qdrant config to Similharity plugin: {"host":"10.0.1.249","port":6333,"url":null,"apiKey":null}
+qdrant.js:150 VectFox: Qdrant initialization response: {success: true, message: 'Qdrant initialized'}
+qdrant.js:151 VectFox: Using Qdrant backend (production-grade vector search)
+backend-manager.js:341 VectFox: Successfully initialized qdrant backend
+qdrant.js:951 [EventBase] Hybrid+rerank request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, preview="charlotte"
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query-rerank 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-hybridQueryWithRerank @ qdrant.js:972
+hybridQueryWithRerank @ qdrant.js:957
 await in hybridQueryWithRerank
 _runOneLiveQuery @ eventbase-retrieval.js:165
 await in _runOneLiveQuery
@@ -19,8 +37,8 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:1005 [Qdrant timing] hybrid+rerank FAILED after 287.3ms (HTTP 500), falling back to hybridQuery. Server said: {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
-hybridQueryWithRerank @ qdrant.js:1005
+qdrant.js:990 [Qdrant timing] hybrid+rerank FAILED after 51.4ms (HTTP 500), falling back to hybridQuery. Server said: {"error":"_getVllmEmbedding is not defined"}
+hybridQueryWithRerank @ qdrant.js:990
 await in hybridQueryWithRerank
 _runOneLiveQuery @ eventbase-retrieval.js:165
 await in _runOneLiveQuery
@@ -31,12 +49,12 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:834 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, terms=[charlott], preview="charlotte"
+qdrant.js:819 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, terms=[charlott], preview="charlotte"
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-hybridQuery @ qdrant.js:843
+hybridQuery @ qdrant.js:828
 await in hybridQuery
-hybridQueryWithRerank @ qdrant.js:1014
+hybridQueryWithRerank @ qdrant.js:999
 await in hybridQueryWithRerank
 _runOneLiveQuery @ eventbase-retrieval.js:165
 await in _runOneLiveQuery
@@ -47,10 +65,10 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:876 [Qdrant timing] FAILED after 243.9ms (HTTP 500), falling back to vector-only. Server said: {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
-hybridQuery @ qdrant.js:876
+qdrant.js:861 [Qdrant timing] FAILED after 45.7ms (HTTP 500), falling back to vector-only. Server said: {"error":"_getVllmEmbedding is not defined"}
+hybridQuery @ qdrant.js:861
 await in hybridQuery
-hybridQueryWithRerank @ qdrant.js:1014
+hybridQueryWithRerank @ qdrant.js:999
 await in hybridQueryWithRerank
 _runOneLiveQuery @ eventbase-retrieval.js:165
 await in _runOneLiveQuery
@@ -63,10 +81,10 @@ dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-queryCollection @ qdrant.js:470
-hybridQuery @ qdrant.js:882
+queryCollection @ qdrant.js:455
+hybridQuery @ qdrant.js:867
 await in hybridQuery
-hybridQueryWithRerank @ qdrant.js:1014
+hybridQueryWithRerank @ qdrant.js:999
 await in hybridQueryWithRerank
 _runOneLiveQuery @ eventbase-retrieval.js:165
 await in _runOneLiveQuery
@@ -77,7 +95,7 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-eventbase-retrieval.js:207 [EventBase] Native rerank backend resolution failed for vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267 (falling back): [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
+eventbase-retrieval.js:207 [EventBase] Native rerank backend resolution failed for vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267 (falling back): [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"_getVllmEmbedding is not defined"}
 _runOneLiveQuery @ eventbase-retrieval.js:207
 await in _runOneLiveQuery
 retrieveEvents @ eventbase-retrieval.js:386
@@ -87,16 +105,16 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-core-vector-api.js:883 [VectFox] Hybrid search (native), dispatching to hybrid search module
+core-vector-api.js:839 [VectFox] Hybrid search (native), dispatching to hybrid search module
 hybrid-search.js:92 [HybridSearch] Using native hybrid search (QdrantBackend)
-qdrant.js:834 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, terms=[charlott], preview="charlotte"
+qdrant.js:819 [EventBase] Hybrid request: collection=vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267, topK=20, sparse=1 tokens, terms=[charlott], preview="charlotte"
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/hybrid-query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-hybridQuery @ qdrant.js:843
+hybridQuery @ qdrant.js:828
 await in hybridQuery
 hybridSearch @ hybrid-search.js:95
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -107,12 +125,12 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-qdrant.js:876 [Qdrant timing] FAILED after 222.6ms (HTTP 500), falling back to vector-only. Server said: {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
-hybridQuery @ qdrant.js:876
+qdrant.js:861 [Qdrant timing] FAILED after 42.5ms (HTTP 500), falling back to vector-only. Server said: {"error":"_getVllmEmbedding is not defined"}
+hybridQuery @ qdrant.js:861
 await in hybridQuery
 hybridSearch @ hybrid-search.js:95
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -125,12 +143,12 @@ dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-queryCollection @ qdrant.js:470
-hybridQuery @ qdrant.js:882
+queryCollection @ qdrant.js:455
+hybridQuery @ qdrant.js:867
 await in hybridQuery
 hybridSearch @ hybrid-search.js:95
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -141,10 +159,10 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-hybrid-search.js:103 [HybridSearch] Native hybrid failed, falling back to client-side: [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
+hybrid-search.js:103 [HybridSearch] Native hybrid failed, falling back to client-side: [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"_getVllmEmbedding is not defined"}
 hybridSearch @ hybrid-search.js:103
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -160,11 +178,11 @@ hybrid-search.js:149 [HybridSearch] Fetching 60 vector results from collection: 
 hybrid-search.js:150 [HybridSearch] Backend: QdrantBackend, Source: vllm
 character.ts:107  POST https://st.sduteam.com/api/plugins/similharity/chunks/query 500 (Internal Server Error)
 (anonymous) @ character.ts:107
-queryCollection @ qdrant.js:470
+queryCollection @ qdrant.js:455
 clientSideHybridSearch @ hybrid-search.js:155
 hybridSearch @ hybrid-search.js:113
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -175,10 +193,10 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-hybrid-search.js:164 [HybridSearch] Vector query failed: Error: [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"VLLM: Failed to get vector for text: Unauthorized \"Invalid token\""}
-    at QdrantBackend.queryCollection (qdrant.js:478:19)
+hybrid-search.js:164 [HybridSearch] Vector query failed: Error: [Qdrant] Failed to query collection vf_eventbase_qdrant_rabbit_your_wives_a5c606bc-589b-471f-b475-955382ea7267: 500  - {"error":"_getVllmEmbedding is not defined"}
+    at QdrantBackend.queryCollection (qdrant.js:463:19)
     at async clientSideHybridSearch (hybrid-search.js:155:25)
-    at async queryCollection (core-vector-api.js:887:28)
+    at async queryCollection (core-vector-api.js:843:28)
     at async _runOneLiveQuery (eventbase-retrieval.js:212:34)
     at async Promise.all (/index 0)
     at async retrieveEvents (eventbase-retrieval.js:408:28)
@@ -188,7 +206,7 @@ clientSideHybridSearch @ hybrid-search.js:164
 await in clientSideHybridSearch
 hybridSearch @ hybrid-search.js:113
 await in hybridSearch
-queryCollection @ core-vector-api.js:887
+queryCollection @ core-vector-api.js:843
 await in queryCollection
 _runOneLiveQuery @ eventbase-retrieval.js:212
 await in _runOneLiveQuery
@@ -199,7 +217,7 @@ await in runEventBaseRetrieval
 await in (anonymous)
 dispatch @ jquery-3.5.1.min.js:2
 v.handle @ jquery-3.5.1.min.js:2
-core-vector-api.js:893 [VectFox] Hybrid search (RRF) response: 0 result(s) in 696ms, scores=[]
+core-vector-api.js:849 [VectFox] Hybrid search (RRF) response: 0 result(s) in 132ms, scores=[]
 eventbase-retrieval.js:423 [EventBase] Live query: 1 collection(s) × 1 query/queries → 0 unique events
 eventbase-retrieval.js:447 [EventBase] After importance filter (>=1): 0 candidates
 eventbase-retrieval.js:644 [EventBase] Final events after dedup + trim: 0
