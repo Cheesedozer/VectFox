@@ -464,4 +464,4 @@ GPLv3 授權 — 請見 LICENSE。
 
 ---
 
-*"Lets make your memory hardcore!."* 🐰✨
+*"Lets make your memory hardcore!."* 🦊✨

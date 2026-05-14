@@ -11,7 +11,7 @@
 
 import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, chat_metadata, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
-import { getStringHash as calculateHash, waitUntilCondition, onlyUnique } from '../../../../utils.js';
+import { getStringHash as calculateHash } from '../../../../utils.js';
 import { isUnitStrategy } from './chunking.js';
 import { extractChatKeywords, extractBM25Keywords } from './keyword-boost.js';
 import { cleanText } from './text-cleaning.js';
@@ -24,11 +24,7 @@ import {
     purgeVectorIndex,
 } from './core-vector-api.js';
 import { isBackendAvailable } from '../backends/backend-manager.js';
-import {
-    summarizeText,
-    isSummarizationFatalError,
-    getSummarizationConfigFingerprint,
-} from './summarizer.js';
+import { summarizeText } from './summarizer.js';
 import { applyDecayToResults } from './temporal-decay.js';
 import { registerCollection, getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
 import { isCollectionEnabled, filterActiveCollections, setCollectionLock } from './collection-metadata.js';
@@ -57,9 +53,7 @@ import {
 // Hash cache for performance
 const hashCache = new LRUCache(HASH_CACHE_SIZE);
 
-// Synchronization state
-let syncBlocked = false;
-let summarizationFailureLatch = null;
+// Synchronization state (syncBlocked was used by the legacy chunk path, no longer needed)
 
 // ============================================================================
 // RE-EXPORTS from collection-ids.js for backwards compatibility
@@ -382,192 +376,40 @@ async function rerankWithBananaBread(query, chunks, settings) {
  * @returns {Promise<object>} Progress info
  */
 export async function synchronizeChat(settings, batchSize = 5) {
-    const summarizeFingerprint = getSummarizationConfigFingerprint(settings);
-    if (summarizationFailureLatch) {
-        if (summarizationFailureLatch.fingerprint === summarizeFingerprint) {
-            // Same broken config: keep sync halted silently to avoid popup spam.
-            return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
-        }
-        // Config changed: clear latch and allow sync attempt again.
-        summarizationFailureLatch = null;
-    }
+    const chatId = getCurrentChatId();
+    if (!chatId) return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
 
-    // DEAD-CHUNK-CHAT: chunk-based chat sync is permanently disabled; bail before
-    // calling getChatCollectionId() so the deprecated warning never fires.
-    return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
+    const uuid = getChatUUID();
+    if (!uuid) return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
 
-    // Check per-collection autoSync setting instead of global enabled_chats
+    // Find EventBase collections registered for this chat and check the per-collection auto-sync flag
+    const { findEventBaseCollectionIdsForChat } = await import('./eventbase-store.js');
     const { isCollectionAutoSyncEnabled } = await import('./collection-metadata.js');
-    if (!isCollectionAutoSyncEnabled(collectionId)) {
-        console.log(`[VectFox] synchronizeChat: collection "${collectionId}" has auto-sync disabled — skipping`);
+    const backend = getRegistryBackend(settings?.vector_backend);
+    const eventbaseCollections = findEventBaseCollectionIdsForChat(uuid, backend);
+    const autoSyncEnabled = eventbaseCollections.some(({ collectionId }) => isCollectionAutoSyncEnabled(collectionId));
+
+    if (!autoSyncEnabled) {
         return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
     }
 
-    // EventBase workflow: extract structured events instead of raw-chunk vectorization
-    {
-        const context = getContext();
-        if (getCurrentChatId() && Array.isArray(context.chat)) {
-            const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
-            // Include narrator/system messages — they contain story events EventBase should capture.
-            const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
-            const result = await runEventBaseIngestion({
-                messages,
-                chatUUID: getChatUUID(),
-                settings,
-                isAutoSync: true,
-            });
-            return {
-                remaining: 0,
-                messagesProcessed: result.eventsExtracted,
-                chunksCreated: result.eventsExtracted,
-            };
-        }
-        return { remaining: 0, messagesProcessed: 0, chunksCreated: 0 };
-    }
+    const context = getContext();
+    if (!Array.isArray(context.chat)) return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
 
-    try {
-        await waitUntilCondition(() => !syncBlocked && !is_send_press, 1000);
-    } catch {
-        syncBlocked = false; // VEC-30: Reset flag on timeout
-        return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
-    }
+    const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
+    const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
+    const result = await runEventBaseIngestion({
+        messages,
+        chatUUID: uuid,
+        settings,
+        isAutoSync: true,
+    });
 
-    try {
-        syncBlocked = true;
-        const context = getContext();
-
-        if (!getCurrentChatId() || !Array.isArray(context.chat)) {
-            return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
-        }
-
-        // NOTE: Registration happens AFTER first successful insert to prevent ghosts
-        let isRegistered = false;
-
-        // Step 1: What's already vectorized? (source of truth = DB)
-        const existingHashes = new Set(await getSavedHashes(collectionId, settings));
-
-        // LEGACY CHAT STRATEGY NOTE:
-        // *** will be remove in future version because no longer used by eventbased path ***
-        // This chunking_strategy/batch_size branch is only relevant to the legacy chat chunk pipeline.
-        // Step 2: Build list of messages NOT in DB
-        const strategy = settings.chunking_strategy || 'per_message';
-        const strategyBatchSize = settings.batch_size || 4;
-
-        // Collect all non-system messages with their data
-        // PERF: Use index from loop instead of indexOf() to avoid O(n²)
-        const allMessages = [];
-        for (let i = 0; i < context.chat.length; i++) {
-            const msg = context.chat[i];
-            if (msg.is_system) continue;
-            // Apply text cleaning to remove HTML tags, metadata blocks, etc.
-            const rawText = String(substituteParams(msg.mes));
-            const text = cleanText(rawText);
-            allMessages.push({
-                text,
-                hash: getStringHash(substituteParams(getTextWithoutAttachments(msg))),
-                index: i,
-                is_user: msg.is_user
-            });
-        }
-
-        // Group messages according to strategy
-        const keywordLevel = settings.keyword_extraction_level || 'balanced';
-        const groupedItems = await groupMessagesByStrategy(allMessages, strategy, strategyBatchSize, keywordLevel, settings);
-
-        // Filter out already vectorized items (by their grouped hash)
-        const queue = new Queue();
-        for (const item of groupedItems) {
-            if (!existingHashes.has(item.hash)) {
-                queue.enqueue(item);
-            }
-        }
-
-        if (queue.isEmpty()) {
-            return { remaining: 0, messagesProcessed: 0, chunksCreated: 0 };
-        }
-
-        // Step 3: Process batch
-        let itemsProcessed = 0;
-        let chunksCreated = 0;
-        let itemsFailed = 0;
-        const label = strategy === 'per_message' ? 'Message' : 'Group';
-
-        while (!queue.isEmpty() && itemsProcessed < batchSize) {
-            const item = queue.dequeue();
-
-            try {
-                // Prepare item for insertion (add source metadata)
-                const chunks = prepareItemsForInsertion([item]);
-
-                // Insert chunks (insertVectorItems handles duplicates at DB level)
-                if (chunks.length > 0) {
-                    await insertVectorItems(collectionId, chunks, settings, (embedded, total) => {
-                        // Update progress tracker with embedding progress
-                        console.log(`[Chat Vectorization] Embedding progress callback: ${embedded}/${total}`);
-                        progressTracker.updateEmbeddingProgress(embedded, total);
-
-                        // Determine phase based on progress (0-50% = Embedding, 50-100% = Writing)
-                        const progressPercent = (embedded / total) * 100;
-                        const phase = progressPercent <= 50 ? 'Embedding' : 'Writing to database';
-                        progressTracker.updateCurrentItem(`${label} ${itemsProcessed}/${batchSize} - ${phase}: ${embedded}/${total} chunks`);
-                    });
-                    chunksCreated += chunks.length;
-
-                    // Register on first successful insert (prevents ghost collections)
-                    if (!isRegistered) {
-                        const backend = getRegistryBackend(settings.vector_backend);
-                        const registryKey = `${backend}:${collectionId}`;
-                        registerCollection(registryKey);
-                        isRegistered = true;
-                        // Chat collections should be scoped to the current chat, not globally always-active.
-                        const chatId = getCurrentChatId();
-                        if (chatId) {
-                            setCollectionLock(collectionId, chatId);
-                        }
-                        console.log(`VectFox: Registered collection ${registryKey} after first successful insert`);
-                    }
-                }
-            } catch (itemError) {
-                // Log error but continue processing other items
-                console.warn(`VectFox: Failed to process item (hash: ${item.hash}, index: ${item.index}):`, itemError.message);
-                itemsFailed++;
-                // Don't rethrow - continue with next item
-            }
-
-            itemsProcessed++;
-            progressTracker.updateCurrentItem(`${label} ${itemsProcessed}/${batchSize}${itemsFailed > 0 ? ` (${itemsFailed} failed)` : ''}`);
-        }
-
-        progressTracker.updateCurrentItem(null);
-
-        if (itemsFailed > 0) {
-            console.warn(`VectFox: Sync completed with ${itemsFailed} failed items out of ${itemsProcessed}`);
-        }
-
-        return {
-            remaining: queue.size,
-            messagesProcessed: itemsProcessed,
-            chunksCreated,
-            itemsFailed
-        };
-    } catch (error) {
-        if (isSummarizationFatalError(error)) {
-            const providerLabel = (settings?.summarize_provider || 'summarizer').toUpperCase();
-            const msg = `Summarization is enabled but misconfigured: ${error.message}`;
-            summarizationFailureLatch = { fingerprint: summarizeFingerprint, reason: msg };
-            try {
-                toastr.error(msg, `${providerLabel} configuration error`);
-            } catch (_) {
-                // no-op
-            }
-            console.error('VectFox: Synchronization halted due to fatal summarization error:', error.message);
-            return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
-        }
-        console.error('VectFox: Sync failed', error);
-        throw error;
-    } finally {
-        syncBlocked = false;
-    }
+    return {
+        remaining: 0,
+        messagesProcessed: result.eventsExtracted,
+        chunksCreated: result.eventsExtracted,
+    };
 }
 
 // ============================================================================
@@ -2043,10 +1885,6 @@ export async function rearrangeChat(chat, settings, type) {
  */
 export async function vectorizeAll(settings, batchSize, abortSignal = null) {
     try {
-        if (!settings.enabled_chats) {
-            return;
-        }
-
         const chatId = getCurrentChatId();
         if (!chatId) {
             toastr.info('No chat selected', 'Vectorization aborted');
@@ -2065,62 +1903,37 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null) {
             return;
         }
 
-        // Calculate total messages to vectorize
-        const context = getContext();
-        const totalMessages = context.chat ? context.chat.filter(x => !x.is_system).length : 0;
-
-        // Show progress panel
-        progressTracker.show('Vectorizing Chat', totalMessages, 'Messages');
-
-        let finished = false;
-        let iteration = 0;
-        let processedCount = 0;
-        let totalChunks = 0;
-
-        while (!finished) {
-            if (abortSignal?.aborted) {
-                progressTracker.complete(false, 'Stopped by user');
-                return;
-            }
-            if (is_send_press) {
-                toastr.info('Message generation is in progress.', 'Vectorization aborted');
-                progressTracker.complete(false, 'Aborted - message generation in progress');
-                throw new Error('Message generation in progress');
-            }
-
-            const result = await synchronizeChat(settings, batchSize);
-
-            // Handle disabled/blocked state
-            if (result.remaining === -1) {
-                console.log('VectFox: Vectorization blocked or disabled');
-                progressTracker.complete(false, 'Blocked or disabled');
-                return;
-            }
-
-            finished = result.remaining <= 0;
-            iteration++;
-
-            // Update progress with actual counts
-            processedCount += result.messagesProcessed;
-            totalChunks += result.chunksCreated;
-
-            progressTracker.updateProgress(
-                processedCount,
-                result.remaining > 0 ? `Processing... ${result.remaining} messages remaining` : 'Finalizing...'
-            );
-            progressTracker.updateChunks(totalChunks);
-
-            console.log(`VectFox: Vectorization iteration ${iteration}, ${result.remaining > 0 ? result.remaining + ' remaining' : 'complete'} (${result.chunksCreated} chunks this batch)`);
-
-            if (chatId !== getCurrentChatId()) {
-                progressTracker.complete(false, 'Chat changed during vectorization');
-                throw new Error('Chat changed');
-            }
+        if (abortSignal?.aborted) {
+            return;
+        }
+        if (is_send_press) {
+            toastr.info('Message generation is in progress.', 'Vectorization aborted');
+            throw new Error('Message generation in progress');
         }
 
-        progressTracker.complete(true, `Vectorized ${processedCount} messages (${totalChunks} chunks)`);
+        const context = getContext();
+        if (!Array.isArray(context.chat)) return;
+
+        const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
+        progressTracker.show('Vectorizing Chat', messages.length, 'Messages');
+
+        const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
+        const result = await runEventBaseIngestion({
+            messages,
+            chatUUID: getChatUUID(),
+            settings,
+            abortSignal,
+            isAutoSync: false,
+        });
+
+        if (chatId !== getCurrentChatId()) {
+            progressTracker.complete(false, 'Chat changed during vectorization');
+            throw new Error('Chat changed');
+        }
+
+        progressTracker.complete(true, `Extracted ${result.eventsExtracted} events from ${result.windowsProcessed} windows`);
         toastr.success('Chat vectorized successfully', 'VectFox');
-        console.log(`VectFox: ✅ Vectorization complete after ${iteration} iterations`);
+        console.log(`VectFox: ✅ Vectorization complete — ${result.eventsExtracted} events, ${result.windowsProcessed} windows processed, ${result.windowsSkipped} skipped`);
     } catch (error) {
         console.error('VectFox: Failed to vectorize all', error);
         progressTracker.addError(error.message);

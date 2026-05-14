@@ -592,3 +592,23 @@ function _djb2(str) {
     }
     return h;
 }
+
+/**
+ * Returns true if every complete window of the given messages has already been
+ * extracted for this chat. Uses the same hash + window parameters as the main
+ * ingestion loop so the result is authoritative.
+ *
+ * Returns false when messages.length < windowSize (nothing extractable yet).
+ *
+ * @param {object[]} messages  - Filtered chat messages (non-empty)
+ * @param {object}   settings  - VectFox settings
+ * @param {string}   chatUUID  - Current chat UUID
+ * @returns {boolean}
+ */
+export function isChatFullyVectorized(messages, settings, chatUUID) {
+    const windowSize = Math.max(2, settings.eventbase_window_size || 6);
+    const windowOverlap = Math.max(0, Math.min(windowSize - 1, settings.eventbase_window_overlap ?? 1));
+    const step = windowSize - windowOverlap;
+    const msgHash = m => { const t = (m.mes || '').trim(); return m.hash ?? _djb2(`${m.name || ''}:${t}`); };
+    return isLastWindowExtracted(messages, windowSize, step, chatUUID, msgHash);
+}

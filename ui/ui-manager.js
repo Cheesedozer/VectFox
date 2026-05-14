@@ -11,7 +11,7 @@
  */
 
 import { saveSettingsDebounced, getCurrentChatId, eventSource, event_types } from '../../../../../script.js';
-import { extension_settings, openThirdPartyExtensionMenu } from '../../../../extensions.js';
+import { extension_settings, openThirdPartyExtensionMenu, getContext } from '../../../../extensions.js';
 import { writeSecret, SECRET_KEYS, secret_state, readSecretState } from '../../../../secrets.js';
 import { getWebLlmProvider as getSharedWebLlmProvider } from '../providers/webllm.js';
 import { openVisualizer } from './chunk-visualizer.js';
@@ -1698,26 +1698,31 @@ export function refreshWIStatus() {
 }
 
 export function refreshAutoSyncCheckbox(settings) {
-    const collectionId = null; // DEAD-CHUNK-CHAT: always null
+    const $checkbox = $('#VectFox_autosync_enabled');
     const $status = $('#VectFox_autosync_status');
-    if (!collectionId) {
-        $('#VectFox_autosync_enabled').prop('checked', false);
-        $status.html('');
-        return;
-    }
-    // Dynamically import to avoid circular dependency
-    import('../core/collection-metadata.js').then(({ isCollectionAutoSyncEnabled }) => {
-        const isEnabled = isCollectionAutoSyncEnabled(collectionId);
-        $('#VectFox_autosync_enabled').prop('checked', isEnabled);
-    });
-    // Show initialization status
+
+    $checkbox.prop('checked', false);
     $status.html('<i class="fa-solid fa-spinner fa-spin" style="opacity:0.5;"></i> Checking...');
-    doesChatHaveVectors(settings).then(({ hasVectors, allMatches }) => {
-        if (hasVectors) {
-            const totalChunks = allMatches.reduce((sum, m) => sum + (m.chunkCount || 0), 0);
-            $status.html(`<i class="fa-solid fa-circle-check" style="color: var(--success-color, #27ae60);"></i> Initialized (${totalChunks} chunks)`);
-        } else {
+
+    doesChatHaveVectors(settings).then(async ({ hasVectors, allMatches }) => {
+        if (!hasVectors) {
             $status.html('<i class="fa-solid fa-circle-exclamation" style="color: var(--warning-color, #f39c12);"></i> Not initialized — vectorize chat first');
+            return;
+        }
+
+        const { isChatFullyVectorized } = await import('../core/eventbase-workflow.js');
+        const { getChatUUID } = await import('../core/collection-ids.js');
+        const messages = (getContext().chat || []).filter(m => m.mes && m.mes.trim().length > 0);
+        const fullyVectorized = isChatFullyVectorized(messages, settings, getChatUUID());
+
+        const totalChunks = allMatches.reduce((sum, m) => sum + (m.chunkCount || 0), 0);
+
+        if (fullyVectorized) {
+            $status.html(`<i class="fa-solid fa-circle-check" style="color: var(--success-color, #27ae60);"></i> Ready (${totalChunks} chunks)`);
+            const { isCollectionAutoSyncEnabled } = await import('../core/collection-metadata.js');
+            $checkbox.prop('checked', isCollectionAutoSyncEnabled(allMatches[0].collectionId));
+        } else {
+            $status.html(`<i class="fa-solid fa-circle-exclamation" style="color: var(--warning-color, #f39c12);"></i> Partially vectorized (${totalChunks} chunks) — finish vectorization first`);
         }
     }).catch(() => {
         $status.html('');
@@ -2002,60 +2007,75 @@ function bindSettingsEvents(settings, callbacks) {
                 return;
             }
 
-            const collectionId = null; // DEAD-CHUNK-CHAT: always null
-            if (!collectionId) {
-                toastr.warning('Could not get collection ID for this chat');
-                $checkbox.prop('checked', false);
-                return;
-            }
-
             // Import the metadata functions
             const { setCollectionAutoSync } = await import('../core/collection-metadata.js');
 
-            // If enabling, check if we need to set up the collection first
+            let resolvedCollectionId = null;
+
             if (enabling) {
-                // SINGLE SOURCE OF TRUTH: Use doesChatHaveVectors which runs discovery
                 const { hasVectors, allMatches } = await doesChatHaveVectors(settings);
 
                 if (!hasVectors) {
-                    // No vectors found anywhere - open vectorizer panel
                     $checkbox.prop('checked', false);
-                    toastr.info('Set up your chat vectorization first');
+                    toastr.info('Vectorize your chat history first');
                     openContentVectorizer('chat');
                     return;
                 }
 
-                // Found existing vectors - show confirmation modal with all matches
-                const result = await showAutoSyncConfirmModal(allMatches, settings);
+                // Check that all messages are already vectorized before allowing auto-sync
+                const { isChatFullyVectorized } = await import('../core/eventbase-workflow.js');
+                const { getChatUUID } = await import('../core/collection-ids.js');
+                const messages = (getContext().chat || []).filter(m => m.mes && m.mes.trim().length > 0);
+                const fullyVectorized = isChatFullyVectorized(messages, settings, getChatUUID());
 
-                if (result.action === 'cancel') {
-                    // User cancelled - don't enable
+                if (!fullyVectorized) {
                     $checkbox.prop('checked', false);
+                    toastr.info('Finish vectorizing your full chat history first, then enable auto-sync');
+                    openContentVectorizer('chat');
                     return;
                 }
 
-                if (result.action === 'reconnect' && result.selectedCollection) {
-                    // Connect to selected collection
-                    const selected = result.selectedCollection;
-                    toastr.success(`Connected to collection with ${selected.chunkCount} chunks`, 'Auto-Sync Enabled');
-                    console.log(`VectFox: Auto-sync enabled - connected to ${selected.collectionId} (${selected.chunkCount} chunks)`);
-                } else if (result.action === 'revectorize') {
-                    // User wants to start fresh - open vectorizer
-                    $checkbox.prop('checked', false);
-                    openContentVectorizer('chat');
-                    return;
+                // All messages vectorized — connect to collection
+                if (allMatches.length === 1) {
+                    // Single collection: auto-connect without a modal
+                    resolvedCollectionId = allMatches[0].collectionId;
+                    console.log(`VectFox: Auto-sync enabled - connected to ${resolvedCollectionId} (${allMatches[0].chunkCount} chunks)`);
+                } else {
+                    // Multiple collections: let user pick
+                    const result = await showAutoSyncConfirmModal(allMatches, settings);
+
+                    if (result.action === 'cancel') {
+                        $checkbox.prop('checked', false);
+                        return;
+                    }
+
+                    if (result.action === 'reconnect' && result.selectedCollection) {
+                        const selected = result.selectedCollection;
+                        resolvedCollectionId = selected.collectionId;
+                        console.log(`VectFox: Auto-sync enabled - connected to ${selected.collectionId} (${selected.chunkCount} chunks)`);
+                    } else if (result.action === 'revectorize') {
+                        $checkbox.prop('checked', false);
+                        openContentVectorizer('chat');
+                        return;
+                    }
+                }
+            } else {
+                // Disabling - find the current collection to clear its auto-sync flag
+                const { hasVectors, allMatches } = await doesChatHaveVectors(settings);
+                if (hasVectors && allMatches.length > 0) {
+                    resolvedCollectionId = allMatches[0].collectionId;
                 }
             }
 
-            // Save to per-collection metadata instead of global setting
-            setCollectionAutoSync(collectionId, enabling);
+            // Save to per-collection metadata
+            setCollectionAutoSync(resolvedCollectionId, enabling);
 
             if (!enabling) {
                 toastr.info('Auto-sync disabled for this chat');
             } else {
                 toastr.success('Auto-sync enabled for this chat');
             }
-            console.log(`VectFox: Chat auto-sync for ${collectionId}: ${enabling ? 'enabled' : 'disabled'}`);
+            console.log(`VectFox: Chat auto-sync for ${resolvedCollectionId}: ${enabling ? 'enabled' : 'disabled'}`);
         });
 
         // Collection lock handled inside Database Browser per-collection settings

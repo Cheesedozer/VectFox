@@ -492,4 +492,4 @@ GPLv3 License — see LICENSE.
 
 ---
 
-*"Lets make your memory hardcore!."* 🐰✨
+*"Lets make your memory hardcore!."* 🦊✨

@@ -462,4 +462,4 @@ GPLv3 ライセンス — LICENSE を参照してください。
 
 ---
 
-*"Lets make your memory hardcore!."* 🐰✨
+*"Lets make your memory hardcore!."* 🦊✨
