@@ -164,20 +164,8 @@ export async function exportCollection(collectionId, settings, collectionInfo = 
                 index: meta.index ?? item.index,
                 vector: item.vector || meta.vector || null, // The actual embedding!
                 metadata: {
-                    contentType: meta.contentType,
-                    sourceName: meta.sourceName,
-                    entryName: meta.entryName,
-                    entryUid: meta.entryUid,
+                    ...meta,
                     keywords: meta.keywords || [],
-                    keywordLevel: meta.keywordLevel,
-                    keywordBaseWeight: meta.keywordBaseWeight,
-                    importance: meta.importance,
-                    conditions: meta.conditions,
-                    isSummaryChunk: meta.isSummaryChunk,
-                    parentHash: meta.parentHash,
-                    speaker: meta.speaker,
-                    isUser: meta.isUser,
-                    messageId: meta.messageId,
                 },
             };
 
