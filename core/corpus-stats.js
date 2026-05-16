@@ -68,7 +68,22 @@ export async function getCorpusStats(collectionId, settings) {
 }
 
 async function _buildStats(collectionId, settings) {
-    const t0 = Date.now();
+    // Per-stage timing so a slow build tells us WHICH stage is the choke point:
+    //   1. HTTP fetch  → server-side work + network (large collections = lots of bytes)
+    //   2. JSON parse  → usually negligible, can spike on huge arrays
+    //   3. Tokenize    → main-thread CPU; CJK tokenizers (Jieba/Intl.Segmenter)
+    //                    can be the dominant cost on chat content
+    //   4. df-map build → cheap (O(unique-tokens))
+    //
+    // This logs even when eventbase_debug_logging is off — corpus-stats build
+    // happens at most once per session per collection, so the noise is minimal
+    // and the timing data is critical for diagnosing slow first-queries.
+    const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const _ms = (start) => Math.round(_now() - start);
+    const tStart = _now();
+
+    // Stage 1 — HTTP fetch
+    const tFetch = _now();
     const response = await fetch('/api/plugins/similharity/chunks/list', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -84,21 +99,36 @@ async function _buildStats(collectionId, settings) {
     if (!response.ok) {
         throw new Error(`chunks/list ${response.status}`);
     }
+    const tFetchMs = _ms(tFetch);
+
+    // Stage 2 — JSON parse
+    const tParse = _now();
     const data = await response.json();
     const items = Array.isArray(data?.items) ? data.items : [];
+    const tParseMs = _ms(tParse);
 
+    // Stage 3 — Tokenize every chunk + accumulate df. This is synchronous JS
+    // running on the main thread; for CJK collections with Jieba/Intl.Segmenter
+    // it often dominates total build time. If we ever need to fix this,
+    // candidates are: move to a Web Worker, batch + yield via requestIdleCallback,
+    // or ask the plugin to return pre-computed token frequencies.
+    const tTokenize = _now();
     const documentFrequencies = new Map();
     let totalLength = 0;
+    let totalTokens = 0;
+    let skipped = 0;
     for (const item of items) {
         const text = item?.text || item?.metadata?.text || '';
-        if (!text) continue;
+        if (!text) { skipped++; continue; }
         const tokens = tokenize(text);
         totalLength += tokens.length;
+        totalTokens += tokens.length;
         const unique = new Set(tokens);
         for (const term of unique) {
             documentFrequencies.set(term, (documentFrequencies.get(term) || 0) + 1);
         }
     }
+    const tTokenizeMs = _ms(tTokenize);
 
     const stats = {
         totalDocs: items.length,
@@ -107,7 +137,14 @@ async function _buildStats(collectionId, settings) {
         builtAt: Date.now(),
     };
 
-    console.log(`[CorpusStats] Built for ${collectionId} in ${Date.now() - t0}ms: N=${stats.totalDocs}, uniqueTerms=${documentFrequencies.size}, avgLen=${stats.avgDocLength.toFixed(1)}`);
+    const totalMs = _ms(tStart);
+    console.log(
+        `[CorpusStats] Built for ${collectionId} in ${totalMs}ms ` +
+        `(fetch=${tFetchMs}ms, parse=${tParseMs}ms, tokenize+df=${tTokenizeMs}ms) ` +
+        `→ N=${stats.totalDocs}${skipped ? ` (${skipped} empty skipped)` : ''}, ` +
+        `uniqueTerms=${documentFrequencies.size}, totalTokens=${totalTokens}, ` +
+        `avgLen=${stats.avgDocLength.toFixed(1)}`
+    );
     return stats;
 }
 
