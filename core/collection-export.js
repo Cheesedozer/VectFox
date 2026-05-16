@@ -610,6 +610,18 @@ async function insertChunksWithVectors(collectionId, chunks, settings, onBatchPr
             onBatchProgress(inserted, items.length);
         }
     }
+
+    // Stale-stats fix: this writer bypasses core-vector-api.js's insertVectorItems
+    // (it hits /chunks/insert directly with pre-computed vectors), so the cache
+    // invalidation in that path doesn't fire here. Clear corpus-IDF cache so the
+    // next BM25 query rebuilds with the just-inserted chunks counted in df.
+    // Best-effort + dynamic import — failure must not break the import flow.
+    if (chunks.length > 0) {
+        try {
+            const mod = await import('./corpus-stats.js');
+            mod.clearCorpusStatsCache(collectionId);
+        } catch (_) { /* silent: stale stats are acceptable, write failure is not */ }
+    }
 }
 
 /**

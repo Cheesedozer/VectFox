@@ -12,8 +12,18 @@
  * paths plug these stats into BM25Scorer instead of computing IDF over the
  * local ANN candidate set. See dev_helper.md §10 (A1/A2 vs A3).
  *
- * Cache lives for the browser session; clear via clearCorpusStatsCache() when
- * collections are re-indexed.
+ * Lifecycle:
+ *   - Built lazily on the first getCorpusStats(collectionId) call after page
+ *     load OR after the entry is invalidated.
+ *   - Cached in module-level Map for the rest of the session.
+ *   - Auto-invalidated by core-vector-api.js's insert / delete / purge paths
+ *     and by collection-export.js's import path. Manual clear is also
+ *     available via clearCorpusStatsCache(collectionId|undefined).
+ *
+ * Invalidation policy is LAZY-rebuild: the entry is just removed; the next
+ * getCorpusStats() call sees a cache miss and rebuilds. This pays the rebuild
+ * cost during the user's next query, not during the write — auto-sync /
+ * vectorization stay snappy and the cost is amortized over future reads.
  * ============================================================================
  */
 import { getRequestHeaders } from '../../../../../script.js';
@@ -151,13 +161,22 @@ async function _buildStats(collectionId, settings) {
 /**
  * Clear the cache. Pass a collectionId to clear just one collection, or omit
  * to clear everything. Call after re-indexing or major collection edits.
+ *
+ * Logs a confirmation including the cache size before/after so manual
+ * console invocations (force-refresh during A/B testing) give visible
+ * feedback. Without this, the function returns silently and there's no
+ * way to tell from the console whether it actually did anything.
  */
 export function clearCorpusStatsCache(collectionId) {
+    const sizeBefore = _cache.size;
     if (collectionId) {
+        const hadEntry = _cache.has(collectionId);
         _cache.delete(collectionId);
         _inflight.delete(collectionId);
+        console.log(`[CorpusStats] Manual clear: ${hadEntry ? 'removed' : 'no entry for'} "${collectionId}" (cache size: ${sizeBefore} → ${_cache.size})`);
     } else {
         _cache.clear();
         _inflight.clear();
+        console.log(`[CorpusStats] Manual clear: removed all ${sizeBefore} cached collection(s)`);
     }
 }

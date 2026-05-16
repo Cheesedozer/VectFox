@@ -44,6 +44,28 @@ import { getOverfetchAmount } from './keyword-boost.js';
 import { applyBM25Scoring, porterStemmer } from './bm25-scorer.js';
 import { hybridSearch } from './hybrid-search.js';
 import { extractQueryKeywords, RETRIEVAL_KEYWORD_LEVELS, isCJKToken } from './query-keyword-extractor.js';
+
+/**
+ * Lazy + best-effort cache invalidation for the corpus-IDF stats.
+ *
+ * Called from the chunk-write paths (insert / delete / purge). Any failure
+ * here must NOT break the write — worst case is stale IDF until the next page
+ * reload, which is the pre-fix behavior anyway. Dynamic import keeps the
+ * corpus-stats module load deferred to when it's actually needed.
+ */
+async function _invalidateCorpusStats(collectionId, reason) {
+    if (!collectionId) return;
+    try {
+        const mod = await import('./corpus-stats.js');
+        mod.clearCorpusStatsCache(collectionId);
+        if (extension_settings?.vectfox?.eventbase_debug_logging) {
+            console.log(`[CorpusStats] Invalidated cache for ${collectionId} (${reason})`);
+        }
+    } catch (err) {
+        // Silent — invalidation is best-effort. Stale stats are acceptable;
+        // a stack trace mid-write is not.
+    }
+}
 import AsyncUtils from '../utils/async-utils.js';
 import StringUtils from '../utils/string-utils.js';
 import {
@@ -661,6 +683,9 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
 
         // VEC-18: Record successful insert operation
         recordInsert(settings?.vector_backend || 'standard', items.length);
+        // Stale-stats fix: chunks just changed → next BM25 corpus-IDF query
+        // must rebuild instead of returning pre-write df values. Fire-and-forget.
+        _invalidateCorpusStats(collectionId, `insert ${items.length} item(s)`);
     } catch (error) {
         // VEC-18: Record error
         recordError(settings?.vector_backend || 'standard', error);
@@ -776,6 +801,8 @@ export async function deleteVectorItems(collectionId, hashes, settings) {
         );
         // VEC-18: Record successful delete operation
         recordDelete(settings?.vector_backend || 'standard', hashes.length);
+        // Stale-stats fix: corpus shrank.
+        _invalidateCorpusStats(collectionId, `delete ${hashes?.length || 0} hash(es)`);
         return result;
     } catch (error) {
         // VEC-18: Record error
@@ -1125,6 +1152,8 @@ export async function purgeVectorIndex(collectionId, settings) {
         const backend = await getBackend(settings);
         await backend.purgeVectorIndex(collectionId, settings);
         console.log(`VectFox: Purged vector index for collection ${collectionId}`);
+        // Stale-stats fix: entire collection is gone.
+        _invalidateCorpusStats(collectionId, 'purge');
         return true;
     } catch (error) {
         // VEC-33: Invalidate health cache on operation error
