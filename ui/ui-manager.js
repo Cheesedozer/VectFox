@@ -469,9 +469,13 @@ export function renderSettings(containerId, settings, callbacks) {
 
                                     <label class="checkbox_label" style="margin-top: 12px;">
                                         <input type="checkbox" id="VectFox_bm25_use_corpus_idf" />
-                                        <span>Use full-corpus IDF (A/B toggle)</span>
+                                        <span>Corpus-wide IDF weights (BM25)</span>
                                     </label>
-                                    <small class="VectFox_hint">When ON, BM25 uses IDF computed over the entire collection (matches Qdrant A3 behavior — rare query terms stay discriminative). When OFF, IDF is computed only over the ANN top-K candidate set (current default — biased when candidates share key terms). Applies to ChunkBase and EventBase on client-side BM25 paths (A1/A2). Default: OFF.</small>
+                                    <small class="VectFox_hint">
+                                        BM25 IDF weights are computed once per session over every chunk in the collection (vs. just the ANN top-K when OFF). Keeps rare-term scoring accurate.<br>
+                                        <strong>This does NOT search the full corpus.</strong> BM25 still only scores the ANN top-K candidates the vector layer surfaced — turning this ON gives you better <em>weights</em> for those candidates, not more <em>candidates</em>. For actual full-corpus retrieval, use the Qdrant backend (path A3).<br>
+                                        Cost: ~700&nbsp;ms cold build per collection per session (cached after); ~400&nbsp;KB memory per collection. Applies to client-side BM25 paths (A1/A2). Default: <strong>ON</strong>.
+                                    </small>
                                 </div>
 
                                 <!-- Hybrid Search params (visible in A2 hybrid mode and A3 native) -->

@@ -111,6 +111,16 @@ const defaultSettings = {
     // BM25 parameters
     bm25_k1: 1.5,  // Term frequency saturation (1.2-2.0 typical)
     bm25_b: 0.75,  // Length normalization (0-1, 0.75 typical)
+    // IDF source for client-side BM25 (A1/A2 paths only — A3/Qdrant always uses corpus IDF).
+    // true  → df values computed once per session over the full collection (cached, ~700ms
+    //         cold build for ~1.4k chunks, then sub-ms lookups). Rare-term IDF stays accurate.
+    // false → df values computed only over the ANN candidate set per query (no build cost).
+    //         Rare terms can look common locally → discrimination is weaker for rare-term queries.
+    // Measured cost on a 1394-chunk Traditional Chinese collection: 674 ms cold build,
+    // 210 ms of which is main-thread tokenize. Memory: ~400 KB cached df map per collection.
+    // Note: this is "corpus IDF *weights*", not "corpus *search*". BM25 still scores only
+    // the ANN top-K candidates — the toggle does not expand retrieval recall.
+    bm25_use_corpus_idf: true,
 
     // Query keyword budget for retrieval (A1 and A2 paths)
     hybrid_keyword_level: 'balance', // 'minimal' (30) | 'balance' (50) | 'maximum' (70)

@@ -190,49 +190,89 @@ Do **not** call `hybridSearch()` directly from `eventbase-retrieval.js` or `even
 
 ---
 
-## 10) EventBase Settings Impact Table
+## 10) Retrieval Paths — A1 / A2 / A3 Comparison
 
-Three retrieval paths exist after the keyword-level simplification. All paths are chosen inside `queryCollection()` — EventBase inherits whichever applies to the active backend.
+Three retrieval paths exist. The path is chosen automatically inside `queryCollection()` based on (a) backend and (b) `keyword_scoring_method`. EventBase, ChunkBase, and the Query Tester all flow through this same dispatch.
 
-| Path | When | Where it runs | Keyword scoring | Fusion |
-|---|---|---|---|---|
-| A1 — BM25 re-rank | Standard backend default; or Qdrant with `keyword_scoring_method=bm25` and `hybrid_native_prefer=false` (hidden settings-only) | Browser | Okapi BM25 over ANN top-K only | Weighted linear: `α·vectorScore + β·bm25Score` (no RRF, no bonuses) |
-| A2 — client-side hybrid (ANN-bound) | Standard backend with `keyword_scoring_method=hybrid`; or Qdrant with `hybrid_native_prefer=false` (hidden settings-only) | Browser | Okapi BM25 over the ANN candidate set only — vector top-K × 3, capped at 100 (`hybrid-search.js` line 100) | **RRF** (default) or weighted; **min-max normalization** per batch; **dual-signal bonus** (up to +8%); single-signal penalty (×0.55 vector-only, ×0.60 text-only) |
-| **A3 — Qdrant native sparse + native RRF** | **Qdrant default. The only hybrid path on Qdrant.** | **Qdrant server** | **BM25 via Qdrant's native sparse vector with `modifier: "idf"`. IDF computed globally over the true full corpus** (every indexed document, not just keyword-matching subset). Sparse vectors stored on each point as `{indices, values}` at upsert via FNV-1a-hashed CJK-tokenized tokens. | **Qdrant-native RRF** (`fusion: "rrf"`) — single `/points/query` call with `prefetch: [dense, sparse]`. No bonuses, no penalties, no JS post-processing. |
-
-**Fusion method detail:**
-
-| Feature | A1 | A2 | A3 |
+| | **A1 — BM25 re-rank** | **A2 — Client-side hybrid** | **A3 — Qdrant native** ⭐ |
 |---|---|---|---|
-| RRF | ✗ | ✓ (client-side) | ✓ (server-side, Qdrant) |
-| Weighted linear | ✓ (always) | ✓ (opt-in) | ✗ (Qdrant only ships `rrf` / `dbsf`) |
-| Min-max normalization (batch-relative) | ✗ | ✓ | n/a (server-internal) |
-| Saturation normalization `score/(score+k)` | ✗ | ✓ (BM25 side) | n/a (server-internal) |
-| Dual-signal bonus (explicit ×1.0–1.08) | ✗ | ✓ | ✗ (Qdrant RRF handles dual-presence implicitly) |
-| Single-signal penalty | ✗ | ✓ | ✗ |
-| BM25 corpus scope | ANN top-K (≤100, `topK*2`) | ANN top-K × 3 (≤100) | **Full corpus** — global IDF via Qdrant `modifier: idf` |
-| BM25 IDF accuracy | Biased (ANN subset) | Biased (ANN subset, same scope as A1) | **Globally accurate** (full corpus) |
-| Network round-trips per query | 1 (vector search only) | 1 + corpus load (full chunk fetch on first query per session) | **1** (single `/points/query` call) |
-| Tokenizer mode lock | n/a | n/a | ✓ — sentinel point stores `cjk_tokenizer_mode`; mismatch shows modal and refuses query |
+| **When active** | Standard backend default; or Qdrant + hidden `hybrid_native_prefer=false` + `keyword_scoring_method=bm25` | Standard backend + `keyword_scoring_method=hybrid`; or Qdrant + hidden `hybrid_native_prefer=false` + `hybrid` | Qdrant backend default — the **only** hybrid path on Qdrant |
+| **Where it runs** | Browser JS | Browser JS | Qdrant server |
+| **Candidate set (what BM25 actually scores)** | ANN top-K (`topK × 2`, capped 100) | ANN top-K × 3 (capped 100) | **Union of dense top-K + sparse top-K** — sparse can surface rare-term docs the dense layer missed |
+| **Retrieval recall ceiling** | Vector ANN only | Vector ANN only (slightly wider candidate window) | **Wider** — sparse retrieval finds docs the dense layer missed |
+| **BM25 IDF source** | Toggle: `bm25_use_corpus_idf` — `true` (default) uses **full-corpus df values** cached in browser; `false` uses local df over candidate set only | Same toggle as A1 | **Always full-corpus** via Qdrant's `modifier: "idf"` (server-side) |
+| **Sparse-vector index** | None — pure vector ANN | None — pure vector ANN | Yes — `text_sparse` named vector on every point, built at upsert via FNV-1a-hashed CJK tokens |
+| **Fusion algorithm** | Weighted linear: `α·vectorScore + β·BM25_norm` (after `BM25/maxBM25`) | RRF (default, `hybrid_rrf_k`=60) **or** weighted; min-max normalization; +0–8% dual-signal bonus; single-signal penalty (×0.55 / ×0.60) | Qdrant-native RRF via `prefetch: [dense, sparse]`, `fusion: "rrf"`. No bonuses, no penalties, no JS post-processing. |
+| **Network round-trips per query** | 1 (vector ANN); +1 one-time per session for cold corpus-stats build when toggle ON | Same as A1 | **1** (single `/points/query`) |
+| **Tokenizer** | Client-side (Intl.Segmenter / Jieba / Jieba TW / TinySegmenter) | Same | Client-side at query; locked **per collection** at upsert via sentinel point. Mismatch shows modal and refuses query. |
+| **Knobs that apply** | `bm25_k1`, `bm25_b`, `bm25_use_corpus_idf`, `hybrid_keyword_level` | Above + `hybrid_fusion_method`, `hybrid_vector_weight`, `hybrid_text_weight`, `hybrid_rrf_k` | None of the above — Qdrant uses its internal defaults |
+| **Native EventBase rerank (cosine + importance + persist + recency in one call)** | n/a | n/a | Available when `eventbase_native_rerank=true` (default) + Qdrant ≥ 1.13 |
 
-| Setting | Affects EventBase? | Notes |
-|---|---|---|
-| `keyword_scoring_method` (`bm25` \| `hybrid`) | **No** | ChunkBase path only, and only for Standard backend. On Qdrant, A3 is the only hybrid path and this setting is ignored. EventBase callers override this to `eventbase_keyword_scoring_method \|\| 'bm25'` before passing settings to `queryCollection()`. |
-| `eventbase_keyword_scoring_method` | **Yes (Standard only)** | EventBase-only internal key. Defaults to `'bm25'`; not exposed in UI. Override in browser console if needed. Has effect **only on Standard backend** (chooses A1 vs A2). On Qdrant, A3 takes over regardless. |
-| `hybrid_keyword_level` (`minimal` / `balance` / `maximum`) | Negligible | Controls keywords extracted for A1 BM25 (30/50/70). Ignored under A2 (full query tokenized) and A3 (sparse encoder tokenizes everything; Qdrant handles IDF). |
-| `hybrid_native_prefer` | Hidden setting | No longer in the UI. Default `true` keeps Qdrant on A3 (native sparse + RRF). Flip to `false` via JSON only to test A2 client-side hybrid against Qdrant. |
-| `hybrid_fusion_method` (`rrf` / `weighted`) | A2 only | A1 always uses weighted linear. A3 always uses Qdrant-native RRF (this setting has no effect on Qdrant). |
-| `hybrid_vector_weight`, `hybrid_text_weight` | A2 weighted mode only | Used only when `hybrid_fusion_method = weighted` on the Standard backend. |
-| `hybrid_rrf_k` | A2 RRF mode only | Qdrant uses its own internal default for A3; this knob doesn't reach the server. |
-| `bm25_k1`, `bm25_b` | A1 and A2 only | BM25 TF saturation (k1, default 1.5) and length normalization (b, default 0.75). A3 uses Qdrant's `modifier: idf` internals — these knobs are not exposed to the server. |
-| `keyword_extraction_level`, `keyword_boost_base_weight` | No | Ingestion-only settings. No longer used in any retrieval path. |
-| `cjk_tokenizer_mode` (`intl` / `jieba` / `jieba_tw` / `tiny_segmenter`) | **Yes (locked per Qdrant collection)** | Used by the sparse-vector encoder at upsert and query. Locked into each Qdrant collection via a sentinel point on first upsert. Changing this setting after migration triggers a mismatch modal on the next query (revert / open settings / cancel). |
-| `hybrid_search_enabled` | Removed | Setting deleted. Hybrid is now always available; path chosen by backend and `keyword_scoring_method`. |
-| `deduplication_depth` | Yes | EventBase context deduplication — suppress events already visible in recent chat window. |
-| `eventbase_retrieval_top_k`, `eventbase_retrieval_min_importance`, EventBase rerank weights | Yes | Active for all three retrieval paths. |
-| `eventbase_native_rerank` | **Yes (A3 only)** | Default `true`. When enabled and Qdrant ≥ 1.13, the four-weight formula (cosine × RRF + importance + persist + recency) runs server-side as a `formula` query inside the Qdrant `/points/query` call. Set `false` to fall back to JS post-processing (6b path). |
-| `eventbase_compare_rerank` | **Yes (A3 only)** | Default `false`. When enabled alongside `eventbase_native_rerank`, fires the JS formula path in parallel for every query and logs `overlap@K` and Spearman ρ to the console. Pure logging — does not change what is injected into the prompt. |
-| `eventbase_compare_rerank_verbose` | **Yes (A3 only)** | Default `false`. When both compare settings are on, emits per-event score rows (`nativeScore`, `jsBase`, `jsFinal`) so individual score differences are visible. Very noisy — intended for development only. |
+### ⚠️ "Corpus-wide IDF" is NOT "Corpus-wide search"
+
+The `bm25_use_corpus_idf` toggle is the source of the most common misconception. It is worth being explicit:
+
+| Question | Answer |
+|---|---|
+| Does ON make BM25 score all chunks in the collection? | **No.** BM25 still only scores the ANN top-K candidates the vector layer surfaced. |
+| What does ON actually change? | The **IDF weights** used for the per-query terms. With ON, IDF is computed from corpus-wide df values (e.g. `df(贖身)=5 / N=1394`). With OFF, df is recomputed per query against just the local candidate set (e.g. `df(贖身)=3 / N=40`) — which biases IDF toward zero whenever the candidates already share the term. |
+| How can a doc that doesn't appear in the ANN top-K still affect the score? | It can't be a result. It can only contribute to global df values, which feed into the per-term IDF weights of docs that *are* in the candidate set. |
+| What if I want true full-corpus retrieval (find docs that vector missed)? | Use **A3 (Qdrant)**. Only that path stores a sparse-vector index over every chunk and can match by term across the full collection. The standard backend has no inverted/sparse index. |
+
+So `bm25_use_corpus_idf` should be read as: *"Use corpus df values when computing IDF weights for the candidates BM25 is already scoring."* The toggle improves **scoring quality** within the existing recall window; it does **not** widen the recall window.
+
+#### Cost and lifecycle of the corpus-stats cache
+
+Implemented in [core/corpus-stats.js](../core/corpus-stats.js). When the toggle is ON:
+
+| Aspect | Detail |
+|---|---|
+| Build trigger | Lazy — first call to `getCorpusStats(collectionId)` per session per collection. Subsequent calls hit a hot Map. |
+| Build cost (measured, 1394 chunks Traditional Chinese on Intl.Segmenter) | 674 ms total: fetch=407 ms, parse=57 ms, tokenize+df=210 ms. Logged as `[CorpusStats] Built for ...` with full breakdown. |
+| Sustained memory | ~400 KB per collection: `{ totalDocs, documentFrequencies: Map<term, df>, avgDocLength, builtAt }`. Chunk texts are **not** retained — only the derived statistics. |
+| Auto-invalidation | Fires on `insertVectorItems` / `deleteVectorItems` / `purgeVectorIndex` (core-vector-api.js) and `insertChunksWithVectors` (collection-export.js import path). Lazy rebuild on next query. |
+| Manual clear (force-rebuild for testing) | `(await import('/scripts/extensions/third-party/VectFox/core/corpus-stats.js')).clearCorpusStatsCache()` |
+| Failure mode | Best-effort. Module-load or fetch failure logs a warning and falls back to local-IDF BM25 for that query — never discards the underlying vector results. See [feedback memory: optional enhancements must degrade]. |
+
+#### Why default ON
+
+For typical 1-2k-chunk collections, cold build is sub-second and main-thread freeze is under 300 ms — imperceptible. Steady-state cost is one Map lookup per query token. The ranking benefit is small when EventBase's importance/persist post-rank dominates the score, but the cost is small enough that "default ON" is the right call. Users with very large collections (>10k chunks) where the build starts to bite can flip it off; the scaling threshold and mitigation options (yield-in-loop / Web Worker / server-side df) are noted in the corpus-stats.js header.
+
+### Path selection (decision tree)
+
+```
+backend == 'qdrant' ?
+  ├─ yes → hybrid_native_prefer !== false (default true) ?
+  │         ├─ yes → A3
+  │         └─ no  → keyword_scoring_method == 'hybrid' ? A2 : A1
+  └─ no (standard/vectra) → keyword_scoring_method == 'hybrid' ? A2 : A1
+```
+
+EventBase overrides `keyword_scoring_method` with `eventbase_keyword_scoring_method` (default `'bm25'`) before dispatch, so for EventBase on Standard backend the default is **A1**, not A2.
+
+### Settings reference (consolidated)
+
+| Setting | Default | Affects | Notes |
+|---|---|---|---|
+| `keyword_scoring_method` (`bm25` \| `hybrid`) | `hybrid` | ChunkBase A1/A2 selector on Standard backend | Ignored on Qdrant (A3 wins). EventBase overrides this with `eventbase_keyword_scoring_method`. |
+| `eventbase_keyword_scoring_method` | `bm25` | EventBase A1/A2 selector on Standard backend | Internal key, not exposed in UI. Override via `extension_settings.vectfox` in console. |
+| `hybrid_native_prefer` | `true` | A3 vs A1/A2 on Qdrant | Hidden — not in UI. JSON-only. Flip to `false` to force client-side path on Qdrant for A/B testing. |
+| `bm25_k1`, `bm25_b` | 1.5 / 0.75 | A1 and A2 (client-side BM25 internals) | BM25+ TF saturation and length normalization. A3 uses Qdrant's internal defaults (these knobs don't reach the server). |
+| `bm25_use_corpus_idf` | **`true`** | A1 and A2 IDF source | See "Corpus-wide IDF ≠ Corpus-wide search" above. Lazily fetches and caches `{N, df}` map for the entire collection. ~700 ms cold build, ~400 KB sustained. Auto-invalidates on writes. |
+| `hybrid_keyword_level` (`minimal` / `balance` / `maximum`) | `balance` | A1 query keyword budget (30/50/70 tokens) | Negligible effect under A2 (full query tokenized) and A3 (sparse encoder tokenizes everything). |
+| `hybrid_fusion_method` (`rrf` / `weighted`) | `rrf` | A2 fusion algorithm | A1 always uses weighted linear. A3 always uses Qdrant-native RRF (this setting doesn't reach the server). |
+| `hybrid_vector_weight`, `hybrid_text_weight` | 0.5 / 0.5 | A2 weighted mode only | Used only when `hybrid_fusion_method = 'weighted'` on Standard backend. |
+| `hybrid_rrf_k` | 60 | A2 RRF mode only | Qdrant uses its own internal default for A3; this knob doesn't reach the server. |
+| `cjk_tokenizer_mode` (`intl` / `jieba` / `jieba_tw` / `tiny_segmenter`) | `intl` | A3 (locked per Qdrant collection at upsert via sentinel point) | Mismatch between current setting and the collection's locked tokenizer triggers a modal and refuses the query. On A1/A2 the tokenizer is also used but not locked — changing it just means inconsistent tokenization until re-vectorize. |
+| `deduplication_depth` | 0 (disabled) | All three paths | EventBase context-window dedup: suppress events whose source window falls within the last N messages. Same JS path post-retrieval. |
+| `eventbase_retrieval_top_k` | 10 | All three paths | Final number of events injected. Internal overfetch is `top_k × 2 × 2 = 40` for A1 (see §14 wait actually §10 of this doc + keyword-boost.js:1304). |
+| `eventbase_retrieval_min_importance` | 1 | All three paths | Drops events below this importance threshold after retrieval. |
+| `eventbase_rerank_w_cosine` / `_w_importance` / `_w_persist` / `_w_recency` | 0.55 / 0.20 / 0.15 / 0.10 | All three paths (formula coefficients) | A3 with `eventbase_native_rerank=true` applies them server-side via Qdrant formula; A1/A2 apply them in JS in `eventbase-retrieval.js`. |
+| `eventbase_native_rerank` | `true` | A3 only | Pushes the 4-weight formula into the same Qdrant `/points/query` call. Requires Qdrant ≥ 1.13. Set `false` to fall back to JS post-processing. |
+| `eventbase_compare_rerank` | `false` | A3 only | When ON alongside `eventbase_native_rerank`, runs the JS formula path in parallel for every query and logs `overlap@K` + Spearman ρ. Pure observability, doesn't change the injected events. |
+| `eventbase_compare_rerank_verbose` | `false` | A3 only | When both compare settings are ON, emits per-event score rows. Very noisy — development only. |
+| `keyword_extraction_level`, `keyword_boost_base_weight` | — | Ingestion only | Not used by any retrieval path. Lives elsewhere; listed here so people stop expecting it to affect retrieval. |
+| `hybrid_search_enabled` | — | Removed | Setting deleted. Hybrid is always available; path chosen by backend + `keyword_scoring_method`. |
 
 ### Native Formula Rerank (A3 + Qdrant ≥ 1.13)
 
