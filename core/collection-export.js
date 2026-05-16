@@ -397,7 +397,19 @@ export function downloadExport(exportData, filename = null) {
         ? `vectfox-export-${exportData.stats.totalCollections}-collections`
         : `vectfox-${exportData.collection?.id || 'collection'}`;
 
-    const finalFilename = (filename || defaultName) + EXPORT_FILE_EXTENSION;
+    const rawName = filename || defaultName;
+    // Strip emojis, colons, and other characters that are invalid or ugly in filenames.
+    // Preserves letters (including CJK), digits, hyphens, dots, and underscores.
+    const sanitized = String(rawName)
+        .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '')
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .substring(0, 120)
+        || defaultName;
+
+    const finalFilename = sanitized + EXPORT_FILE_EXTENSION;
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

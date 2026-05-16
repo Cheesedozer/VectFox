@@ -600,6 +600,12 @@ function bindBrowserEvents() {
       if (info.embedding) {
         message += `\nEmbedding: ${info.embedding.source}/${info.embedding.model || "default"}\n`;
         message += `Dimension: ${info.embedding.dimension || "unknown"}\n`;
+
+        // Show backend transition so user knows if data is being migrated.
+        const _normBackend = b => (String(b || 'standard').toLowerCase() === 'vectra' ? 'standard' : String(b || 'standard').toLowerCase());
+        const srcBackend  = _normBackend(info.embedding.backend);
+        const destBackend = _normBackend(browserState.settings.vector_backend);
+        message += `Backend: ${srcBackend} → ${destBackend}${srcBackend !== destBackend ? ' (migration)' : ''}\n`;
       }
 
       if (validation.warnings.length > 0) {
