@@ -171,7 +171,30 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     let eventsExtracted = 0;
     let windowsProcessed = 0;
     let windowsSkipped = 0;
-    let windowIdx = 0;
+
+    // Smart fast-forward: windows are processed in order, so already-extracted ones
+    // cluster at the front. Linear-scan past them with cheap Set.has() lookups instead
+    // of spinning up Promise.allSettled batches that do the same check 3-at-a-time.
+    // The per-window inner check at line ~210 stays as a safety net for edit-in-middle
+    // cases (where an old message's hash changes and breaks the contiguity assumption).
+    let fastForwardSkipped = 0;
+    while (fastForwardSkipped < windows.length) {
+        const win = windows[fastForwardSkipped];
+        const hashes = win.msgs.map(m => {
+            const text = (m.mes || '').trim();
+            return m.hash ?? _djb2(`${m.name || ''}:${text}`);
+        });
+        const isDone = await isWindowAlreadyExtracted(hashes, null, settings, uuid);
+        if (!isDone) break;
+        fastForwardSkipped++;
+    }
+    if (fastForwardSkipped > 0) {
+        windowsSkipped = fastForwardSkipped;
+        if (debugLog) {
+            console.log(`[EventBase] Fast-forward: skipped ${fastForwardSkipped} already-extracted window(s), starting at window ${fastForwardSkipped}`);
+        }
+    }
+    let windowIdx = fastForwardSkipped;
 
     while (windowIdx < windows.length) {
         if (abortSignal?.aborted) {
@@ -203,7 +226,9 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
                     uuid,
                 );
                 if (alreadyDone) {
-                    if (debugLog) console.log(`[EventBase] Window ${wIdx} already extracted — skip`);
+                    // Per-window skip log removed — the "Ingestion complete: skipped=N"
+                    // summary at the end already conveys this. For a 720-message chat
+                    // with windowSize=2, this used to spam ~360 lines per AI reply.
                     return { skipped: true };
                 }
 
