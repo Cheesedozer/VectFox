@@ -1318,9 +1318,19 @@ export async function rearrangeChat(chat, settings, type) {
         });
 
         // === STAGE 4: Query all collections and merge results ===
+        // Popup gating:
+        //   - retrieval_popup_on_start / retrieval_popup_on_result: ChunkBase chunks
+        //   - world_info_retrieval_popup: lorebook/WI entries (handled in
+        //     world-info-integration.js, untouched here)
+        // We suppress the ChunkBase popups when activeCollections is empty (WI-only mode)
+        // — the "0 results" message would just be misleading noise.
+        if (activeCollections.length > 0 && settings.retrieval_popup_on_start) {
+            toastr.info(`Retrieving context from ${activeCollections.length} collection(s)...`, 'VectFox Retrieval');
+        }
+
         let chunks = await queryAndMergeCollections(activeCollections, queryText, settings, chat, debugData);
 
-        if (settings.retrieval_popup_on_result) {
+        if (activeCollections.length > 0 && settings.retrieval_popup_on_result) {
             toastr.success(`Retrieved ${chunks.length} result(s) from backend`, 'VectFox Retrieval');
         }
 

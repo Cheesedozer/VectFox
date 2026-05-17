@@ -127,6 +127,13 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         return { eventsExtracted: 0, windowsProcessed: 0, windowsSkipped: 0 };
     }
 
+    // Past the quick-exit: at least the last window is new, so real work will happen.
+    // Fire the auto-sync popup here so it shows once per ingestion call regardless of
+    // whether older windows turn out to be dedup-skipped in the loop below.
+    if (isAutoSync && settings.eventbase_autosync_popup !== false) {
+        try { toastr.info('Auto-Sync: extracting events...', 'VectFox', { timeOut: 3000 }); } catch (_) {}
+    }
+
     const windows = [];
     for (let start = 0; start < messages.length; start += step) {
         const end = Math.min(start + windowSize - 1, messages.length - 1);
@@ -156,7 +163,6 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     let windowsProcessed = 0;
     let windowsSkipped = 0;
     let windowIdx = 0;
-    let autosyncPopupShown = false;
 
     while (windowIdx < windows.length) {
         if (abortSignal?.aborted) {
@@ -190,12 +196,6 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
                 if (alreadyDone) {
                     if (debugLog) console.log(`[EventBase] Window ${wIdx} already extracted — skip`);
                     return { skipped: true };
-                }
-
-                // Fire auto-sync popup on first real extraction (not dedup-skipped)
-                if (isAutoSync && !autosyncPopupShown && settings.eventbase_autosync_popup !== false) {
-                    autosyncPopupShown = true;
-                    try { toastr.info('Auto-Sync: extracting events...', 'VectFox', { timeOut: 3000 }); } catch (_) {}
                 }
 
                 // LLM extraction
@@ -532,6 +532,10 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
         if (dryRun) return { injectionText: null, eventCount: 0, lockedCollectionsCount: lockedLiveCollections.length, archiveCollectionsCount: archiveCollections.length };
         setExtensionPrompt(EVENTBASE_PROMPT_TAG, '', settings.position, settings.depth, false);
         return;
+    }
+
+    if (settings.retrieval_popup_on_result && !dryRun) {
+        toastr.success(`EventBase: ${injectedCount} event(s) injected`, 'VectFox Retrieval');
     }
 
     // Apply global RAG context if configured (same as legacy chunk path)
