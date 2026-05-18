@@ -38,10 +38,10 @@ Output STRICT JSON with exactly three fields:
                • GRANULARITY (specific event vs general pattern over time)
                • FACET       (action vs emotion vs setting vs dialogue vs consequence)
                • RELATION    (X with Y vs X alone vs X versus Z)
-             If two queries differ only by wording / synonyms, they are paraphrases — DROP one.
-             Anti-pattern (DO NOT — all four describe the same arc from the same angle):
-               ["X helping Y with redemption", "details of Y's redemption process",
-                "Y's transformation after redeemed", "Y's feelings about past redemption"]
+             Paraphrase check: if two queries share ≥3 content words OR differ only by
+             wording / synonyms, they are paraphrases — DROP one and replace it with a
+             different axis (e.g. lead-up history, reaction from another character,
+             setting context, consequence).
              Genre note: in slice-of-life / dating / workplace stories, prefer pattern +
              key-moment pairs over causal chains. Causal chains fit RPG/mystery/thriller.
 
