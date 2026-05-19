@@ -16,7 +16,7 @@ import {
     getSavedHashes,
 } from './core-vector-api.js';
 import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
-import { extension_settings } from '../../../../extensions.js';
+import { extension_settings, getContext } from '../../../../extensions.js';
 import { getChatUUID, buildEventBaseCollectionId, getRegistryBackend, COLLECTION_PREFIXES, parseRegistryKey } from './collection-ids.js';
 import { registerCollection, getCollectionRegistry } from './collection-loader.js';
 import { buildEmbedText } from './eventbase-schema.js';
@@ -197,6 +197,128 @@ export async function deleteEventByHash(hash, settings, chatUUID) {
  */
 // ---------------------------------------------------------------------------
 // Window fingerprint cache (stored in extension_settings, keyed by chatUUID)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// AutoSync start-marker (per-chat) — see plans/autosync-independent-window-and-last-n-injection.md §9
+// ---------------------------------------------------------------------------
+//
+// The window fingerprint dedup below is window-size-dependent: changing window
+// size invalidates every cached fingerprint and would trigger a full chat
+// re-extraction when auto-sync next runs. The marker is an additional gate
+// stamped at "everything before this message index is considered covered;
+// auto-sync should only process windows whose start >= marker." Stamped on
+// auto-sync enable and re-stamped whenever the auto-sync window size setting
+// changes (Phase 2 — see §9.8 of the linked plan).
+
+/**
+ * Look up the auto-sync start marker for a chat.
+ * @param {string} chatUUID
+ * @returns {number|undefined}  Marker (message index), or undefined if not stamped.
+ */
+export function getAutoSyncMarker(chatUUID) {
+    if (!chatUUID) return undefined;
+    return extension_settings?.vectfox?.eventbase_autosync_start_marker?.[chatUUID];
+}
+
+/**
+ * Clear the auto-sync start marker for a chat. Called when auto-sync is
+ * disabled, so re-enabling later re-computes a fresh marker.
+ * @param {string} chatUUID
+ */
+export function clearAutoSyncMarker(chatUUID) {
+    const store = extension_settings?.vectfox?.eventbase_autosync_start_marker;
+    if (!store || !chatUUID) return;
+    if (Object.prototype.hasOwnProperty.call(store, chatUUID)) {
+        delete store[chatUUID];
+        saveSettingsDebounced();
+    }
+}
+
+/**
+ * Stamp the auto-sync start marker for a chat. Used to gate which windows
+ * the auto-sync workflow will process.
+ *
+ * Smart placement:
+ *   - If the EventBase collection has existing events → marker = max(source_window_end) + 1
+ *     (backfill the gap between last-covered message and current chat tail
+ *     at the user's new window size).
+ *   - If the collection is empty → marker = current chat length
+ *     (auto-sync starts "from now on" — no full backfill of a long pre-existing
+ *     chat that was never vectorized).
+ *
+ * @param {string} chatUUID
+ * @param {object} settings
+ * @returns {Promise<number>}  The marker that was stamped.
+ */
+export async function stampAutoSyncMarker(chatUUID, settings) {
+    if (!chatUUID) return 0;
+    const store = extension_settings?.vectfox;
+    if (!store) return 0;
+
+    const chatLength = getContext()?.chat?.length ?? 0;
+
+    // Find the EventBase collection for this chat, if any.
+    const backend = getRegistryBackend(settings?.vector_backend);
+    const candidates = findEventBaseCollectionIdsForChat(chatUUID, backend);
+
+    let maxEnd = -1;
+    if (candidates.length > 0) {
+        try {
+            const { getBackend } = await import('../backends/backend-manager.js');
+            const backendInstance = await getBackend(settings);
+            // Overfetch generously; per-chat EventBase collections are typically
+            // O(hundreds to low thousands) of events. listChunks is paged anyway.
+            const result = await backendInstance.listChunks(candidates[0].collectionId, settings, { limit: 10000 });
+            const items = Array.isArray(result?.items) ? result.items : [];
+            for (const it of items) {
+                const end = it?.metadata?.source_window_end;
+                if (typeof end === 'number' && end > maxEnd) maxEnd = end;
+            }
+        } catch (err) {
+            console.warn(`[EventBase AutoSyncMarker] listChunks failed for ${candidates[0].collectionId} — falling back to chat-tail marker:`, err?.message || err);
+        }
+    }
+
+    const marker = maxEnd >= 0 ? maxEnd + 1 : chatLength;
+
+    if (!store.eventbase_autosync_start_marker) store.eventbase_autosync_start_marker = {};
+    store.eventbase_autosync_start_marker[chatUUID] = marker;
+    saveSettingsDebounced();
+
+    console.log(`[EventBase] AutoSyncMarker stamped: uuid=${chatUUID}, marker=${marker} (maxEnd=${maxEnd}, chatLength=${chatLength}, candidates=${candidates.length})`);
+    return marker;
+}
+
+/**
+ * Look up the last successfully-used window size for a chat.
+ * Used by Vectorize Content → Continue to detect window-size changes that
+ * would trigger a full re-extraction (and warn the user before proceeding).
+ * @param {string} chatUUID
+ * @returns {number|undefined}
+ */
+export function getLastUsedWindowSize(chatUUID) {
+    if (!chatUUID) return undefined;
+    return extension_settings?.vectfox?.eventbase_last_used_window_size?.[chatUUID];
+}
+
+/**
+ * Record the window size used for a successful extraction run.
+ * @param {string} chatUUID
+ * @param {number} windowSize
+ */
+export function setLastUsedWindowSize(chatUUID, windowSize) {
+    const store = extension_settings?.vectfox;
+    if (!store || !chatUUID || !Number.isFinite(windowSize)) return;
+    if (!store.eventbase_last_used_window_size) store.eventbase_last_used_window_size = {};
+    if (store.eventbase_last_used_window_size[chatUUID] !== windowSize) {
+        store.eventbase_last_used_window_size[chatUUID] = windowSize;
+        saveSettingsDebounced();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Window-fingerprint cache (in-session dedup of identical extraction windows)
 // ---------------------------------------------------------------------------
 
 /**

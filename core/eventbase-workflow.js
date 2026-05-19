@@ -148,12 +148,35 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     // popupShown=false here means popup was suppressed (e.g. MESSAGE_SENT) — extraction still runs.
     if (isAutoSync) console.log(`[VectFox AutoSync] running — messages=${messages.length}, popupShown=${popupAllowed}`);
 
-    const windows = [];
+    let windows = [];
     for (let start = 0; start < messages.length; start += step) {
         const end = Math.min(start + windowSize - 1, messages.length - 1);
         const msgs = messages.slice(start, end + 1);
         if (msgs.length < windowSize) break; // tail is incomplete — wait for more messages
         windows.push({ start, end, msgs });
+    }
+
+    // AutoSync start-marker gate. The marker says "everything before this
+    // message index is considered covered by some prior extraction; auto-sync
+    // should only process windows whose start >= marker." This prevents the
+    // windowFingerprint cache from triggering a full chat re-extraction when
+    // the user changes window_size before enabling auto-sync (the fingerprints
+    // are window-size-dependent and silently miss after a size change).
+    //
+    // Marker is stamped by ui-manager.js when auto-sync is enabled. See
+    // stampAutoSyncMarker in eventbase-store.js for the placement logic.
+    // Only applies to auto-sync runs; manual Vectorize Content / backfill
+    // intentionally ignores the marker so the user can refill historical gaps.
+    if (isAutoSync) {
+        const { getAutoSyncMarker } = await import('./eventbase-store.js');
+        const marker = getAutoSyncMarker(uuid);
+        if (typeof marker === 'number') {
+            const before = windows.length;
+            windows = windows.filter(w => w.start >= marker);
+            if (debugLog || before !== windows.length) {
+                console.log(`[EventBase] AutoSync marker filter: ${before} → ${windows.length} windows (marker=${marker})`);
+            }
+        }
     }
 
     if (debugLog) {
@@ -340,6 +363,15 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
 
     if (debugLog) {
         console.log(`[EventBase] Ingestion complete: extracted=${eventsExtracted}, processed=${windowsProcessed}, skipped=${windowsSkipped}`);
+    }
+
+    // Record the window size used for this successful run. Vectorize Content →
+    // Continue compares against this on the next click to detect window-size
+    // changes that would trigger a full re-extraction, and warns the user.
+    // Stamp only when extraction actually ran — pure-skip runs don't reset it.
+    if (uuid && windowsProcessed > 0) {
+        const { setLastUsedWindowSize } = await import('./eventbase-store.js');
+        setLastUsedWindowSize(uuid, windowSize);
     }
 
     // Notify the UI so the Chat Auto-Sync LED can flip from yellow → green.

@@ -178,6 +178,18 @@ const defaultSettings = {
     eventbase_timeout_ms: 60000,
     eventbase_window_size: 2,                     // Chat messages per extraction window
     eventbase_window_overlap: 0,                  // Window overlap to avoid edge cuts
+    // Per-chat marker: auto-sync only processes windows whose start >= marker.
+    // Stamped at "max(source_window_end across existing events) + 1" when auto-sync
+    // is enabled on a non-empty collection, or at current chat length when collection
+    // is empty. Prevents the windowFingerprint cache from triggering a full re-extraction
+    // when the user changes window_size before enabling auto-sync.
+    // Keyed by chat UUID.
+    eventbase_autosync_start_marker: {},
+    // Per-chat record of the window_size that was last used for a successful extraction
+    // run. Used by the Vectorize Content → Continue path to detect window-size changes
+    // and warn the user before triggering a full re-extraction.
+    // Keyed by chat UUID.
+    eventbase_last_used_window_size: {},
     eventbase_min_importance_store: 3,            // Drop events below this importance before storing
     eventbase_max_events_per_window: 3,           // Hard cap on events returned per LLM call
     eventbase_retrieval_top_k: 10,                // Events to retrieve per generation

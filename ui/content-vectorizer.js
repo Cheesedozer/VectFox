@@ -2581,6 +2581,41 @@ async function _runEventBaseBackfill() {
             chatUUID = getChatUUID();
         }
 
+        // Window-size-change warning. The window fingerprint dedup cache is
+        // window-size-dependent (see eventbase-store.js#windowFingerprint), so
+        // changing window size silently invalidates every cached fingerprint
+        // and triggers full re-extraction with duplicate-coverage events.
+        // Warn the user before they unknowingly pay that cost. Live chats only —
+        // archive uploads use a one-shot UUID with no prior history.
+        if (source?.type !== 'file' && chatUUID) {
+            const { getLastUsedWindowSize } = await import('../core/eventbase-store.js');
+            const lastSize = getLastUsedWindowSize(chatUUID);
+            const currentWindowSize = Math.max(2, settings.eventbase_window_size || 6);
+            if (typeof lastSize === 'number' && lastSize !== currentWindowSize) {
+                // Estimate cost so the user can make an informed choice.
+                const estimatedWindows = Math.max(0, Math.floor(messages.length / currentWindowSize));
+                const proceed = await callGenericPopup(
+                    `<div style="text-align: left;">
+                        <p><strong>Window size changed</strong> since the last extraction on this chat (was <strong>${lastSize}</strong>, now <strong>${currentWindowSize}</strong>).</p>
+                        <p>The dedup cache is window-size-dependent, so Continue will re-extract from message ${startFromMessage || 1} at the new window size.</p>
+                        <p style="margin-top: 10px;">Estimated cost: <strong>~${estimatedWindows} LLM calls</strong>. Existing events will not be deleted, so the collection will contain overlapping-coverage events at both sizes.</p>
+                        <p style="margin-top: 10px;">Proceed anyway?</p>
+                    </div>`,
+                    POPUP_TYPE.CONFIRM,
+                    '',
+                    {
+                        okButton: `Proceed (re-extract at window=${currentWindowSize})`,
+                        cancelButton: 'Cancel',
+                    },
+                );
+                if (!proceed) {
+                    progressTracker.complete(false, 'Cancelled — window size mismatch');
+                    toastr.info('Continue cancelled', 'VectFox');
+                    return;
+                }
+            }
+        }
+
         const legacyStrategy = currentSettings.strategy || 'per_message';
         const legacyBatchSize = Number(currentSettings.batchSize) || 4;
 

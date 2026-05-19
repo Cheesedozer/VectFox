@@ -2056,6 +2056,23 @@ function bindSettingsEvents(settings, callbacks) {
                 const lockKey = status.registryKey || status.collectionId;
                 setCollectionLock(lockKey, chatId);
                 setCollectionAutoSync(lockKey, true);
+
+                // Stamp the auto-sync start marker for this chat. Prevents the
+                // window-fingerprint dedup cache from triggering a full chat
+                // re-extraction when the user changed window_size before enabling
+                // auto-sync. See plans/autosync-independent-window-and-last-n-injection.md §9.
+                // Smart placement: stamps at max(source_window_end)+1 when events
+                // exist (backfills the gap at the new window size), or at current
+                // chat length when collection is empty (from-now-on behavior).
+                try {
+                    const { stampAutoSyncMarker } = await import('../core/eventbase-store.js');
+                    const { getChatUUID } = await import('../core/collection-ids.js');
+                    const uuid = getChatUUID();
+                    if (uuid) await stampAutoSyncMarker(uuid, settings);
+                } catch (err) {
+                    console.warn('[VectFox] Failed to stamp auto-sync marker on enable:', err?.message || err);
+                }
+
                 const message = status.state === 'fully-vectorized'
                     ? 'Auto-sync enabled — chat is fully synced'
                     : 'Auto-sync enabled — will catch up on next trigger';
@@ -2067,6 +2084,18 @@ function bindSettingsEvents(settings, callbacks) {
                     const lockKey = status.registryKey || status.collectionId;
                     setCollectionAutoSync(lockKey, false);
                     if (chatId) removeCollectionLock(lockKey, chatId);
+
+                    // Clear the marker so re-enabling later re-computes a fresh one
+                    // against whatever collection state exists at that time.
+                    try {
+                        const { clearAutoSyncMarker } = await import('../core/eventbase-store.js');
+                        const { getChatUUID } = await import('../core/collection-ids.js');
+                        const uuid = getChatUUID();
+                        if (uuid) clearAutoSyncMarker(uuid);
+                    } catch (err) {
+                        console.warn('[VectFox] Failed to clear auto-sync marker on disable:', err?.message || err);
+                    }
+
                     toastr.info('Auto-sync disabled for this chat');
                     console.log(`VectFox: Chat auto-sync DISABLED for ${lockKey}`);
                 }
