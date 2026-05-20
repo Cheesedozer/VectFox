@@ -31,7 +31,6 @@ import { buildSearchContext, filterChunksByConditions, processChunkLinks } from 
 import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
 
 import { createDebugData, setLastSearchDebug, addTrace, recordChunkFate } from '../ui/search-debug.js';
-import { getSemanticWorldInfoEntries } from './world-info-integration.js';
 import { Queue, LRUCache } from '../utils/data-structures.js';
 import { getRequestHeaders } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE } from './constants.js';
@@ -1408,45 +1407,6 @@ export async function rearrangeChat(chat, settings, type) {
             }
         }
 
-        // === WORLD INFO: Semantic WI entries ===
-        try {
-            if (settings.enabled_world_info) {
-                // Build recentMessages array for WI query
-                const recentMessages = chat
-                    .filter(x => !x.is_system)
-                    .reverse()
-                    .slice(0, settings.world_info_query_depth || settings.query)
-                    .map(x => substituteParams(x.mes));
-
-                const wiEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings);
-                if (Array.isArray(wiEntries) && wiEntries.length > 0) {
-                    addTrace(debugData, 'world_info', `Found ${wiEntries.length} semantic WI entries`, { entries: wiEntries.map(e => ({ uid: e.uid, score: e.score })) });
-
-                    // Convert WI entries into chunk-like objects and merge
-                    const wiChunks = wiEntries.map(e => {
-                        const hash = String(e.uid || getStringHash(e.content || e.key || ''));
-                        return {
-                            hash,
-                            metadata: e.metadata || {},
-                            score: e.score || 1.0,
-                            originalScore: e.score || 1.0,
-                            similarity: e.score || 1.0,
-                            text: e.content || (Array.isArray(e.key) ? e.key.join(' ') : e.key || ''),
-                            index: 0,
-                            collectionId: e.collectionId || `vf_wi:${e.lorebookName || 'lorebook'}`,
-                            decayApplied: false
-                        };
-                    });
-
-                    // Prepend WI chunks so they get considered equally in downstream stages
-                    chunks = wiChunks.concat(chunks);
-                    debugData.stages.worldInfo = wiChunks;
-                }
-            }
-        } catch (wiError) {
-            console.warn('VectFox: WorldInfo semantic integration failed', wiError.message);
-            addTrace(debugData, 'world_info', 'WorldInfo query failed', { error: wiError.message });
-        }
         console.log(`VectFox: Retrieved ${chunks.length} total chunks from ${activeCollections.length} collections`);
 
         debugData.stages.initial = [...chunks];

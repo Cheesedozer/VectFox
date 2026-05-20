@@ -13,14 +13,13 @@
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
 import { getCollectionRegistry } from './collection-loader.js';
-import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
+import { getCollectionMeta, isCollectionEnabled } from './collection-metadata.js';
 import { parseRegistryKey } from './collection-ids.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
-import { setExtensionPrompt, getCurrentChatId } from '../../../../../script.js';
+import { setExtensionPrompt, eventSource, event_types, substituteParams } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
-import { buildSearchContext } from './conditional-activation.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
@@ -57,24 +56,8 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     const threshold = hybridActive ? baseThreshold * 0.8 : baseThreshold;
     const topK = settings.world_info_top_k || 3;
 
-    // Build search context for activation filter evaluation
-    const context = getContext();
-    const searchContext = buildSearchContext(
-        context.chat || [],
-        settings.query || 10,
-        recentMessages,
-        {
-            generationType: 'normal',
-            isGroupChat: context.groupId != null,
-            currentCharacter: context.name2 || null,
-            activeLorebookEntries: activeEntries.map(e => e.key || e.uid),
-            currentChatId: getCurrentChatId(),
-            currentCharacterId: context.characterId || null
-        }
-    );
-
-    // Get all enabled lorebook collections that pass activation filters
-    const lorebookCollections = await getEnabledLorebookCollections(settings, searchContext);
+    // Get all enabled lorebook collections
+    const lorebookCollections = await getEnabledLorebookCollections(settings);
 
     for (const collection of lorebookCollections) {
         try {
@@ -122,8 +105,18 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     // Sort by score descending
     semanticEntries.sort((a, b) => b.score - a.score);
 
+    // Deduplicate by (sourceName, entryUid) — multiple collections from the same lorebook
+    // (different vectorization runs) can return the same entry. Keep the highest-scoring hit.
+    const seenEntryKeys = new Set();
+    const uniqueEntries = semanticEntries.filter(e => {
+        const k = `${e.metadata?.sourceName ?? ''}\x00${e.metadata?.entryUid ?? e.uid}`;
+        if (seenEntryKeys.has(k)) return false;
+        seenEntryKeys.add(k);
+        return true;
+    });
+
     // Deduplicate with already active entries (avoid duplicates from keyword matching)
-    const deduplicatedEntries = deduplicateWithActiveEntries(semanticEntries, activeEntries);
+    const deduplicatedEntries = deduplicateWithActiveEntries(uniqueEntries, activeEntries);
 
     console.log(`VectFox: Found ${deduplicatedEntries.length} semantic WI entries to activate`);
 
@@ -140,37 +133,33 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
  * @param {object} searchContext - Search context for activation filter evaluation
  * @returns {Promise<Array<{id: string, name: string}>>}
  */
-async function getEnabledLorebookCollections(settings, searchContext) {
+async function getEnabledLorebookCollections(settings) {
     const collections = [];
     const collectionRegistry = getCollectionRegistry();
 
     for (const registryKey of collectionRegistry) {
         const collectionId = parseRegistryKey(registryKey).collectionId;
-        // Check if this is a lorebook collection
+        // Only lorebook collections participate in semantic WI search
         if (!collectionId.startsWith('vf_lorebook_')) {
             continue;
         }
 
-        // Check if collection is enabled
+        // Skip explicitly disabled collections
         if (!isCollectionEnabled(collectionId, settings)) {
             continue;
         }
 
-        // Check if collection passes activation filters
-        const passesActivation = await shouldCollectionActivate(collectionId, searchContext);
-        if (!passesActivation) {
-            console.log(`VectFox WI: Lorebook collection ${collectionId} did not pass activation filters, skipping`);
-            continue;
-        }
+        // No keyword-trigger gate here — semantic similarity IS the activation mechanism.
+        // shouldCollectionActivate() returns false for any collection with no triggers set,
+        // which would silently block all semantic lorebook search.
 
-        // Get collection metadata
         const meta = getCollectionMeta(collectionId);
         const name = meta?.sourceName || collectionId;
 
         collections.push({ id: collectionId, name });
     }
 
-    console.log(`VectFox WI: ${collections.length} lorebook collection(s) passed activation filters`);
+    console.log(`VectFox WI: ${collections.length} lorebook collection(s) available for semantic search`);
     return collections;
 }
 
@@ -334,6 +323,49 @@ export function enhanceWorldInfoEntriesUI(lorebookName, entries, settings) {
 // ============================================================================
 
 /**
+ * GENERATION_STARTED handler — runs the semantic lorebook query before ST's WI scan
+ * and force-activates matching entries via WORLDINFO_FORCE_ACTIVATE. This lets ST
+ * process them through its normal pipeline (budget, position, recursion, formatters)
+ * with no dependency on handler registration order.
+ *
+ * Entries are identified by { world: sourceName, uid: entryUid } stored at vectorization
+ * time. ST looks up the actual current lorebook entry content, so this path always
+ * reflects the live lorebook rather than potentially stale vector-stored text.
+ *
+ * Known edge case: if a lorebook is renamed after vectorization, sourceName will not
+ * match and the entry silently misses activation. Re-vectorizing fixes it.
+ */
+async function handleGenerationStarted() {
+    const settings = extension_settings.vectfox;
+    if (!settings?.enabled_world_info) return;
+
+    try {
+        const context = getContext();
+        const recentMessages = (context.chat || [])
+            .filter(m => !m.is_system)
+            .reverse()
+            .slice(0, settings.world_info_query_depth || settings.query || 3)
+            .map(m => substituteParams((m.mes || '').toString()));
+
+        if (!recentMessages.length) return;
+
+        const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings);
+        if (!semanticEntries.length) return;
+
+        const toActivate = semanticEntries
+            .filter(e => e.metadata?.entryUid != null && e.metadata?.sourceName)
+            .map(e => ({ world: e.metadata.sourceName, uid: e.metadata.entryUid }));
+
+        if (!toActivate.length) return;
+
+        await eventSource.emit(event_types.WORLDINFO_FORCE_ACTIVATE, toActivate);
+        console.log(`VectFox: Force-activated ${toActivate.length} semantic WI entries`);
+    } catch (err) {
+        console.warn('VectFox: Semantic WI activation failed', err.message || err);
+    }
+}
+
+/**
  * Initialize world info integration hooks
  * This should be called when VectFox loads
  */
@@ -347,6 +379,7 @@ export function initializeWorldInfoIntegration() {
         enhanceEntriesUI: enhanceWorldInfoEntriesUI
     };
 
+    eventSource.on(event_types.GENERATION_STARTED, handleGenerationStarted);
     console.log('VectFox: World Info integration hooks initialized');
 }
 
