@@ -132,3 +132,56 @@ function escapeHtml(s) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 }
+
+/**
+ * Apply the "Revert to <saved>" action from the tokenizer mismatch modal.
+ *
+ * Symptom this exists to fix: the original revert path only mutated the
+ * `settings` reference and the module-local mode, leaving the actual setting
+ * unpersisted, the UI dropdown out of sync, and (for jieba modes) the WASM
+ * tokenizer not loaded. From the user's perspective the language never
+ * actually changed.
+ *
+ * Mirrors the work the dropdown change handler does
+ * (ui/ui-manager.js:2929-2952): persist via saveSettingsDebounced, update
+ * the dropdown, fire the namespaced eventbasePromptSync handler so the
+ * EventBase extraction prompt matches the reverted language, and await
+ * WASM loading for jieba / jieba_tw so the imminent sparse encoding step
+ * uses the correct tokenizer.
+ *
+ * @param {string} savedMode - The collection's locked tokenizer mode
+ * @param {object} settings - VectFox settings reference (caller's copy)
+ */
+export async function applyTokenizerRevert(savedMode, settings) {
+    const { setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded, CJK_TOKENIZER_MODES } =
+        await import('./bm25-scorer.js');
+    const { saveSettingsDebounced } = await import('../../../../../script.js');
+    const { extension_settings } = await import('../../../../extensions.js');
+
+    settings.cjk_tokenizer_mode = savedMode;
+    setCjkTokenizerMode(savedMode);
+
+    if (extension_settings?.vectfox) {
+        Object.assign(extension_settings.vectfox, settings);
+    }
+    saveSettingsDebounced();
+
+    try {
+        if (typeof $ !== 'undefined') {
+            const $select = $('#VectFox_cjk_tokenizer_mode');
+            if ($select.length) {
+                $select.val(savedMode);
+                // Fire only the namespaced prompt-sync handler; the main
+                // change handler would redundantly redo everything above
+                // (and would re-await WASM, doubling the wait).
+                $select.trigger('change.eventbasePromptSync');
+            }
+        }
+    } catch { /* tolerate — UI may not be rendered */ }
+
+    if (savedMode === CJK_TOKENIZER_MODES.jieba) {
+        await ensureJiebaTokenizerLoaded();
+    } else if (savedMode === CJK_TOKENIZER_MODES.jieba_tw) {
+        await ensureJiebaTwLoaded();
+    }
+}

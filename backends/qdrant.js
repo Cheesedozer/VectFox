@@ -764,16 +764,12 @@ export class QdrantBackend extends VectorBackend {
         // they differ.
         let sparseQueryVector;
         try {
-            const { detectTokenizerMismatch, showTokenizerMismatchModal } = await import('../core/tokenizer-lock.js');
+            const { detectTokenizerMismatch, showTokenizerMismatchModal, applyTokenizerRevert } = await import('../core/tokenizer-lock.js');
             const mismatch = await detectTokenizerMismatch(settings, actualCollectionId);
             if (mismatch) {
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
-                    settings.cjk_tokenizer_mode = mismatch.saved;
-                    try {
-                        const { setCjkTokenizerMode } = await import('../core/bm25-scorer.js');
-                        setCjkTokenizerMode(mismatch.saved);
-                    } catch { /* tolerate */ }
+                    await applyTokenizerRevert(mismatch.saved, settings);
                 } else if (choice === 'settings' || choice === 'cancel') {
                     return { hashes: [], metadata: [] };
                 }
@@ -904,16 +900,12 @@ export class QdrantBackend extends VectorBackend {
         // (matches the legacy behavior).
         let sparseQueryVector;
         try {
-            const { detectTokenizerMismatch, showTokenizerMismatchModal } = await import('../core/tokenizer-lock.js');
+            const { detectTokenizerMismatch, showTokenizerMismatchModal, applyTokenizerRevert } = await import('../core/tokenizer-lock.js');
             const mismatch = await detectTokenizerMismatch(settings, actualCollectionId);
             if (mismatch) {
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
-                    settings.cjk_tokenizer_mode = mismatch.saved;
-                    try {
-                        const { setCjkTokenizerMode } = await import('../core/bm25-scorer.js');
-                        setCjkTokenizerMode(mismatch.saved);
-                    } catch { /* tolerate */ }
+                    await applyTokenizerRevert(mismatch.saved, settings);
                 } else if (choice === 'settings' || choice === 'cancel') {
                     return { hashes: [], metadata: [] };
                 }
