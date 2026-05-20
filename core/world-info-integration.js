@@ -33,18 +33,26 @@ import { eventSource, event_types, substituteParams, getCurrentChatId } from '..
  * @param {object} settings - VectFox settings
  * @returns {Promise<object[]>} Array of WI entries to activate { uid, key, content, score }
  */
-export async function getSemanticWorldInfoEntries(recentMessages, activeEntries, settings) {
+export async function getSemanticWorldInfoEntries(recentMessages, activeEntries, settings, keywordQuery = null) {
     if (!settings.enabled_world_info) {
         return [];
     }
 
-    // Build search query from recent messages
+    // Build search query from recent messages (broad narrative context)
     const query = recentMessages.slice(-settings.world_info_query_depth || -3).join('\n');
     if (!query.trim()) {
         return [];
     }
 
-    console.log(`VectFox: Querying vectorized lorebooks for semantic WI activation...`);
+    // Dual-query mode: user's last message (precision) + full context (breadth).
+    // Same approach as EventBase retrieveEvents — the short message pins intent
+    // while the full context activates entries referenced in prior AI turns.
+    // Falls back to single query when keywordQuery is absent or identical to query.
+    const kq = keywordQuery?.trim();
+    const dualQuery = kq && kq !== query;
+    const queryTexts = dualQuery ? [kq, query] : [query];
+
+    console.log(`VectFox: Querying vectorized lorebooks for semantic WI activation${dualQuery ? ' (dual query)' : ''}...`);
 
     const semanticEntries = [];
     // Lower threshold for hybrid retrieval since RRF/weighted fusion produces lower absolute scores
@@ -60,40 +68,50 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 
     for (const collection of lorebookCollections) {
         try {
-            // collection.id may be a registry key like 'backend:source:collectionId'
-            // Parse it to extract the actual collectionId used by backends
+            // collection.id is the registry key form; parse to extract the raw collection ID for the backend
             const parsed = parseRegistryKey(collection.id || collection.registryKey || '');
             const rawCollectionId = parsed.collectionId || collection.id;
 
-            // Query this lorebook collection (use raw collection ID)
-            const results = await queryCollection(rawCollectionId, query, topK, settings);
+            // Run all query texts in parallel, merge by uid keeping the highest score.
+            // In dual-query mode the user's last message runs alongside the full context —
+            // a chunk that ranks outside topK for the context query can still be surfaced
+            // if it ranks within topK for the focused user-message query.
+            const queryResults = await Promise.all(
+                queryTexts.map(qt => queryCollection(rawCollectionId, qt, topK, settings).catch(() => null))
+            );
 
-            if (results && results.metadata) {
-                for (let i = 0; i < results.metadata.length; i++) {
-                    const meta = results.metadata[i];
-                    const score = meta.score || 0;
-
-                    if (score >= threshold) {
-                        // Extract WI entry data from metadata
-                        const entry = {
-                            uid: meta.uid || meta.hash,
-                            key: meta.keywords || meta.entryName || [],
-                            content: meta.text || '',
-                            score: score,
-                            lorebookName: collection.name,
-                            collectionId: rawCollectionId,
-                            registryKey: collection.id, // preserve registry key for metadata lookups
-                            vectorActivated: true,
-                            metadata: meta
-                        };
-
-                        semanticEntries.push(entry);
-                        // Format key for display - handle arrays of strings or objects
-                        const keyDisplay = Array.isArray(entry.key)
-                            ? entry.key.map(k => typeof k === 'object' ? (k.text || k.keyword || JSON.stringify(k)) : k).join(', ')
-                            : (entry.key || 'unknown');
-                        console.log(`VectFox: Semantic WI activation: "${keyDisplay}" (score: ${score.toFixed(3)})`);
+            const bestByUid = new Map();
+            for (const result of queryResults) {
+                if (!result?.metadata) continue;
+                for (const meta of result.metadata) {
+                    const uid = meta.uid || meta.hash;
+                    if (!uid) continue;
+                    const prev = bestByUid.get(uid);
+                    if (!prev || (meta.score || 0) > (prev.score || 0)) {
+                        bestByUid.set(uid, meta);
                     }
+                }
+            }
+
+            for (const meta of bestByUid.values()) {
+                const score = meta.score || 0;
+                if (score >= threshold) {
+                    const entry = {
+                        uid: meta.uid || meta.hash,
+                        key: meta.keywords || meta.entryName || [],
+                        content: meta.text || '',
+                        score,
+                        lorebookName: collection.name,
+                        collectionId: rawCollectionId,
+                        registryKey: collection.id, // preserve registry key for metadata lookups
+                        vectorActivated: true,
+                        metadata: meta
+                    };
+                    semanticEntries.push(entry);
+                    const keyDisplay = Array.isArray(entry.key)
+                        ? entry.key.map(k => typeof k === 'object' ? (k.text || k.keyword || JSON.stringify(k)) : k).join(', ')
+                        : (entry.key || 'unknown');
+                    console.log(`VectFox: Semantic WI activation: "${keyDisplay}" (score: ${score.toFixed(3)})`);
                 }
             }
         } catch (error) {
@@ -341,7 +359,9 @@ async function handleGenerationStarted(type, options, dryRun) {
 
     try {
         const context = getContext();
-        const recentMessages = (context.chat || [])
+        const chat = context.chat || [];
+
+        const recentMessages = [...chat]
             .filter(m => !m.is_system)
             .reverse()
             .slice(0, settings.world_info_query_depth || settings.query || 3)
@@ -349,7 +369,11 @@ async function handleGenerationStarted(type, options, dryRun) {
 
         if (!recentMessages.length) return;
 
-        const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings);
+        // Dual query: focused user-message query for precision, full context for breadth
+        const lastUserMessage = [...chat].reverse().find(m => !m.is_system && m.is_user);
+        const keywordQuery = lastUserMessage?.mes?.trim() || null;
+
+        const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, keywordQuery);
         if (!semanticEntries.length) return;
 
         const toActivate = semanticEntries
