@@ -9,7 +9,7 @@ EventBase is the **exclusive** retrieval path for chat content. The legacy `even
 | Pipeline | Content scope | Owned collections | Code entry point |
 |---|---|---|---|
 | **EventBase pipeline** | Chat history only (live chat + archive `.jsonl`) | `vectfox_eventbase_*`, `vectfox_archiveevent_*` | `eventbase-workflow.js` → `eventbase-retrieval.js` |
-| **Standard (Chunk) pipeline** | Non-chat content only — Lorebook / World Info, Character Cards, URLs / web pages, custom documents, wiki pages, YouTube transcripts | `vectfox_lorebook_*`, `vectfox_document_*`, user collections | `chat-vectorization.js` → `queryAndMergeCollections` |
+| **Standard (Chunk) pipeline** | Non-chat content only — Lorebook / World Info, Character Cards, URLs / web pages, custom documents, wiki pages, YouTube transcripts | `vf_lorebook_*`, `vf_document_*`, user collections | `chat-vectorization.js` → `queryAndMergeCollections` |
 
 The two paths never see each other's content. There is no overlap in collection prefixes or content types.
 
@@ -81,25 +81,9 @@ Exact constant names:
 - `DEFAULT_MAX_TOKENS`
 - `DEFAULT_TIMEOUT_MS`
 
-### 4) claude memory
-C:\Users\Goten\.claude\projects\h--Github-Dev-VectFox\memory\MEMORY.md
-
-
-## 5) Card Pause/Resume Button (`enabled` flag)
-
-The pause/resume icon on each collection card is a **separate concern** from locks. It's a hard kill switch — when off, the collection is blocked from any activation regardless of locks, triggers, or scope.
-
-- **UI:** Play/pause icon button on each collection card in the Database Browser
-- **Writes:** `setCollectionEnabled(registryKey, false)` → stores `{ enabled: false }` under `extension_settings.vectfox.collections[registryKey]`
-- **Key format:** `collection.registryKey || collection.id` — for EventBase collections registered via `eventbase-store.js`, this is the **plain collection ID** (no `backend:source:` prefix) because `registerCollection(collectionId)` is called with the raw ID
-- **Read:** `isCollectionEnabled(collectionId)` in `core/collection-metadata.js`
-- **Default:** `true` (enabled) when no metadata exists
-
-For everything else — "Active for current chat" checkbox, WI panel toggle, Auto-Sync toggle, lock badge — see **§14 Lock & Auto-Sync UI Workflow**.
-
 ---
 
-## 6) EventBase Window Dedup — chat_metadata Fingerprint Cache
+## 4) EventBase Window Dedup — chat_metadata Fingerprint Cache
 
 ### Problem with old approach
 `isWindowAlreadyExtracted` used a semantic DB query (`queryCollection(..., 50, ...)`) to check if a window was already extracted. This was:
@@ -123,7 +107,7 @@ Windows extracted before this fix have no fingerprint in cache. First run after 
 
 ---
 
-## 7) GUI Settings — Tab Placement & EventBase Relevance
+## 5) GUI Settings — Tab Placement & EventBase Relevance
 
 After the Phase 2 GUI reorg, settings are grouped by which path consumes them:
 
@@ -136,7 +120,7 @@ After the Phase 2 GUI reorg, settings are grouped by which path consumes them:
 
 ---
 
-## 8) Similharity Plugin Speedup (Simultaneous Embedding Requests)
+## 6) Similharity Plugin Speedup (Simultaneous Embedding Requests)
 Plugin file changed: `../similharity/index.js`
 
 What we changed:
@@ -164,7 +148,7 @@ Related client-side behavior (vectfox):
 
 ---
 
-## 9) Module Integration Analysis — EventBase Compatibility
+## 7) Module Integration Analysis — EventBase Compatibility
 
 Analysis of whether non-EventBase modules should be integrated into the EventBase pipeline.
 
@@ -190,7 +174,7 @@ Do **not** call `hybridSearch()` directly from `eventbase-retrieval.js` or `even
 
 ---
 
-## 10) Retrieval Paths — A1 / A2 / A3 Comparison
+## 8) Retrieval Paths — A1 / A2 / A3 Comparison
 
 Three retrieval paths exist. The path is chosen automatically inside `queryCollection()` based on (a) backend and (b) `keyword_scoring_method`. EventBase, ChunkBase, and the Query Tester all flow through this same dispatch.
 
@@ -265,7 +249,7 @@ EventBase overrides `keyword_scoring_method` with `eventbase_keyword_scoring_met
 | `hybrid_rrf_k` | 60 | A2 RRF mode only | Qdrant uses its own internal default for A3; this knob doesn't reach the server. |
 | `cjk_tokenizer_mode` (`intl` / `jieba` / `jieba_tw` / `tiny_segmenter`) | `intl` | A3 (locked per Qdrant collection at upsert via sentinel point) | Mismatch between current setting and the collection's locked tokenizer triggers a modal and refuses the query. On A1/A2 the tokenizer is also used but not locked — changing it just means inconsistent tokenization until re-vectorize. |
 | `deduplication_depth` | 0 (disabled) | All three paths | EventBase context-window dedup: suppress events whose source window falls within the last N messages. Same JS path post-retrieval. |
-| `eventbase_retrieval_top_k` | 10 | All three paths | Final number of events injected. Internal overfetch is `top_k × 2 × 2 = 40` for A1 (see §14 wait actually §10 of this doc + keyword-boost.js:1304). |
+| `eventbase_retrieval_top_k` | 10 | All three paths | Final number of events injected. Internal overfetch is `top_k × 2 × 2 = 40` for A1 (see §8 Retrieval Paths + keyword-boost.js:1304). |
 | `eventbase_retrieval_min_importance` | 1 | All three paths | Drops events below this importance threshold after retrieval. |
 | `eventbase_rerank_w_cosine` / `_w_importance` / `_w_persist` / `_w_recency` | 0.55 / 0.20 / 0.15 / 0.10 | All three paths (formula coefficients) | A3 with `eventbase_native_rerank=true` applies them server-side via Qdrant formula; A1/A2 apply them in JS in `eventbase-retrieval.js`. |
 | `eventbase_native_rerank` | `true` | A3 only | Pushes the 4-weight formula into the same Qdrant `/points/query` call. Requires Qdrant ≥ 1.13. Set `false` to fall back to JS post-processing. |
@@ -321,7 +305,7 @@ request fails with a Qdrant error, check the server version and set
 
 ---
 
-## 11) Mirrored Function — `extractQueryKeywords`
+## 9) Mirrored Function — `extractQueryKeywords`
 
 | Item | Value |
 |---|---|
@@ -336,7 +320,7 @@ request fails with a Qdrant error, check the server version and set
 
 ---
 
-## 12) javascript to get these variables in chrome console
+## 10) javascript to get these variables in chrome console
 const ctx = SillyTavern.getContext();
 const chatUUID = ctx.chatMetadata?.integrity || ctx.chatId;
 const handleId = (ctx.name1 || 'user').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '').substring(0, 30) || 'user';
@@ -354,7 +338,7 @@ console.log({ chatUUID, handleId, charName });
 
 ---
 
-## 13) Hybrid Search & BM25 — GUI Placement Matrix
+## 11) Hybrid Search & BM25 — GUI Placement Matrix
 
 Backend determines path; on Qdrant there is only one hybrid path (A3). On Standard, the user picks A1 vs A2.
 
@@ -427,7 +411,7 @@ A3 leverages **all four** of Qdrant's relevant server-side features:
 
 ---
 
-## 9) Trigger / Condition Activation — English Only
+## 12) Trigger / Condition Activation — English Only
 
 Activation Triggers and Advanced Conditions (Collection Settings → Activation panel) are **English-only**. They do not work reliably for CJK (Chinese / Japanese / Korean) stories.
 
@@ -453,7 +437,7 @@ Add CJK terms to `EMOTION_KEYWORDS` in `core/conditional-activation.js`, or exte
 
 ---
 
-## 10) AgentMode — Agentic Retrieval
+## 13) AgentMode — Agentic Retrieval
 
 Optional LLM-planner step that runs between EventBase pre-search and re-rank. Sees the pre-search candidates plus recent chat context, then fans out 1-4 follow-up queries in parallel against Qdrant. **Purely additive — never replaces the existing flow.** A3 (Qdrant) only.
 
@@ -638,13 +622,61 @@ These patterns will look correct but produce broken state:
 | Iterating the registry + checking `creatorHandle.toLowerCase() === handle` inline | `getCollectionListing(settings).filter(e => e.isOwn)` |
 | Iterating collections + calling `isCollectionActiveForContext` per card | `getCollectionListing` once → use `entry.isActive` |
 | Reading `extension_settings.vectfox.collections[bare_id]` directly | `getCollectionMeta(registryKey)` (storage now keyed by `backend:id`) |
-| Auto-resolving bare ID → registry-key by scanning the registry | Caller passes the canonical form; pattern was removed deliberately (see §15) |
+| Auto-resolving bare ID → registry-key by scanning the registry | Caller passes the canonical form; the auto-resolve scan was removed deliberately because it masked wrong-form callers |
 | `isCollectionAutoSyncEnabled(collectionId)` — bare ID — silently returns `false` even when the UI shows checked (UI writes via registryKey, this reads from a *different bucket*) — root cause of the 2026-05-17 auto-sync regression | `isCollectionAutoSyncEnabled(registryKey)` — same form the UI + every write path uses |
 | `` `${getRegistryBackend(settings.vector_backend)}:${collectionId}` `` hand-rolled at every call site (drift bait — one site forgets and the bug above surfaces) | `buildRegistryKey(collectionId, settings)` |
+| `shouldCollectionActivate(collectionId, context)` with bare `collectionId` — its internal `getCollectionMeta` and `isCollectionLockedToChat` calls both read from `extension_settings.vectfox.collections[id]`, which is keyed by `backend:id` form. Passing bare ID returns empty defaults; lock checks always return `false`, so every collection looks unlocked and nothing activates correctly. Root cause of the 2026-05-20 semantic WI lorebook scope bug. | `shouldCollectionActivate(entry.registryKey, context)` where `entry` comes from `getCollectionListing(settings)` |
 
 #### Older primitives — when you might still need them
 
 `setCollectionLock`, `removeCollectionLock`, `clearCollectionLock`, `setCollectionCharacterLock`, etc. ([collection-metadata.js:527+](../core/collection-metadata.js#L527)) are the raw write primitives without authorization. The facade routes to these. **Only call them directly from inside `setLock` or from system code that already enforces auth at a higher layer** (`registerCollection`'s creatorHandle stamping is the canonical example). Application code, UI handlers, and anything user-triggered should go through `setLock`.
+
+### Pause/Resume button — `enabled` flag
+
+Separate concern from locks. It's a hard kill switch — when `false`, the collection is blocked from any activation regardless of locks, triggers, or scope.
+
+- **UI:** Play/pause icon on each collection card in the Database Browser
+- **Write:** `setCollectionEnabled(collection.registryKey || collection.id, false)` → stores `{ enabled: false }` under `extension_settings.vectfox.collections[registryKey]`
+- **Read:** `isCollectionEnabled(registryKey)` in `core/collection-metadata.js` — pass the registry-key form, not bare ID
+- **Default:** `true` (enabled) when no metadata exists
+- **All collections use the same key form** — `backend:id`. EventBase collections are registered as `${registryBackend}:${collectionId}` in `eventbase-store.js`, not as plain IDs. The `data-collection-key` attribute on every card is always `collection.registryKey || collection.id`.
+
+### Async runtime activation — `shouldCollectionActivate`
+
+Used by any code path that must decide at runtime whether a collection is currently in scope, respecting triggers, advanced conditions, and manual locks. The semantic WI lorebook search path (`world-info-integration.js`) is the canonical example.
+
+**Must receive the registry-key form.** Internally calls `getCollectionMeta(id)` and `isCollectionLockedToChat(id, chatId)`, both of which read from `extension_settings.vectfox.collections[id]` — keyed by `backend:id`. Passing a bare collection ID silently gets empty defaults and lock checks always return `false`.
+
+**Canonical pattern:**
+
+```js
+import { getCollectionListing } from './collection-loader.js';
+import { shouldCollectionActivate } from './collection-metadata.js';
+
+const listing = getCollectionListing(settings);
+const currentChatId = getCurrentChatId() ? String(getCurrentChatId()) : null;
+const currentCharacterId = getContext().characterId != null ? String(getContext().characterId) : null;
+const context = { currentChatId, currentCharacterId };
+
+for (const entry of listing) {
+    if (!entry.collectionId.startsWith('vf_lorebook_')) continue;
+    if (entry.meta.enabled === false) continue;                           // paused
+    if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;  // out of scope
+    // entry.registryKey is correct for all subsequent getCollectionMeta calls
+}
+```
+
+Priority chain inside `shouldCollectionActivate`:
+```
+1. enabled=false          → BLOCKED (pause button)
+2. Activation Triggers    → ACTIVE if any keyword matches recent messages
+3. Advanced Conditions    → ACTIVE if condition passes
+4. Chat lock match        → ACTIVE if currentChatId is in lockedToChatIds
+5. Character lock match   → ACTIVE if currentCharacterId is in lockedToCharacterIds
+6. Nothing matched        → BLOCKED
+```
+
+**Important:** trigger/condition gates are intentional for semantic WI — a lorebook with keyword triggers should activate even without a manual chat lock. A lorebook with no triggers and no lock is out of scope and will not be searched.
 
 ### ⚠️ Embedding model resolution — `getModelFromSettings`
 
@@ -691,20 +723,21 @@ if (config.requiresModel && modelField && !settings[modelField]) {
 
 If you just need the value, `getModelFromSettings(settings)` is shorter and harder to misuse.
 
-### Single source of truth — `isCollectionActiveForContext`
+### Lock-state read tiers — which layer to call
 
-Defined in `core/collection-metadata.js`. Every UI element that asks "is this collection active for the current chat?" calls this one function:
+Three tiers exist. Call the highest tier that covers your use case:
 
-```js
-isCollectionActiveForContext(collectionId, { chatId, characterId })
-```
+| Tier | Function | Use when |
+|---|---|---|
+| **API (preferred)** | `getLock(registryKey, opts)` | One collection — UI badge, checkbox, tooltip. Returns `isActiveHere`, `canModify`, `chatLocks`, etc. Bundles auth check. |
+| **API (preferred)** | `getCollectionListing(settings)` | All collections — render loop, aggregate state. Use `entry.isActive` — no per-card calls needed. |
+| **Underlying** | `isCollectionActiveForContext(registryKey, { chatId, characterId })` | Called internally by both API functions. Do not call per-card in a loop — use `getCollectionListing` instead. Still correct when you have exactly one collection and no auth check is needed (e.g. runtime activation in `world-info-integration.js`). |
+| **Raw** | `setCollectionLock` / `removeCollectionLock` etc. | Internal only — called by `setLock` facade. Do not call from application code. |
 
-Returns `true` based on the collection's scope:
+`isCollectionActiveForContext` returns `true` based on the collection's scope:
 - `scope='chat'` → `chatId` is in `lockedToChatIds`
 - `scope='character'` → `characterId` is in `lockedToCharacterIds`
-- anything else → `false`
-
-**Do not duplicate this logic inline.** Every call site that needs the answer should call this helper.
+- anything else → `false` (no global scope; legacy `global` was migrated to `character` — see below)
 
 ### Scope migration — global is gone
 
@@ -720,11 +753,11 @@ A migrated collection has no character lock by default — it stops auto-activat
 
 ### DB Browser — lock badge in the listing
 
-In `ui/database-browser.js`, the card rendering function calls `isCollectionActiveForContext` once per card. If `true`, it appends a 🔒 badge with a scope-appropriate tooltip:
+In `ui/database-browser.js`, the main render loop calls `getCollectionListing(settings)` once and iterates its entries. Each entry carries `entry.isActive` (pre-computed by `getCollectionListing` via `isCollectionActiveForContext(registryKey, ...)` internally). The badge renderer receives the entry and reads `entry.isActive` — there is no per-card `isCollectionActiveForContext` call in the loop. The badge displays a scope-appropriate tooltip:
 - `scope='chat'` → "Active for current chat" (with chat-count suffix if locked to multiple chats)
 - `scope='character'` → "Active for current chat (locked to current character)"
 
-The badge fires for the same conditions as the Collection Settings checkbox — they share `isCollectionActiveForContext`. No `isGlobalScope`, no separate inline check.
+A fallback `isCollectionActiveForContext` call survives in the badge helper for callers that pass a raw collection ID instead of an entry — this is internal plumbing, not the intended pattern.
 
 ### DB Browser → Collection Settings → "Active for current chat" checkbox
 
@@ -740,11 +773,13 @@ In `ui/database-browser.js`:
 **`saveActivation` lock mutation:**
 
 ```
-scope='chat'      + checked   →  setCollectionLock(currentChatId)
-scope='chat'      + unchecked →  removeCollectionLock(currentChatId)
-scope='character' + checked   →  setCollectionCharacterLock(currentCharacterId)
-scope='character' + unchecked →  removeCollectionCharacterLock(currentCharacterId)
+scope='chat'      + checked   →  setCollectionLock(state.collectionId, currentChatId)
+scope='chat'      + unchecked →  removeCollectionLock(state.collectionId, currentChatId)
+scope='character' + checked   →  setCollectionCharacterLock(state.collectionId, currentCharacterId)
+scope='character' + unchecked →  removeCollectionCharacterLock(state.collectionId, currentCharacterId)
 ```
+
+`state.collectionId` is the registry-key form (`backend:id`) — set when `openActivationEditor` is called with `collection.registryKey || collection.id`. Key form is correct. **Note:** these calls use the raw primitives directly rather than the `setLock` facade. They bypass the auth check that `setLock` performs, which is acceptable here because `saveActivation` is only reachable by the collection owner. Migration to `setLock` is a known pending cleanup.
 
 Each call only touches the lock for the **current** chat/character. Other chats or characters that have this collection locked keep their entries intact — `removeCollectionLock` filters by id, doesn't wipe the list.
 
