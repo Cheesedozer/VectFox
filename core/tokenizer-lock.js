@@ -202,57 +202,37 @@ export async function applyTokenizerRevert(savedMode, settings) {
  * is clicked, but #hide() sets a `closing` attribute and only removes the
  * dialog after a CSS fade animation — so for ~300ms after click the popup is
  * still visually on top of anything we open behind it.
+ *
+ * If the popup hasn't cleared within maxWaitMs, fall back to calling
+ * completeCancelled() on Popup.util.popups survivors and then removing any
+ * stragglers from the DOM directly.
  */
 async function waitForPopupsClosed(maxWaitMs = 1500) {
-    const dumpDialogs = () => Array.from(document.querySelectorAll('dialog.popup')).map(d => ({
-        open: d.hasAttribute('open'),
-        closing: d.hasAttribute('closing'),
-        opening: d.hasAttribute('opening'),
-        classList: d.className,
-        hasAnimation: window.getComputedStyle(d).animationName !== 'none',
-        animationName: window.getComputedStyle(d).animationName,
-        textSnippet: (d.querySelector('.popup-body, .popup-content')?.textContent || '').trim().slice(0, 60),
-    }));
-
-    console.log('[TokenizerLock] initial dialog state:', dumpDialogs());
-
     const start = Date.now();
-    let lastReport = 0;
     while (Date.now() - start < maxWaitMs) {
         const stillVisible = document.querySelectorAll('dialog.popup[open], dialog.popup[closing]').length;
-        if (stillVisible === 0) {
-            console.log(`[TokenizerLock] popup cleared after ${Date.now() - start}ms`);
-            return;
-        }
-        // Report dialog state every ~300ms so we can see what's keeping it alive
-        if (Date.now() - lastReport > 300) {
-            console.log(`[TokenizerLock] waiting (${Date.now() - start}ms) — dialogs:`, dumpDialogs());
-            lastReport = Date.now();
-        }
+        if (stillVisible === 0) return;
         await new Promise(r => setTimeout(r, 30));
     }
-    console.warn(`[TokenizerLock] popup did not close within ${maxWaitMs}ms — final state:`, dumpDialogs());
 
     // Last-resort manual close: walk Popup.util.popups and force completeCancelled on any
     // that survived. Then strip them from the DOM if they still cling on.
     try {
         const { Popup } = await import('../../../../../scripts/popup.js');
         const survivors = (Popup?.util?.popups || []).slice();
-        console.log('[TokenizerLock] forcing close on', survivors.length, 'popup util entries');
         for (const p of survivors) {
-            try { await p.completeCancelled(); } catch (e) { console.warn('[TokenizerLock] completeCancelled failed:', e?.message); }
+            try { await p.completeCancelled(); } catch { /* tolerate */ }
         }
         document.querySelectorAll('dialog.popup[open], dialog.popup[closing]').forEach(d => {
             try { d.close(); } catch {}
             d.remove();
         });
     } catch (e) {
-        console.warn('[TokenizerLock] force-close path failed:', e?.message);
+        console.warn('[TokenizerLock] force-close fallback failed:', e?.message);
     }
 }
 
 export async function openCjkTokenizerSetting() {
-    console.log('[TokenizerLock] openCjkTokenizerSetting: invoked');
     try {
         if (typeof $ === 'undefined') {
             console.warn('[TokenizerLock] jQuery ($) is undefined — cannot navigate');
@@ -261,69 +241,40 @@ export async function openCjkTokenizerSetting() {
 
         // The triggering popup is still mid-fade when callGenericPopup resolves.
         // Wait until it's actually gone before opening drawers behind it.
-        const popupCountBefore = document.querySelectorAll('dialog.popup').length;
-        console.log('[TokenizerLock] popup count before wait:', popupCountBefore);
         await waitForPopupsClosed();
-
-        const $settingsRoot = $('#VectFox_settings');
-        console.log('[TokenizerLock] #VectFox_settings found:', $settingsRoot.length,
-            'visible:', $settingsRoot.is(':visible'));
 
         // Step 1: open ST's top-bar Extensions drawer if it's collapsed.
         // ST wraps #extensions_settings2 (where VectFox mounts) inside
         // #extensions-settings-button, which is a .drawer with a .drawer-toggle.
         // The drawer-icon carries .closedIcon while collapsed and .openIcon when open.
         // Source: SillyTavern/public/index.html (release branch) — searched 2026-05-20.
-        const $extDrawer = $('#extensions-settings-button');
-        const $extToggle = $extDrawer.children('.drawer-toggle').first();
+        const $extToggle = $('#extensions-settings-button').children('.drawer-toggle').first();
         const $extIcon = $extToggle.find('.drawer-icon').first();
-        const extClosed = $extIcon.hasClass('closedIcon');
-        console.log('[TokenizerLock] #extensions-settings-button found:', $extDrawer.length,
-            '| toggle found:', $extToggle.length,
-            '| icon.closedIcon:', extClosed);
-        if ($extToggle.length && extClosed) {
-            console.log('[TokenizerLock] firing extensions drawer toggle click');
+        if ($extToggle.length && $extIcon.hasClass('closedIcon')) {
             $extToggle.trigger('click');
         }
 
         // Step 2: expand VectFox's own inline drawer if collapsed.
         const $drawerToggle = $('#VectFox_settings .inline-drawer-toggle').first();
-        console.log('[TokenizerLock] .inline-drawer-toggle found:', $drawerToggle.length);
         if ($drawerToggle.length) {
             const $icon = $drawerToggle.find('.inline-drawer-icon');
             const $content = $drawerToggle.closest('.inline-drawer').find('.inline-drawer-content');
-            const isClosed = $icon.hasClass('down') || $content.is(':hidden');
-            console.log('[TokenizerLock] drawer state — icon.hasClass(down):',
-                $icon.hasClass('down'), 'content :hidden:', $content.is(':hidden'),
-                '→ isClosed:', isClosed);
-            if (isClosed) {
-                console.log('[TokenizerLock] firing drawer toggle click');
+            if ($icon.hasClass('down') || $content.is(':hidden')) {
                 $drawerToggle.trigger('click');
             }
         }
 
         // Step 3: switch to the Core tab.
         const $coreTab = $('#VectFox_settings .vectfox-tab-btn[data-tab="core"]');
-        console.log('[TokenizerLock] core tab button found:', $coreTab.length);
         if ($coreTab.length) $coreTab.trigger('click');
 
         // Step 4: scroll the dropdown into view (deferred so panels finish opening first).
         // 150ms gives ST's slide animations time to settle before we measure positions.
         setTimeout(() => {
             const $select = $('#VectFox_cjk_tokenizer_mode');
-            const $settingsNow = $('#VectFox_settings');
-            console.log('[TokenizerLock] post-open — #VectFox_settings visible:',
-                $settingsNow.is(':visible'),
-                '| CJK dropdown found:', $select.length,
-                'visible:', $select.is(':visible'),
-                '| viewport:', $select.length ? (() => {
-                    const r = $select[0].getBoundingClientRect();
-                    return `top=${r.top.toFixed(0)} bottom=${r.bottom.toFixed(0)} (window h=${window.innerHeight})`;
-                })() : 'n/a');
             if ($select.length && $select.is(':visible')) {
                 $select[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
                 $select.focus();
-                console.log('[TokenizerLock] scrollIntoView + focus dispatched');
             } else {
                 // Couldn't surface the panel automatically — tell the user where to look.
                 try {
@@ -336,6 +287,6 @@ export async function openCjkTokenizerSetting() {
             }
         }, 150);
     } catch (error) {
-        console.warn('[TokenizerLock] Failed to navigate to settings:', error.message, error);
+        console.warn('[TokenizerLock] Failed to navigate to settings:', error?.message);
     }
 }

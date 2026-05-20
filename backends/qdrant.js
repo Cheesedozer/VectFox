@@ -767,10 +767,14 @@ export class QdrantBackend extends VectorBackend {
             const { detectTokenizerMismatch, showTokenizerMismatchModal, applyTokenizerRevert, openCjkTokenizerSetting } = await import('../core/tokenizer-lock.js');
             const mismatch = await detectTokenizerMismatch(settings, actualCollectionId);
             if (mismatch) {
+                const debugLog = settings?.eventbase_debug_logging;
+                if (debugLog) console.log(`[TokenizerLock] Mismatch: collection=${mismatch.saved}, current=${mismatch.current} — prompting user`);
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
+                    if (debugLog) console.log(`[TokenizerLock] User chose: Revert to ${mismatch.saved}`);
                     await applyTokenizerRevert(mismatch.saved, settings);
                 } else if (choice === 'settings' || choice === 'cancel') {
+                    if (debugLog) console.log(`[TokenizerLock] User chose: ${choice === 'settings' ? 'Open Settings' : 'Cancel'} — aborting query`);
                     // Abort the in-flight ST generation so it doesn't continue with
                     // a broken query. Without this the user has to hit ST's Stop
                     // button manually after dismissing the modal.
@@ -913,10 +917,14 @@ export class QdrantBackend extends VectorBackend {
             const { detectTokenizerMismatch, showTokenizerMismatchModal, applyTokenizerRevert, openCjkTokenizerSetting } = await import('../core/tokenizer-lock.js');
             const mismatch = await detectTokenizerMismatch(settings, actualCollectionId);
             if (mismatch) {
+                const debugLog = settings?.eventbase_debug_logging;
+                if (debugLog) console.log(`[TokenizerLock] Mismatch: collection=${mismatch.saved}, current=${mismatch.current} — prompting user`);
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
+                    if (debugLog) console.log(`[TokenizerLock] User chose: Revert to ${mismatch.saved}`);
                     await applyTokenizerRevert(mismatch.saved, settings);
                 } else if (choice === 'settings' || choice === 'cancel') {
+                    if (debugLog) console.log(`[TokenizerLock] User chose: ${choice === 'settings' ? 'Open Settings' : 'Cancel'} — aborting query`);
                     // Abort the in-flight ST generation so it doesn't continue with
                     // a broken query. Without this the user has to hit ST's Stop
                     // button manually after dismissing the modal.
