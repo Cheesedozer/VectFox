@@ -770,10 +770,17 @@ export class QdrantBackend extends VectorBackend {
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
                     await applyTokenizerRevert(mismatch.saved, settings);
-                } else if (choice === 'settings') {
-                    openCjkTokenizerSetting();
-                    return { hashes: [], metadata: [] };
-                } else if (choice === 'cancel') {
+                } else if (choice === 'settings' || choice === 'cancel') {
+                    // Abort the in-flight ST generation so it doesn't continue with
+                    // a broken query. Without this the user has to hit ST's Stop
+                    // button manually after dismissing the modal.
+                    try {
+                        const { stopGeneration } = await import('../../../../../script.js');
+                        stopGeneration();
+                    } catch (e) {
+                        console.warn('[Qdrant] stopGeneration() failed:', e?.message);
+                    }
+                    if (choice === 'settings') openCjkTokenizerSetting();
                     return { hashes: [], metadata: [] };
                 }
             }
@@ -909,10 +916,17 @@ export class QdrantBackend extends VectorBackend {
                 const choice = await showTokenizerMismatchModal(mismatch, actualCollectionId);
                 if (choice === 'revert') {
                     await applyTokenizerRevert(mismatch.saved, settings);
-                } else if (choice === 'settings') {
-                    openCjkTokenizerSetting();
-                    return { hashes: [], metadata: [] };
-                } else if (choice === 'cancel') {
+                } else if (choice === 'settings' || choice === 'cancel') {
+                    // Abort the in-flight ST generation so it doesn't continue with
+                    // a broken query. Without this the user has to hit ST's Stop
+                    // button manually after dismissing the modal.
+                    try {
+                        const { stopGeneration } = await import('../../../../../script.js');
+                        stopGeneration();
+                    } catch (e) {
+                        console.warn('[Qdrant] stopGeneration() failed:', e?.message);
+                    }
+                    if (choice === 'settings') openCjkTokenizerSetting();
                     return { hashes: [], metadata: [] };
                 }
             }
