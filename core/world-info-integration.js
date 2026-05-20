@@ -18,7 +18,7 @@ import { parseRegistryKey } from './collection-ids.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
-import { setExtensionPrompt, getCurrentChatId } from '../../../../../script.js';
+import { setExtensionPrompt, getCurrentChatId, eventSource, event_types, substituteParams } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
 import { buildSearchContext } from './conditional-activation.js';
 
@@ -334,6 +334,49 @@ export function enhanceWorldInfoEntriesUI(lorebookName, entries, settings) {
 // ============================================================================
 
 /**
+ * GENERATION_STARTED handler — runs the semantic lorebook query before ST's WI scan
+ * and force-activates matching entries via WORLDINFO_FORCE_ACTIVATE. This lets ST
+ * process them through its normal pipeline (budget, position, recursion, formatters)
+ * with no dependency on handler registration order.
+ *
+ * Entries are identified by { world: sourceName, uid: entryUid } stored at vectorization
+ * time. ST looks up the actual current lorebook entry content, so this path always
+ * reflects the live lorebook rather than potentially stale vector-stored text.
+ *
+ * Known edge case: if a lorebook is renamed after vectorization, sourceName will not
+ * match and the entry silently misses activation. Re-vectorizing fixes it.
+ */
+async function handleGenerationStarted() {
+    const settings = extension_settings.vectfox;
+    if (!settings?.enabled_world_info) return;
+
+    try {
+        const context = getContext();
+        const recentMessages = (context.chat || [])
+            .filter(m => !m.is_system)
+            .reverse()
+            .slice(0, settings.world_info_query_depth || settings.query || 3)
+            .map(m => substituteParams((m.mes || '').toString()));
+
+        if (!recentMessages.length) return;
+
+        const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings);
+        if (!semanticEntries.length) return;
+
+        const toActivate = semanticEntries
+            .filter(e => e.metadata?.entryUid != null && e.metadata?.sourceName)
+            .map(e => ({ world: e.metadata.sourceName, uid: e.metadata.entryUid }));
+
+        if (!toActivate.length) return;
+
+        await eventSource.emit(event_types.WORLDINFO_FORCE_ACTIVATE, toActivate);
+        console.log(`VectFox: Force-activated ${toActivate.length} semantic WI entries`);
+    } catch (err) {
+        console.warn('VectFox: Semantic WI activation failed', err.message || err);
+    }
+}
+
+/**
  * Initialize world info integration hooks
  * This should be called when VectFox loads
  */
@@ -347,6 +390,7 @@ export function initializeWorldInfoIntegration() {
         enhanceEntriesUI: enhanceWorldInfoEntriesUI
     };
 
+    eventSource.on(event_types.GENERATION_STARTED, handleGenerationStarted);
     console.log('VectFox: World Info integration hooks initialized');
 }
 
