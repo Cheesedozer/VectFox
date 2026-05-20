@@ -197,26 +197,53 @@ export async function applyTokenizerRevert(savedMode, settings) {
  * the modal said "Open Settings" but nothing actually opened.
  */
 export function openCjkTokenizerSetting() {
+    console.log('[TokenizerLock] openCjkTokenizerSetting: invoked');
     try {
-        if (typeof $ === 'undefined') return;
-
-        const $drawerToggle = $('#VectFox_settings .inline-drawer-toggle').first();
-        if ($drawerToggle.length) {
-            const isClosed = $drawerToggle.find('.inline-drawer-icon').hasClass('down');
-            if (isClosed) $drawerToggle.trigger('click');
+        if (typeof $ === 'undefined') {
+            console.warn('[TokenizerLock] jQuery ($) is undefined — cannot navigate');
+            return;
         }
 
-        $('#VectFox_settings .vectfox-tab-btn[data-tab="core"]').trigger('click');
+        const $settingsRoot = $('#VectFox_settings');
+        console.log('[TokenizerLock] #VectFox_settings found:', $settingsRoot.length,
+            'visible:', $settingsRoot.is(':visible'));
+
+        const $drawerToggle = $('#VectFox_settings .inline-drawer-toggle').first();
+        console.log('[TokenizerLock] .inline-drawer-toggle found:', $drawerToggle.length);
+
+        if ($drawerToggle.length) {
+            const $icon = $drawerToggle.find('.inline-drawer-icon');
+            const $content = $drawerToggle.closest('.inline-drawer').find('.inline-drawer-content');
+            const isClosed = $icon.hasClass('down') || $content.is(':hidden');
+            console.log('[TokenizerLock] drawer state — icon.hasClass(down):',
+                $icon.hasClass('down'), 'content :hidden:', $content.is(':hidden'),
+                '→ isClosed:', isClosed);
+            if (isClosed) {
+                console.log('[TokenizerLock] firing drawer toggle click');
+                $drawerToggle.trigger('click');
+            }
+        }
+
+        const $coreTab = $('#VectFox_settings .vectfox-tab-btn[data-tab="core"]');
+        console.log('[TokenizerLock] core tab button found:', $coreTab.length);
+        if ($coreTab.length) $coreTab.trigger('click');
 
         // Defer scroll/focus to next tick so tab content is visible first.
         setTimeout(() => {
             const $select = $('#VectFox_cjk_tokenizer_mode');
+            console.log('[TokenizerLock] CJK dropdown found:', $select.length,
+                'visible:', $select.is(':visible'),
+                'in viewport:', $select.length ? (() => {
+                    const r = $select[0].getBoundingClientRect();
+                    return `top=${r.top.toFixed(0)} bottom=${r.bottom.toFixed(0)} (window h=${window.innerHeight})`;
+                })() : 'n/a');
             if ($select.length) {
                 $select[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
                 $select.focus();
+                console.log('[TokenizerLock] scrollIntoView + focus dispatched');
             }
         }, 50);
     } catch (error) {
-        console.warn('[TokenizerLock] Failed to navigate to settings:', error.message);
+        console.warn('[TokenizerLock] Failed to navigate to settings:', error.message, error);
     }
 }
