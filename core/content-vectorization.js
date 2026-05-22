@@ -13,7 +13,7 @@
 import { getContentType, getContentTypeDefaults, hasFeature } from './content-types.js';
 import { chunkText } from './chunking.js';
 import { insertVectorItems, purgeVectorIndex, getSavedHashes } from './core-vector-api.js';
-import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock } from './collection-metadata.js';
+import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock, saveChunkMetadata } from './collection-metadata.js';
 import { registerCollection } from './collection-loader.js';
 import { getBackend } from '../backends/backend-manager.js';
 // Import from collection-ids.js - single source of truth for collection ID operations
@@ -238,6 +238,16 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 try { progressTracker.addError(error.message || String(error)); } catch (_) {}
                 try { toastr.error('Failed to write embeddings: ' + (error.message || String(error)), 'VectFox'); } catch (_) {}
                 throw error;
+            }
+
+            // Persist chunk keywords to extension_settings so no-plugin users get
+            // keyword boosting. Native ST /api/vector/insert only stores
+            // {hash, text, index} — keywords live nowhere else without the plugin.
+            // saveSettingsDebounced batches all writes into one disk flush.
+            for (const chunk of finalChunks) {
+                if (chunk.keywords?.length > 0) {
+                    saveChunkMetadata(String(chunk.hash), { keywords: chunk.keywords });
+                }
             }
         }
 

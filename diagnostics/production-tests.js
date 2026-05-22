@@ -181,11 +181,37 @@ function getPluginProviderParams(settings) {
 }
 
 /**
+ * Probe the Similharity plugin's /health endpoint to decide whether plugin-only
+ * production tests should run. When the plugin is absent, ST returns its
+ * catch-all 404 HTML — without this guard, those tests would falsely accuse the
+ * user's embedding provider of being broken.
+ */
+async function isPluginInstalled() {
+    try {
+        const response = await fetch('/api/plugins/similharity/health', {
+            method: 'GET',
+            headers: getRequestHeaders(),
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Test: Can we generate an embedding?
  * Uses Similharity plugin's dedicated embedding endpoint to test the provider.
  * This does NOT insert anything into the database - it only tests embedding generation.
  */
 export async function testEmbeddingGeneration(settings) {
+    if (!(await isPluginInstalled())) {
+        return {
+            name: '[PROD] Embedding Generation',
+            status: 'skipped',
+            message: 'Plugin not installed — skipping (test relies on plugin embedding endpoint)',
+            category: 'production'
+        };
+    }
     try {
         const testText = 'This is a test message for embedding generation.';
 
@@ -246,6 +272,14 @@ export async function testEmbeddingGeneration(settings) {
  * Creates a temporary test collection that is cleaned up after the test.
  */
 export async function testVectorStorage(settings) {
+    if (!(await isPluginInstalled())) {
+        return {
+            name: '[PROD] Vector Storage',
+            status: 'skipped',
+            message: 'Plugin not installed — skipping (test relies on plugin chunks/insert endpoint)',
+            category: 'production'
+        };
+    }
     const testCollectionId = `vf_test_storage_${Date.now()}`;
     try {
         const testHash = String(Math.floor(Math.random() * 1000000));

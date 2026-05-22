@@ -1,0 +1,2825 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: Eventbase-test.spec.js >> TEST 001 — Qdrant lorebook: lock + query isolation
+- Location: tests\Eventbase-test.spec.js:101:1
+
+# Error details
+
+```
+"beforeAll" hook timeout of 90000ms exceeded.
+```
+
+```
+Error: page.waitForFunction: Target page, context or browser has been closed
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - button "" [ref=e7] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                   +     No items   X     *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *       *     *     *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *       *    *                        *    *    *      *       *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *    *     *    *    *     *     *     *     *     *     *        
+    - generic [ref=e8]:
+      - button "" [ref=e10] [cursor=pointer]
+      - text:                                                                        
+    - generic [ref=e11]:
+      - button "" [ref=e13] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e14]:
+      - button "" [ref=e16] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e17]:
+      - button "" [ref=e19] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e20]:
+      - generic "Change Background Image" [ref=e21]:
+        - button "" [ref=e22] [cursor=pointer]
+      - text:       +                            
+    - generic [ref=e23]:
+      - button "" [ref=e25] [cursor=pointer]
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - heading "Extensions" [level=3] [ref=e29]
+          - generic [ref=e30]:
+            - checkbox "Notify on extension updates" [ref=e31] [cursor=pointer]
+            - generic [ref=e32]: Notify on extension updates
+          - button " Manage extensions" [ref=e33] [cursor=pointer]:
+            - generic [ref=e34]: 
+            - generic [ref=e35]: Manage extensions
+          - button " Install extension" [ref=e36] [cursor=pointer]:
+            - generic [ref=e37]: 
+            - generic [ref=e38]: Install extension
+        - generic [ref=e39]:
+          - generic [ref=e42]:
+            - generic [ref=e43] [cursor=pointer]:
+              - generic [ref=e44]: Download Extensions & Assets
+              - button "" [ref=e45]
+            - text:   
+          - generic [ref=e48]:
+            - generic [ref=e49] [cursor=pointer]:
+              - generic [ref=e50]: Character Expressions
+              - button "" [ref=e51]
+            - text:  +                                                           
+          - generic [ref=e53]:
+            - generic [ref=e54]:
+              - generic [ref=e55] [cursor=pointer]:
+                - generic [ref=e56]:
+                  - text: Image Generation
+                  - link "?" [ref=e57]:
+                    - /url: https://docs.sillytavern.app/extensions/stable-diffusion/
+                    - generic [ref=e58]: "?"
+                - button "" [ref=e59]
+              - text:           +                   
+            - generic [ref=e60]:
+              - generic [ref=e61] [cursor=pointer]:
+                - generic [ref=e62]: Image Prompt Templates
+                - button "" [ref=e63]
+              - text:             
+          - generic [ref=e67] [cursor=pointer]:
+            - generic [ref=e68]: TTS
+            - button "" [ref=e69]
+          - generic [ref=e71]:
+            - generic [ref=e72] [cursor=pointer]:
+              - generic [ref=e73]:
+                - text: Prompt template settings
+                - generic [ref=e75]: 
+              - button "" [ref=e76]
+            - text:                    
+          - generic [ref=e78]:
+            - generic [ref=e79] [cursor=pointer]:
+              - generic [ref=e80]: 酒馆助手
+              - button "" [ref=e81]
+            - text:                                                                                           
+        - generic [ref=e82]:
+          - generic [ref=e85]:
+            - generic [ref=e86] [cursor=pointer]:
+              - strong [ref=e87]: Quick Reply
+              - button "" [ref=e88]
+            - text: +   + +  +     +        +        +        +  
+          - generic [ref=e91]:
+            - generic [ref=e92] [cursor=pointer]:
+              - generic [ref=e93]: Chat Translation
+              - button "" [ref=e94]
+            - text:   
+          - generic [ref=e97]:
+            - generic [ref=e98] [cursor=pointer]:
+              - generic [ref=e99]: Image Captioning
+              - button "" [ref=e100]
+            - text:  
+          - generic [ref=e103]:
+            - generic [ref=e104] [cursor=pointer]:
+              - generic [ref=e105]:
+                - generic [ref=e106]: Summarize
+                - button "" [ref=e107]
+              - button "" [ref=e108]
+            - text:       
+          - generic [ref=e111]:
+            - generic [ref=e112] [cursor=pointer]:
+              - generic [ref=e113]: Regex
+              - button "" [ref=e114]
+            - text:                                                                                                                                                                                                                                                                                                                                                                                                                                  
+          - generic [ref=e117]:
+            - generic [ref=e118] [cursor=pointer]:
+              - generic [ref=e119]: Vector Storage
+              - button "" [ref=e120]
+            - text:    
+          - generic [ref=e122]:
+            - generic [ref=e123] [cursor=pointer]:
+              - generic [ref=e124]: VectFox - Advanced RAG
+              - button "" [ref=e125]
+            - generic [ref=e126]:
+              - generic [ref=e127]:
+                - generic [ref=e128]:
+                  - button "Action" [ref=e129] [cursor=pointer]
+                  - button "Core" [ref=e130] [cursor=pointer]
+                  - button "EventBase" [ref=e131] [cursor=pointer]
+                  - button "ChunkBase" [ref=e132] [cursor=pointer]
+                - generic [ref=e133]:
+                  - button "AutoSync" [ref=e134] [cursor=pointer]
+                  - button "WorldInfo" [ref=e135] [cursor=pointer]
+                  - button "RAG" [ref=e136] [cursor=pointer]
+                  - button "AgentMode" [ref=e137] [cursor=pointer]
+              - text:                  
+              - generic [ref=e138]:
+                - generic [ref=e139]:
+                  - heading " Actions" [level=3] [ref=e140]:
+                    - generic [ref=e142]: 
+                    - text: Actions
+                  - paragraph [ref=e143]: Run vectorization, sync chat with collections, browse the database, and run diagnostics. Operates on whatever path is currently active (Chunk or EventBase).
+                - generic [ref=e144]:
+                  - generic [ref=e145]:
+                    - button " Vectorize Content" [ref=e146] [cursor=pointer]:
+                      - generic [ref=e147]: 
+                      - generic [ref=e148]: Vectorize Content
+                    - button " Sync Chat" [ref=e149] [cursor=pointer]:
+                      - generic [ref=e150]: 
+                      - generic [ref=e151]: Sync Chat
+                    - button " Database Browser" [ref=e152] [cursor=pointer]:
+                      - generic [ref=e153]: 
+                      - generic [ref=e154]: Database Browser
+                    - button " Diagnostics" [ref=e155] [cursor=pointer]:
+                      - generic [ref=e156]: 
+                      - generic [ref=e157]: Diagnostics
+                    - button " Debug Query" [ref=e158] [cursor=pointer]:
+                      - generic [ref=e159]: 
+                      - generic [ref=e160]: Debug Query
+                    - button " Purge" [ref=e161] [cursor=pointer]:
+                      - generic [ref=e162]: 
+                      - generic [ref=e163]: Purge
+                    - button " Cleanup Corrupted" [ref=e164] [cursor=pointer]:
+                      - generic [ref=e165]: 
+                      - generic [ref=e166]: Cleanup Corrupted
+                    - button " Text Cleaning" [ref=e167] [cursor=pointer]:
+                      - generic [ref=e168]: 
+                      - generic [ref=e169]: Text Cleaning
+                    - button " Progress" [ref=e170] [cursor=pointer]:
+                      - generic [ref=e171]: 
+                      - generic [ref=e172]: Progress
+                    - button "Backend Health" [ref=e173] [cursor=pointer]
+                  - generic [ref=e175]:
+                    - checkbox "Debug Injection Logging (Chunk Path)" [ref=e176] [cursor=pointer]
+                    - generic [ref=e177]: Debug Injection Logging (Chunk Path)
+                  - text: Log [VectFox Injection Control] details to the browser console (useful for diagnosing retrieval/injection issues)
+                  - generic [ref=e178]:
+                    - checkbox "Debug Logging" [checked] [ref=e179] [cursor=pointer]
+                    - generic [ref=e180]: Debug Logging
+                  - text: Log [EventBase] details and vectorization progress diagnostics (ProgressTracker + batch/parsing logs) to the browser console.
+                  - generic [ref=e181]:
+                    - checkbox "Debug Qdrant backend" [checked] [ref=e182] [cursor=pointer]
+                    - generic [ref=e183]: Debug Qdrant backend
+                  - text: Log native hybrid backend keyword/fusion diagnostics from the Similharity Qdrant backend. Turn this off when not actively debugging to avoid noisy console output.
+                  - generic [ref=e184]:
+                    - checkbox "Debug Agent Mode" [checked] [ref=e185] [cursor=pointer]
+                    - generic [ref=e186]: Debug Agent Mode
+                  - text: "Log [VectFox-Agentic] details: mode marker, narrative context preview (~50 words per turn), LLM round-trip ms, planner output JSON, Qdrant fanout ms, total agent overhead ms, per-query hit counts. Only fires when Agent Mode is enabled (AgentMode tab)."
+                  - generic [ref=e187]:
+                    - checkbox "Compare native vs JS re-rank (debug)" [ref=e188] [cursor=pointer]
+                    - generic [ref=e189]: Compare native vs JS re-rank (debug)
+                  - text: Requires native re-rank ON and Debug Logging ON. Runs the JS pipeline in parallel for each (collection, queryText) and logs top-K overlap + Spearman ρ + timings. Doubles per-collection cost — debug only.
+                  - generic [ref=e190]:
+                    - checkbox "Verbose compare logs (per-event breakdown)" [ref=e191] [cursor=pointer]
+                    - generic [ref=e192]: Verbose compare logs (per-event breakdown)
+                  - text: Adds per-event score-component breakdowns for events present in both top-K lists. Verbose — enable only when investigating a specific divergence.
+              - text:  
+          - text:             
+          - generic [ref=e194]:
+            - generic [ref=e195] [cursor=pointer]:
+              - generic [ref=e196]: MVU 变量框架
+              - button "" [ref=e197]
+            - text:   
+        - separator [ref=e198]
+        - generic [ref=e199]:
+          - heading "(DEPRECATED) Extras API:" [level=4] [ref=e200]
+          - generic [ref=e201]:
+            - generic [ref=e202]: Not connected...
+            - generic [ref=e203]:
+              - checkbox "Auto-connect" [ref=e204] [cursor=pointer]
+              - generic [ref=e205]: Auto-connect
+        - generic [ref=e206]:
+          - textbox "Extras API URL" [ref=e207]: http://localhost:5100
+          - textbox "Extras API key (optional)" [ref=e208]
+          - button "Connect" [ref=e210] [cursor=pointer]
+    - generic [ref=e211]:
+      - button "" [ref=e213] [cursor=pointer]
+      - text:                    
+    - generic [ref=e214]:
+      - button "" [ref=e216] [cursor=pointer]
+      - text:                                                                                  Group is empty.          No characters available                                                                                                                                                    
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e217]:
+    - text: 
+    - generic [ref=e218]:
+      - button "Show more messages" [ref=e219] [cursor=pointer]
+      - generic [ref=e220]:
+        - img [ref=e223] [cursor=pointer]
+        - generic [ref=e224]:
+          - generic [ref=e225]:
+            - generic [ref=e227]:
+              - generic [ref=e228]: Critblade
+              - text: 
+              - generic [ref=e229]: April 23, 2026 9:55 PM
+            - generic [ref=e230]:
+              - button "" [ref=e231] [cursor=pointer]
+              - text:              
+              - button "" [ref=e232] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e234]:
+        - img [ref=e237] [cursor=pointer]
+        - generic [ref=e238]:
+          - generic [ref=e239]:
+            - generic [ref=e241]:
+              - generic [ref=e242]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e243]: April 23, 2026 9:55 PM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e244]
+            - generic [ref=e249]:
+              - button "" [ref=e250] [cursor=pointer]
+              - text:              
+              - button "" [ref=e251] [cursor=pointer]
+            - text:       
+          - group [ref=e252]:
+            - generic "Thought for 47 seconds " [ref=e253]:
+              - generic [ref=e255] [cursor=pointer]:
+                - generic "47.27 seconds [parsed]" [ref=e256]: Thought for 47 seconds
+                - generic [ref=e257]: 
+              - text:      
+      - generic [ref=e259]:
+        - img [ref=e262] [cursor=pointer]
+        - generic [ref=e263]:
+          - generic [ref=e264]:
+            - generic [ref=e266]:
+              - generic [ref=e267]: Critblade
+              - text: 
+              - generic [ref=e268]: April 23, 2026 10:02 PM
+            - generic [ref=e269]:
+              - button "" [ref=e270] [cursor=pointer]
+              - text:              
+              - button "" [ref=e271] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e273]:
+        - img [ref=e276] [cursor=pointer]
+        - generic [ref=e277]:
+          - generic [ref=e278]:
+            - generic [ref=e280]:
+              - generic [ref=e281]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e282]: April 23, 2026 10:02 PM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e283]
+            - generic [ref=e288]:
+              - button "" [ref=e289] [cursor=pointer]
+              - text:              
+              - button "" [ref=e290] [cursor=pointer]
+            - text:       
+          - group [ref=e291]:
+            - generic "Thought for 45 seconds " [ref=e292]:
+              - generic [ref=e294] [cursor=pointer]:
+                - generic "44.819 seconds [parsed]" [ref=e295]: Thought for 45 seconds
+                - generic [ref=e296]: 
+              - text:      
+      - generic [ref=e298]:
+        - img [ref=e301] [cursor=pointer]
+        - generic [ref=e302]:
+          - generic [ref=e303]:
+            - generic [ref=e305]:
+              - generic [ref=e306]: Critblade
+              - text: 
+              - generic [ref=e307]: April 23, 2026 10:05 PM
+            - generic [ref=e308]:
+              - button "" [ref=e309] [cursor=pointer]
+              - text:              
+              - button "" [ref=e310] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e312]:
+        - img [ref=e315] [cursor=pointer]
+        - generic [ref=e316]:
+          - generic [ref=e317]:
+            - generic [ref=e319]:
+              - generic [ref=e320]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e321]: April 23, 2026 10:05 PM
+              - img "custom - claude-sonnet-4.5" [ref=e322]
+            - generic [ref=e327]:
+              - button "" [ref=e328] [cursor=pointer]
+              - text:              
+              - button "" [ref=e329] [cursor=pointer]
+            - text:       
+          - group [ref=e330]:
+            - generic "Thought for 2 minutes " [ref=e331]:
+              - generic [ref=e333] [cursor=pointer]:
+                - generic "100.079 seconds [parsed]" [ref=e334]: Thought for 2 minutes
+                - generic [ref=e335]: 
+              - text:      
+      - generic [ref=e337]:
+        - img [ref=e340] [cursor=pointer]
+        - generic [ref=e341]:
+          - generic [ref=e342]:
+            - generic [ref=e344]:
+              - generic [ref=e345]: Critblade
+              - text: 
+              - generic [ref=e346]: April 23, 2026 10:44 PM
+            - generic [ref=e347]:
+              - button "" [ref=e348] [cursor=pointer]
+              - text:              
+              - button "" [ref=e349] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e351]:
+        - img [ref=e354] [cursor=pointer]
+        - generic [ref=e355]:
+          - generic [ref=e356]:
+            - generic [ref=e358]:
+              - generic [ref=e359]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e360]: April 23, 2026 10:44 PM
+              - img "custom - claude-sonnet-4.5" [ref=e361]
+            - generic [ref=e366]:
+              - button "" [ref=e367] [cursor=pointer]
+              - text:              
+              - button "" [ref=e368] [cursor=pointer]
+            - text:       
+          - group [ref=e369]:
+            - generic "Thought for a minute " [ref=e370]:
+              - generic [ref=e372] [cursor=pointer]:
+                - generic "89.307 seconds [parsed]" [ref=e373]: Thought for a minute
+                - generic [ref=e374]: 
+              - text:      
+      - generic [ref=e376]:
+        - img [ref=e379] [cursor=pointer]
+        - generic [ref=e380]:
+          - generic [ref=e381]:
+            - generic [ref=e383]:
+              - generic [ref=e384]: Critblade
+              - text: 
+              - generic [ref=e385]: April 23, 2026 10:49 PM
+            - generic [ref=e386]:
+              - button "" [ref=e387] [cursor=pointer]
+              - text:              
+              - button "" [ref=e388] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e390]:
+        - img [ref=e393] [cursor=pointer]
+        - generic [ref=e394]:
+          - generic [ref=e395]:
+            - generic [ref=e397]:
+              - generic [ref=e398]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e399]: April 23, 2026 10:50 PM
+              - img "custom - claude-sonnet-4.5" [ref=e400]
+            - generic [ref=e405]:
+              - button "" [ref=e406] [cursor=pointer]
+              - text:              
+              - button "" [ref=e407] [cursor=pointer]
+            - text:       
+          - group [ref=e408]:
+            - generic "Thought for 2 minutes " [ref=e409]:
+              - generic [ref=e411] [cursor=pointer]:
+                - generic "117.859 seconds [parsed]" [ref=e412]: Thought for 2 minutes
+                - generic [ref=e413]: 
+              - text:      
+      - generic [ref=e415]:
+        - img [ref=e418] [cursor=pointer]
+        - generic [ref=e419]:
+          - generic [ref=e420]:
+            - generic [ref=e422]:
+              - generic [ref=e423]: Critblade
+              - text: 
+              - generic [ref=e424]: April 23, 2026 11:16 PM
+            - generic [ref=e425]:
+              - button "" [ref=e426] [cursor=pointer]
+              - text:              
+              - button "" [ref=e427] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e429]:
+        - img [ref=e432] [cursor=pointer]
+        - generic [ref=e433]:
+          - generic [ref=e434]:
+            - generic [ref=e436]:
+              - generic [ref=e437]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e438]: April 23, 2026 11:17 PM
+              - img "custom - claude-sonnet-4.5" [ref=e439]
+            - generic [ref=e444]:
+              - button "" [ref=e445] [cursor=pointer]
+              - text:              
+              - button "" [ref=e446] [cursor=pointer]
+            - text:       
+          - group [ref=e447]:
+            - generic "Thought for 3 minutes " [ref=e448]:
+              - generic [ref=e450] [cursor=pointer]:
+                - generic "157.232 seconds [parsed]" [ref=e451]: Thought for 3 minutes
+                - generic [ref=e452]: 
+              - text:      
+      - generic [ref=e454]:
+        - img [ref=e457] [cursor=pointer]
+        - generic [ref=e458]:
+          - generic [ref=e459]:
+            - generic [ref=e461]:
+              - generic [ref=e462]: Critblade
+              - text: 
+              - generic [ref=e463]: April 23, 2026 11:27 PM
+            - generic [ref=e464]:
+              - button "" [ref=e465] [cursor=pointer]
+              - text:              
+              - button "" [ref=e466] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e468]:
+        - img [ref=e471] [cursor=pointer]
+        - generic [ref=e472]:
+          - generic [ref=e473]:
+            - generic [ref=e475]:
+              - generic [ref=e476]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e477]: April 23, 2026 11:28 PM
+              - img "custom - claude-sonnet-4.5" [ref=e478]
+            - generic [ref=e483]:
+              - button "" [ref=e484] [cursor=pointer]
+              - text:              
+              - button "" [ref=e485] [cursor=pointer]
+            - text:       
+          - group [ref=e486]:
+            - generic "Thought for 2 minutes " [ref=e487]:
+              - generic [ref=e489] [cursor=pointer]:
+                - generic "102.649 seconds [parsed]" [ref=e490]: Thought for 2 minutes
+                - generic [ref=e491]: 
+              - text:      
+      - generic [ref=e493]:
+        - img [ref=e496] [cursor=pointer]
+        - generic [ref=e497]:
+          - generic [ref=e498]:
+            - generic [ref=e500]:
+              - generic [ref=e501]: Critblade
+              - text: 
+              - generic [ref=e502]: April 23, 2026 11:38 PM
+            - generic [ref=e503]:
+              - button "" [ref=e504] [cursor=pointer]
+              - text:              
+              - button "" [ref=e505] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e507]:
+        - img [ref=e510] [cursor=pointer]
+        - generic [ref=e511]:
+          - generic [ref=e512]:
+            - generic [ref=e514]:
+              - generic [ref=e515]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e516]: April 23, 2026 11:38 PM
+              - img "custom - claude-sonnet-4.5" [ref=e517]
+            - generic [ref=e522]:
+              - button "" [ref=e523] [cursor=pointer]
+              - text:              
+              - button "" [ref=e524] [cursor=pointer]
+            - text:       
+          - group [ref=e525]:
+            - generic "Thought for 2 minutes " [ref=e526]:
+              - generic [ref=e528] [cursor=pointer]:
+                - generic "109.113 seconds [parsed]" [ref=e529]: Thought for 2 minutes
+                - generic [ref=e530]: 
+              - text:      
+      - generic [ref=e532]:
+        - img [ref=e535] [cursor=pointer]
+        - generic [ref=e536]:
+          - generic [ref=e537]:
+            - generic [ref=e539]:
+              - generic [ref=e540]: Critblade
+              - text: 
+              - generic [ref=e541]: April 24, 2026 12:10 AM
+            - generic [ref=e542]:
+              - button "" [ref=e543] [cursor=pointer]
+              - text:              
+              - button "" [ref=e544] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e546]:
+        - img [ref=e549] [cursor=pointer]
+        - generic [ref=e550]:
+          - generic [ref=e551]:
+            - generic [ref=e553]:
+              - generic [ref=e554]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e555]: April 24, 2026 12:11 AM
+              - img "custom - claude-sonnet-4.5" [ref=e556]
+            - generic [ref=e561]:
+              - button "" [ref=e562] [cursor=pointer]
+              - text:              
+              - button "" [ref=e563] [cursor=pointer]
+            - text:       
+          - group [ref=e564]:
+            - generic "Thought for 2 minutes " [ref=e565]:
+              - generic [ref=e567] [cursor=pointer]:
+                - generic "90.742 seconds [parsed]" [ref=e568]: Thought for 2 minutes
+                - generic [ref=e569]: 
+              - text:      
+      - generic [ref=e571]:
+        - img [ref=e574] [cursor=pointer]
+        - generic [ref=e575]:
+          - generic [ref=e576]:
+            - generic [ref=e578]:
+              - generic [ref=e579]: Critblade
+              - text: 
+              - generic [ref=e580]: April 24, 2026 12:20 AM
+            - generic [ref=e581]:
+              - button "" [ref=e582] [cursor=pointer]
+              - text:              
+              - button "" [ref=e583] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e585]:
+        - img [ref=e588] [cursor=pointer]
+        - generic [ref=e589]:
+          - generic [ref=e590]:
+            - generic [ref=e592]:
+              - generic [ref=e593]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e594]: April 24, 2026 12:27 AM
+              - img "custom - claude-sonnet-4.5" [ref=e595]
+            - generic [ref=e600]:
+              - button "" [ref=e601] [cursor=pointer]
+              - text:              
+              - button "" [ref=e602] [cursor=pointer]
+            - text:       
+          - group [ref=e603]:
+            - generic "Thought for 2 minutes " [ref=e604]:
+              - generic [ref=e606] [cursor=pointer]:
+                - generic "104.794 seconds [parsed]" [ref=e607]: Thought for 2 minutes
+                - generic [ref=e608]: 
+              - text:      
+      - generic [ref=e610]:
+        - img [ref=e613] [cursor=pointer]
+        - generic [ref=e614]:
+          - generic [ref=e615]:
+            - generic [ref=e617]:
+              - generic [ref=e618]: Critblade
+              - text: 
+              - generic [ref=e619]: April 24, 2026 12:38 AM
+            - generic [ref=e620]:
+              - button "" [ref=e621] [cursor=pointer]
+              - text:              
+              - button "" [ref=e622] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e624]:
+        - img [ref=e627] [cursor=pointer]
+        - generic [ref=e628]:
+          - generic [ref=e629]:
+            - generic [ref=e631]:
+              - generic [ref=e632]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e633]: April 24, 2026 12:38 AM
+              - img "custom - claude-sonnet-4.5" [ref=e634]
+            - generic [ref=e639]:
+              - button "" [ref=e640] [cursor=pointer]
+              - text:              
+              - button "" [ref=e641] [cursor=pointer]
+            - text:       
+          - group [ref=e642]:
+            - generic "Thought for a minute " [ref=e643]:
+              - generic [ref=e645] [cursor=pointer]:
+                - generic "78.597 seconds [parsed]" [ref=e646]: Thought for a minute
+                - generic [ref=e647]: 
+              - text:      
+      - generic [ref=e649]:
+        - img [ref=e652] [cursor=pointer]
+        - generic [ref=e653]:
+          - generic [ref=e654]:
+            - generic [ref=e656]:
+              - generic [ref=e657]: Critblade
+              - text: 
+              - generic [ref=e658]: April 24, 2026 12:49 AM
+            - generic [ref=e659]:
+              - button "" [ref=e660] [cursor=pointer]
+              - text:              
+              - button "" [ref=e661] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e663]:
+        - img [ref=e666] [cursor=pointer]
+        - generic [ref=e667]:
+          - generic [ref=e668]:
+            - generic [ref=e670]:
+              - generic [ref=e671]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e672]: April 24, 2026 12:49 AM
+              - img "custom - claude-sonnet-4.5" [ref=e673]
+            - generic [ref=e678]:
+              - button "" [ref=e679] [cursor=pointer]
+              - text:              
+              - button "" [ref=e680] [cursor=pointer]
+            - text:       
+          - group [ref=e681]:
+            - generic "Thought for a minute " [ref=e682]:
+              - generic [ref=e684] [cursor=pointer]:
+                - generic "83.021 seconds [parsed]" [ref=e685]: Thought for a minute
+                - generic [ref=e686]: 
+              - text:      
+      - generic [ref=e688]:
+        - img [ref=e691] [cursor=pointer]
+        - generic [ref=e692]:
+          - generic [ref=e693]:
+            - generic [ref=e695]:
+              - generic [ref=e696]: Critblade
+              - text: 
+              - generic [ref=e697]: April 24, 2026 12:56 AM
+            - generic [ref=e698]:
+              - button "" [ref=e699] [cursor=pointer]
+              - text:              
+              - button "" [ref=e700] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e702]:
+        - img [ref=e705] [cursor=pointer]
+        - generic [ref=e706]:
+          - generic [ref=e707]:
+            - generic [ref=e709]:
+              - generic [ref=e710]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e711]: April 24, 2026 12:57 AM
+              - img "custom - claude-sonnet-4.5" [ref=e712]
+            - generic [ref=e717]:
+              - button "" [ref=e718] [cursor=pointer]
+              - text:              
+              - button "" [ref=e719] [cursor=pointer]
+            - text:       
+          - group [ref=e720]:
+            - generic "Thought for 2 minutes " [ref=e721]:
+              - generic [ref=e723] [cursor=pointer]:
+                - generic "102.287 seconds [parsed]" [ref=e724]: Thought for 2 minutes
+                - generic [ref=e725]: 
+              - text:      
+      - generic [ref=e727]:
+        - img [ref=e730] [cursor=pointer]
+        - generic [ref=e731]:
+          - generic [ref=e732]:
+            - generic [ref=e734]:
+              - generic [ref=e735]: Critblade
+              - text: 
+              - generic [ref=e736]: April 24, 2026 1:09 AM
+            - generic [ref=e737]:
+              - button "" [ref=e738] [cursor=pointer]
+              - text:              
+              - button "" [ref=e739] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e741]:
+        - img [ref=e744] [cursor=pointer]
+        - generic [ref=e745]:
+          - generic [ref=e746]:
+            - generic [ref=e748]:
+              - generic [ref=e749]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e750]: April 24, 2026 1:09 AM
+              - img "custom - claude-sonnet-4.5" [ref=e751]
+            - generic [ref=e756]:
+              - button "" [ref=e757] [cursor=pointer]
+              - text:              
+              - button "" [ref=e758] [cursor=pointer]
+            - text:       
+          - group [ref=e759]:
+            - generic "Thought for a minute " [ref=e760]:
+              - generic [ref=e762] [cursor=pointer]:
+                - generic "74.151 seconds [parsed]" [ref=e763]: Thought for a minute
+                - generic [ref=e764]: 
+              - text:      
+      - generic [ref=e766]:
+        - img [ref=e769] [cursor=pointer]
+        - generic [ref=e770]:
+          - generic [ref=e771]:
+            - generic [ref=e773]:
+              - generic [ref=e774]: Critblade
+              - text: 
+              - generic [ref=e775]: April 24, 2026 1:16 AM
+            - generic [ref=e776]:
+              - button "" [ref=e777] [cursor=pointer]
+              - text:              
+              - button "" [ref=e778] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e780]:
+        - img [ref=e783] [cursor=pointer]
+        - generic [ref=e784]:
+          - generic [ref=e785]:
+            - generic [ref=e787]:
+              - generic [ref=e788]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e789]: April 24, 2026 1:17 AM
+              - img "custom - claude-sonnet-4.5" [ref=e790]
+            - generic [ref=e795]:
+              - button "" [ref=e796] [cursor=pointer]
+              - text:              
+              - button "" [ref=e797] [cursor=pointer]
+            - text:       
+          - group [ref=e798]:
+            - generic "Thought for 2 minutes " [ref=e799]:
+              - generic [ref=e801] [cursor=pointer]:
+                - generic "115.481 seconds [parsed]" [ref=e802]: Thought for 2 minutes
+                - generic [ref=e803]: 
+              - text:      
+      - generic [ref=e805]:
+        - img [ref=e808] [cursor=pointer]
+        - generic [ref=e809]:
+          - generic [ref=e810]:
+            - generic [ref=e812]:
+              - generic [ref=e813]: Critblade
+              - text: 
+              - generic [ref=e814]: April 24, 2026 1:27 AM
+            - generic [ref=e815]:
+              - button "" [ref=e816] [cursor=pointer]
+              - text:              
+              - button "" [ref=e817] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e819]:
+        - img [ref=e822] [cursor=pointer]
+        - generic [ref=e823]:
+          - generic [ref=e824]:
+            - generic [ref=e826]:
+              - generic [ref=e827]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e828]: April 24, 2026 1:29 AM
+              - img "custom - claude-sonnet-4.5" [ref=e829]
+            - generic [ref=e834]:
+              - button "" [ref=e835] [cursor=pointer]
+              - text:              
+              - button "" [ref=e836] [cursor=pointer]
+            - text:       
+          - group [ref=e837]:
+            - generic "Thought for a minute " [ref=e838]:
+              - generic [ref=e840] [cursor=pointer]:
+                - generic "72.535 seconds [parsed]" [ref=e841]: Thought for a minute
+                - generic [ref=e842]: 
+              - text:      
+      - generic [ref=e844]:
+        - img [ref=e847] [cursor=pointer]
+        - generic [ref=e848]:
+          - generic [ref=e849]:
+            - generic [ref=e851]:
+              - generic [ref=e852]: Critblade
+              - text: 
+              - generic [ref=e853]: April 24, 2026 1:37 AM
+            - generic [ref=e854]:
+              - button "" [ref=e855] [cursor=pointer]
+              - text:              
+              - button "" [ref=e856] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e858]:
+        - img [ref=e861] [cursor=pointer]
+        - generic [ref=e862]:
+          - generic [ref=e863]:
+            - generic [ref=e865]:
+              - generic [ref=e866]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e867]: April 24, 2026 1:38 AM
+              - img "custom - claude-sonnet-4.5" [ref=e868]
+            - generic [ref=e873]:
+              - button "" [ref=e874] [cursor=pointer]
+              - text:              
+              - button "" [ref=e875] [cursor=pointer]
+            - text:       
+          - group [ref=e876]:
+            - generic "Thought for 2 minutes " [ref=e877]:
+              - generic [ref=e879] [cursor=pointer]:
+                - generic "102.879 seconds [parsed]" [ref=e880]: Thought for 2 minutes
+                - generic [ref=e881]: 
+              - text:      
+      - generic [ref=e883]:
+        - img [ref=e886] [cursor=pointer]
+        - generic [ref=e887]:
+          - generic [ref=e888]:
+            - generic [ref=e890]:
+              - generic [ref=e891]: Critblade
+              - text: 
+              - generic [ref=e892]: April 24, 2026 1:45 AM
+            - generic [ref=e893]:
+              - button "" [ref=e894] [cursor=pointer]
+              - text:              
+              - button "" [ref=e895] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e897]:
+        - img [ref=e900] [cursor=pointer]
+        - generic [ref=e901]:
+          - generic [ref=e902]:
+            - generic [ref=e904]:
+              - generic [ref=e905]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e906]: April 24, 2026 1:45 AM
+              - img "custom - claude-sonnet-4.5" [ref=e907]
+            - generic [ref=e912]:
+              - button "" [ref=e913] [cursor=pointer]
+              - text:              
+              - button "" [ref=e914] [cursor=pointer]
+            - text:       
+          - group [ref=e915]:
+            - generic "Thought for 2 minutes " [ref=e916]:
+              - generic [ref=e918] [cursor=pointer]:
+                - generic "144.661 seconds [parsed]" [ref=e919]: Thought for 2 minutes
+                - generic [ref=e920]: 
+              - text:      
+      - generic [ref=e922]:
+        - img [ref=e925] [cursor=pointer]
+        - generic [ref=e926]:
+          - generic [ref=e927]:
+            - generic [ref=e929]:
+              - generic [ref=e930]: Critblade
+              - text: 
+              - generic [ref=e931]: April 24, 2026 1:53 AM
+            - generic [ref=e932]:
+              - button "" [ref=e933] [cursor=pointer]
+              - text:              
+              - button "" [ref=e934] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e936]:
+        - img [ref=e939] [cursor=pointer]
+        - generic [ref=e940]:
+          - generic [ref=e941]:
+            - generic [ref=e943]:
+              - generic [ref=e944]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e945]: April 24, 2026 1:54 AM
+              - img "custom - claude-sonnet-4.5" [ref=e946]
+            - generic [ref=e951]:
+              - button "" [ref=e952] [cursor=pointer]
+              - text:              
+              - button "" [ref=e953] [cursor=pointer]
+            - text:       
+          - group [ref=e954]:
+            - generic "Thought for 3 minutes " [ref=e955]:
+              - generic [ref=e957] [cursor=pointer]:
+                - generic "159.032 seconds [parsed]" [ref=e958]: Thought for 3 minutes
+                - generic [ref=e959]: 
+              - text:      
+      - generic [ref=e961]:
+        - img [ref=e964] [cursor=pointer]
+        - generic [ref=e965]:
+          - generic [ref=e966]:
+            - generic [ref=e968]:
+              - generic [ref=e969]: Critblade
+              - text: 
+              - generic [ref=e970]: April 24, 2026 2:00 AM
+            - generic [ref=e971]:
+              - button "" [ref=e972] [cursor=pointer]
+              - text:              
+              - button "" [ref=e973] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e975]:
+        - img [ref=e978] [cursor=pointer]
+        - generic [ref=e979]:
+          - generic [ref=e980]:
+            - generic [ref=e982]:
+              - generic [ref=e983]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e984]: April 24, 2026 2:09 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e985]
+            - generic [ref=e990]:
+              - button "" [ref=e991] [cursor=pointer]
+              - text:              
+              - button "" [ref=e992] [cursor=pointer]
+            - text:       
+          - group [ref=e993]:
+            - generic "Thought for a minute " [ref=e994]:
+              - generic [ref=e996] [cursor=pointer]:
+                - generic "54.553 seconds [parsed]" [ref=e997]: Thought for a minute
+                - generic [ref=e998]: 
+              - text:      
+      - generic [ref=e1000]:
+        - img [ref=e1003] [cursor=pointer]
+        - generic [ref=e1004]:
+          - generic [ref=e1005]:
+            - generic [ref=e1007]:
+              - generic [ref=e1008]: Critblade
+              - text: 
+              - generic [ref=e1009]: April 24, 2026 2:16 AM
+            - generic [ref=e1010]:
+              - button "" [ref=e1011] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1012] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1014]:
+        - img [ref=e1017] [cursor=pointer]
+        - generic [ref=e1018]:
+          - generic [ref=e1019]:
+            - generic [ref=e1021]:
+              - generic [ref=e1022]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1023]: April 24, 2026 2:16 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1024]
+            - generic [ref=e1029]:
+              - button "" [ref=e1030] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1031] [cursor=pointer]
+            - text:       
+          - group [ref=e1032]:
+            - generic "Thought for a minute " [ref=e1033]:
+              - generic [ref=e1035] [cursor=pointer]:
+                - generic "51.277 seconds [parsed]" [ref=e1036]: Thought for a minute
+                - generic [ref=e1037]: 
+              - text:      
+      - generic [ref=e1039]:
+        - img [ref=e1042] [cursor=pointer]
+        - generic [ref=e1043]:
+          - generic [ref=e1044]:
+            - generic [ref=e1046]:
+              - generic [ref=e1047]: Critblade
+              - text: 
+              - generic [ref=e1048]: April 24, 2026 2:20 AM
+            - generic [ref=e1049]:
+              - button "" [ref=e1050] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1051] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1053]:
+        - img [ref=e1056] [cursor=pointer]
+        - generic [ref=e1057]:
+          - generic [ref=e1058]:
+            - generic [ref=e1060]:
+              - generic [ref=e1061]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1062]: April 24, 2026 10:09 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1063]
+            - generic [ref=e1068]:
+              - button "" [ref=e1069] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1070] [cursor=pointer]
+            - text:       
+          - group [ref=e1071]:
+            - generic "Thought for a minute " [ref=e1072]:
+              - generic [ref=e1074] [cursor=pointer]:
+                - generic "58.355 seconds [parsed]" [ref=e1075]: Thought for a minute
+                - generic [ref=e1076]: 
+              - text:      
+      - generic [ref=e1078]:
+        - img [ref=e1081] [cursor=pointer]
+        - generic [ref=e1082]:
+          - generic [ref=e1083]:
+            - generic [ref=e1085]:
+              - generic [ref=e1086]: Critblade
+              - text: 
+              - generic [ref=e1087]: April 24, 2026 10:20 AM
+            - generic [ref=e1088]:
+              - button "" [ref=e1089] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1090] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1092]:
+        - img [ref=e1095] [cursor=pointer]
+        - generic [ref=e1096]:
+          - generic [ref=e1097]:
+            - generic [ref=e1099]:
+              - generic [ref=e1100]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1101]: April 24, 2026 10:21 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1102]
+            - generic [ref=e1107]:
+              - button "" [ref=e1108] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1109] [cursor=pointer]
+            - text:       
+          - group [ref=e1110]:
+            - generic "Thought for 2 minutes " [ref=e1111]:
+              - generic [ref=e1113] [cursor=pointer]:
+                - generic "130.76 seconds [parsed]" [ref=e1114]: Thought for 2 minutes
+                - generic [ref=e1115]: 
+              - text:      
+      - generic [ref=e1117]:
+        - img [ref=e1120] [cursor=pointer]
+        - generic [ref=e1121]:
+          - generic [ref=e1122]:
+            - generic [ref=e1124]:
+              - generic [ref=e1125]: Critblade
+              - text: 
+              - generic [ref=e1126]: April 24, 2026 11:47 AM
+            - generic [ref=e1127]:
+              - button "" [ref=e1128] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1129] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1131]:
+        - img [ref=e1134] [cursor=pointer]
+        - generic [ref=e1135]:
+          - generic [ref=e1136]:
+            - generic [ref=e1138]:
+              - generic [ref=e1139]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1140]: April 24, 2026 11:48 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1141]
+            - generic [ref=e1146]:
+              - button "" [ref=e1147] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1148] [cursor=pointer]
+            - text:       
+          - group [ref=e1149]:
+            - generic "Thought for 2 minutes " [ref=e1150]:
+              - generic [ref=e1152] [cursor=pointer]:
+                - generic "111.713 seconds [parsed]" [ref=e1153]: Thought for 2 minutes
+                - generic [ref=e1154]: 
+              - text:      
+      - generic [ref=e1156]:
+        - img [ref=e1159] [cursor=pointer]
+        - generic [ref=e1160]:
+          - generic [ref=e1161]:
+            - generic [ref=e1163]:
+              - generic [ref=e1164]: Critblade
+              - text: 
+              - generic [ref=e1165]: April 24, 2026 11:58 AM
+            - generic [ref=e1166]:
+              - button "" [ref=e1167] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1168] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1170]:
+        - img [ref=e1173] [cursor=pointer]
+        - generic [ref=e1174]:
+          - generic [ref=e1175]:
+            - generic [ref=e1177]:
+              - generic [ref=e1178]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1179]: April 24, 2026 12:03 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1180]
+            - generic [ref=e1185]:
+              - button "" [ref=e1186] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1187] [cursor=pointer]
+            - text:       
+          - group [ref=e1188]:
+            - generic "Thought for 2 minutes " [ref=e1189]:
+              - generic [ref=e1191] [cursor=pointer]:
+                - generic "112.983 seconds [parsed]" [ref=e1192]: Thought for 2 minutes
+                - generic [ref=e1193]: 
+              - text:      
+      - generic [ref=e1195]:
+        - img [ref=e1198] [cursor=pointer]
+        - generic [ref=e1199]:
+          - generic [ref=e1200]:
+            - generic [ref=e1202]:
+              - generic [ref=e1203]: Critblade
+              - text: 
+              - generic [ref=e1204]: April 24, 2026 12:10 PM
+            - generic [ref=e1205]:
+              - button "" [ref=e1206] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1207] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1209]:
+        - img [ref=e1212] [cursor=pointer]
+        - generic [ref=e1213]:
+          - generic [ref=e1214]:
+            - generic [ref=e1216]:
+              - generic [ref=e1217]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1218]: April 24, 2026 12:10 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1219]
+            - generic [ref=e1224]:
+              - button "" [ref=e1225] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1226] [cursor=pointer]
+            - text:       
+          - group [ref=e1227]:
+            - generic "Thought for 2 minutes " [ref=e1228]:
+              - generic [ref=e1230] [cursor=pointer]:
+                - generic "140.45 seconds [parsed]" [ref=e1231]: Thought for 2 minutes
+                - generic [ref=e1232]: 
+              - text:      
+      - generic [ref=e1234]:
+        - img [ref=e1237] [cursor=pointer]
+        - generic [ref=e1238]:
+          - generic [ref=e1239]:
+            - generic [ref=e1241]:
+              - generic [ref=e1242]: Critblade
+              - text: 
+              - generic [ref=e1243]: April 24, 2026 12:34 PM
+            - generic [ref=e1244]:
+              - button "" [ref=e1245] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1246] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1248]:
+        - img [ref=e1251] [cursor=pointer]
+        - generic [ref=e1252]:
+          - generic [ref=e1253]:
+            - generic [ref=e1255]:
+              - generic [ref=e1256]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1257]: April 24, 2026 2:23 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1258]
+            - generic [ref=e1263]:
+              - button "" [ref=e1264] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1265] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1267]:
+        - img [ref=e1270] [cursor=pointer]
+        - generic [ref=e1271]:
+          - generic [ref=e1272]:
+            - generic [ref=e1274]:
+              - generic [ref=e1275]: Critblade
+              - text: 
+              - generic [ref=e1276]: April 24, 2026 2:33 PM
+            - generic [ref=e1277]:
+              - button "" [ref=e1278] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1279] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1281]:
+        - img [ref=e1284] [cursor=pointer]
+        - generic [ref=e1285]:
+          - generic [ref=e1286]:
+            - generic [ref=e1288]:
+              - generic [ref=e1289]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1290]: April 24, 2026 2:33 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1291]
+            - generic [ref=e1296]:
+              - button "" [ref=e1297] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1298] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1300]:
+        - img [ref=e1303] [cursor=pointer]
+        - generic [ref=e1304]:
+          - generic [ref=e1305]:
+            - generic [ref=e1307]:
+              - generic [ref=e1308]: Critblade
+              - text: 
+              - generic [ref=e1309]: April 24, 2026 2:45 PM
+            - generic [ref=e1310]:
+              - button "" [ref=e1311] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1312] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1314]:
+        - img [ref=e1317] [cursor=pointer]
+        - generic [ref=e1318]:
+          - generic [ref=e1319]:
+            - generic [ref=e1321]:
+              - generic [ref=e1322]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1323]: April 24, 2026 2:46 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1324]
+            - generic [ref=e1329]:
+              - button "" [ref=e1330] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1331] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1333]:
+        - img [ref=e1336] [cursor=pointer]
+        - generic [ref=e1337]:
+          - generic [ref=e1338]:
+            - generic [ref=e1340]:
+              - generic [ref=e1341]: Critblade
+              - text: 
+              - generic [ref=e1342]: April 24, 2026 3:08 PM
+            - generic [ref=e1343]:
+              - button "" [ref=e1344] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1345] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1347]:
+        - img [ref=e1350] [cursor=pointer]
+        - generic [ref=e1351]:
+          - generic [ref=e1352]:
+            - generic [ref=e1354]:
+              - generic [ref=e1355]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1356]: April 24, 2026 11:58 PM
+              - img "custom - claude-sonnet-4.5" [ref=e1357]
+            - generic [ref=e1362]:
+              - button "" [ref=e1363] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1364] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1366]:
+        - img [ref=e1369] [cursor=pointer]
+        - generic [ref=e1370]:
+          - generic [ref=e1371]:
+            - generic [ref=e1373]:
+              - generic [ref=e1374]: Critblade
+              - text: 
+              - generic [ref=e1375]: April 25, 2026 12:13 AM
+            - generic [ref=e1376]:
+              - button "" [ref=e1377] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1378] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1380]:
+        - img [ref=e1383] [cursor=pointer]
+        - generic [ref=e1384]:
+          - generic [ref=e1385]:
+            - generic [ref=e1387]:
+              - generic [ref=e1388]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1389]: April 25, 2026 12:13 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1390]
+            - generic [ref=e1395]:
+              - button "" [ref=e1396] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1397] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1399]:
+        - img [ref=e1402] [cursor=pointer]
+        - generic [ref=e1403]:
+          - generic [ref=e1404]:
+            - generic [ref=e1406]:
+              - generic [ref=e1407]: Critblade
+              - text: 
+              - generic [ref=e1408]: April 25, 2026 12:28 AM
+            - generic [ref=e1409]:
+              - button "" [ref=e1410] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1411] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1413]:
+        - img [ref=e1416] [cursor=pointer]
+        - generic [ref=e1417]:
+          - generic [ref=e1418]:
+            - generic [ref=e1420]:
+              - generic [ref=e1421]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1422]: April 25, 2026 12:30 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1423]
+            - generic [ref=e1428]:
+              - button "" [ref=e1429] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1430] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1432]:
+        - img [ref=e1435] [cursor=pointer]
+        - generic [ref=e1436]:
+          - generic [ref=e1437]:
+            - generic [ref=e1439]:
+              - generic [ref=e1440]: Critblade
+              - text: 
+              - generic [ref=e1441]: April 25, 2026 1:54 AM
+            - generic [ref=e1442]:
+              - button "" [ref=e1443] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1444] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1446]:
+        - img [ref=e1449] [cursor=pointer]
+        - generic [ref=e1450]:
+          - generic [ref=e1451]:
+            - generic [ref=e1453]:
+              - generic [ref=e1454]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1455]: April 25, 2026 1:55 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1456]
+            - generic [ref=e1461]:
+              - button "" [ref=e1462] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1463] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1465]:
+        - img [ref=e1468] [cursor=pointer]
+        - generic [ref=e1469]:
+          - generic [ref=e1470]:
+            - generic [ref=e1472]:
+              - generic [ref=e1473]: Critblade
+              - text: 
+              - generic [ref=e1474]: April 25, 2026 2:07 AM
+            - generic [ref=e1475]:
+              - button "" [ref=e1476] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1477] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1479]:
+        - img [ref=e1482] [cursor=pointer]
+        - generic [ref=e1483]:
+          - generic [ref=e1484]:
+            - generic [ref=e1486]:
+              - generic [ref=e1487]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1488]: April 25, 2026 2:07 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1489]
+            - generic [ref=e1494]:
+              - button "" [ref=e1495] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1496] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1498]:
+        - img [ref=e1501] [cursor=pointer]
+        - generic [ref=e1502]:
+          - generic [ref=e1503]:
+            - generic [ref=e1505]:
+              - generic [ref=e1506]: Critblade
+              - text: 
+              - generic [ref=e1507]: April 25, 2026 9:24 PM
+            - generic [ref=e1508]:
+              - button "" [ref=e1509] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1510] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1512]:
+        - img [ref=e1515] [cursor=pointer]
+        - generic [ref=e1516]:
+          - generic [ref=e1517]:
+            - generic [ref=e1519]:
+              - generic [ref=e1520]: Your Wives
+              - text: 
+              - generic "openrouter - google/gemini-3.1-flash-lite-preview" [ref=e1521]: April 26, 2026 6:21 PM
+              - img "Logo" [ref=e1522]
+            - generic [ref=e1528]:
+              - button "" [ref=e1529] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1530] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1532]:
+        - img [ref=e1535] [cursor=pointer]
+        - generic [ref=e1536]:
+          - generic [ref=e1537]:
+            - generic [ref=e1539]:
+              - generic [ref=e1540]: Critblade
+              - text: 
+              - generic [ref=e1541]: April 28, 2026 1:15 AM
+            - generic [ref=e1542]:
+              - button "" [ref=e1543] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1544] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1546]:
+        - img [ref=e1549] [cursor=pointer]
+        - generic [ref=e1550]:
+          - generic [ref=e1551]:
+            - generic [ref=e1553]:
+              - generic [ref=e1554]: Your Wives
+              - text: 
+              - generic "custom - claude-sonnet-4.5" [ref=e1555]: April 28, 2026 1:30 AM
+              - img "custom - claude-sonnet-4.5" [ref=e1556]
+            - generic [ref=e1561]:
+              - button "" [ref=e1562] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1563] [cursor=pointer]
+            - text:       
+          - group [ref=e1564]:
+            - generic "Thought for a minute " [ref=e1565]:
+              - generic [ref=e1567] [cursor=pointer]:
+                - generic "81.574 seconds [parsed]" [ref=e1568]: Thought for a minute
+                - generic [ref=e1569]: 
+              - text:      
+      - generic [ref=e1571]:
+        - img [ref=e1574] [cursor=pointer]
+        - generic [ref=e1575]:
+          - generic [ref=e1576]:
+            - generic [ref=e1578]:
+              - generic [ref=e1579]: Critblade
+              - text: 
+              - generic [ref=e1580]: April 28, 2026 2:00 AM
+            - generic [ref=e1581]:
+              - button "" [ref=e1582] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1583] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1585]:
+        - img [ref=e1588] [cursor=pointer]
+        - generic [ref=e1589]:
+          - generic [ref=e1590]:
+            - generic [ref=e1592]:
+              - generic [ref=e1593]: Your Wives
+              - text: 
+              - generic "openrouter - deepseek/deepseek-v4-pro" [ref=e1594]: April 28, 2026 2:39 PM
+              - img "Logo" [ref=e1595]
+            - generic [ref=e1601]:
+              - button "" [ref=e1602] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1603] [cursor=pointer]
+            - text:       
+          - group [ref=e1604]:
+            - generic "Thought for a minute " [ref=e1605]:
+              - generic [ref=e1607] [cursor=pointer]:
+                - generic "55.745 seconds" [ref=e1608]: Thought for a minute
+                - generic [ref=e1609]: 
+              - text:      
+      - generic [ref=e1611]:
+        - img [ref=e1614] [cursor=pointer]
+        - generic [ref=e1615]:
+          - generic [ref=e1616]:
+            - generic [ref=e1618]:
+              - generic [ref=e1619]: Critblade
+              - text: 
+              - generic [ref=e1620]: April 28, 2026 2:49 PM
+            - generic [ref=e1621]:
+              - button "" [ref=e1622] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1623] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1625]:
+        - img [ref=e1628] [cursor=pointer]
+        - generic [ref=e1629]:
+          - generic [ref=e1630]:
+            - generic [ref=e1632]:
+              - generic [ref=e1633]: Your Wives
+              - text: 
+              - generic "openrouter - deepseek/deepseek-v4-pro" [ref=e1634]: April 28, 2026 2:49 PM
+              - img "Logo" [ref=e1635]
+            - generic [ref=e1641]:
+              - button "" [ref=e1642] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1643] [cursor=pointer]
+            - text:       
+          - group [ref=e1644]:
+            - generic "Thought for a minute " [ref=e1645]:
+              - generic [ref=e1647] [cursor=pointer]:
+                - generic "59.723 seconds" [ref=e1648]: Thought for a minute
+                - generic [ref=e1649]: 
+              - text:      
+      - generic [ref=e1651]:
+        - img [ref=e1654] [cursor=pointer]
+        - generic [ref=e1655]:
+          - generic [ref=e1656]:
+            - generic [ref=e1658]:
+              - generic [ref=e1659]: Critblade
+              - text: 
+              - generic [ref=e1660]: April 28, 2026 3:05 PM
+            - generic [ref=e1661]:
+              - button "" [ref=e1662] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1663] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1665]:
+        - img [ref=e1668] [cursor=pointer]
+        - generic [ref=e1669]:
+          - generic [ref=e1670]:
+            - generic [ref=e1672]:
+              - generic [ref=e1673]: Your Wives
+              - text: 
+              - generic "openrouter - deepseek/deepseek-v4-pro" [ref=e1674]: April 28, 2026 4:31 PM
+              - img "Logo" [ref=e1675]
+            - generic [ref=e1681]:
+              - button "" [ref=e1682] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1683] [cursor=pointer]
+            - text:       
+          - group [ref=e1684]:
+            - generic "Thought for 48 seconds " [ref=e1685]:
+              - generic [ref=e1687] [cursor=pointer]:
+                - generic "48.168 seconds" [ref=e1688]: Thought for 48 seconds
+                - generic [ref=e1689]: 
+              - text:      
+      - generic [ref=e1691]:
+        - img [ref=e1694] [cursor=pointer]
+        - generic [ref=e1695]:
+          - generic [ref=e1696]:
+            - generic [ref=e1698]:
+              - generic [ref=e1699]: Critblade
+              - text: 
+              - generic [ref=e1700]: May 15, 2026 12:17 AM
+            - generic [ref=e1701]:
+              - button "" [ref=e1702] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1703] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1705]:
+        - img [ref=e1708] [cursor=pointer]
+        - generic [ref=e1709]:
+          - generic [ref=e1710]:
+            - generic [ref=e1712]:
+              - generic [ref=e1713]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1714]: May 15, 2026 12:19 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1715]
+            - generic [ref=e1720]:
+              - button "" [ref=e1721] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1722] [cursor=pointer]
+            - text:       
+          - group [ref=e1723]:
+            - generic "Thought for 2 minutes " [ref=e1724]:
+              - generic [ref=e1726] [cursor=pointer]:
+                - generic "127.402 seconds [parsed]" [ref=e1727]: Thought for 2 minutes
+                - generic [ref=e1728]: 
+              - text:      
+      - generic [ref=e1730]:
+        - img [ref=e1733] [cursor=pointer]
+        - generic [ref=e1734]:
+          - generic [ref=e1735]:
+            - generic [ref=e1737]:
+              - generic [ref=e1738]: Critblade
+              - text: 
+              - generic [ref=e1739]: May 15, 2026 10:17 AM
+            - generic [ref=e1740]:
+              - button "" [ref=e1741] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1742] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1744]:
+        - img [ref=e1747] [cursor=pointer]
+        - generic [ref=e1748]:
+          - generic [ref=e1749]:
+            - generic [ref=e1751]:
+              - generic [ref=e1752]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1753]: May 15, 2026 10:18 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1754]
+            - generic [ref=e1759]:
+              - button "" [ref=e1760] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1761] [cursor=pointer]
+            - text:       
+          - group [ref=e1762]:
+            - generic "Thought for a minute " [ref=e1763]:
+              - generic [ref=e1765] [cursor=pointer]:
+                - generic "86.743 seconds [parsed]" [ref=e1766]: Thought for a minute
+                - generic [ref=e1767]: 
+              - text:      
+      - generic [ref=e1769]:
+        - img [ref=e1772] [cursor=pointer]
+        - generic [ref=e1773]:
+          - generic [ref=e1774]:
+            - generic [ref=e1776]:
+              - generic [ref=e1777]: Critblade
+              - text: 
+              - generic [ref=e1778]: May 15, 2026 10:27 AM
+            - generic [ref=e1779]:
+              - button "" [ref=e1780] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1781] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1783]:
+        - img [ref=e1786] [cursor=pointer]
+        - generic [ref=e1787]:
+          - generic [ref=e1788]:
+            - generic [ref=e1790]:
+              - generic [ref=e1791]: Your Wives
+              - text: 
+              - generic "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1792]: May 15, 2026 10:28 AM
+              - img "custom - gemini-3.1-pro-high-真流-[星星公益站-CLI渠道]" [ref=e1793]
+            - generic [ref=e1798]:
+              - button "" [ref=e1799] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1800] [cursor=pointer]
+            - text:       
+          - group [ref=e1801]:
+            - generic "Thought for 2 minutes " [ref=e1802]:
+              - generic [ref=e1804] [cursor=pointer]:
+                - generic "115.795 seconds [parsed]" [ref=e1805]: Thought for 2 minutes
+                - generic [ref=e1806]: 
+              - text:      
+      - generic [ref=e1808]:
+        - img [ref=e1811] [cursor=pointer]
+        - generic [ref=e1812]:
+          - generic [ref=e1813]:
+            - generic [ref=e1815]:
+              - generic [ref=e1816]: Rabbit
+              - text: 
+              - generic [ref=e1817]: May 17, 2026 12:42 PM
+            - generic [ref=e1818]:
+              - button "" [ref=e1819] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1820] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1822]:
+        - img [ref=e1825] [cursor=pointer]
+        - generic [ref=e1826]:
+          - generic [ref=e1827]:
+            - generic [ref=e1829]:
+              - generic [ref=e1830]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1831]: May 17, 2026 12:43 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1832]
+            - generic [ref=e1837]:
+              - button "" [ref=e1838] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1839] [cursor=pointer]
+            - text:       
+          - group [ref=e1840]:
+            - generic "Thought for a minute " [ref=e1841]:
+              - generic [ref=e1843] [cursor=pointer]:
+                - generic "72.697 seconds [parsed]" [ref=e1844]: Thought for a minute
+                - generic [ref=e1845]: 
+              - text:      
+      - generic [ref=e1847]:
+        - img [ref=e1850] [cursor=pointer]
+        - generic [ref=e1851]:
+          - generic [ref=e1852]:
+            - generic [ref=e1854]:
+              - generic [ref=e1855]: Rabbit
+              - text: 
+              - generic [ref=e1856]: May 17, 2026 12:51 PM
+            - generic [ref=e1857]:
+              - button "" [ref=e1858] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1859] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1861]:
+        - img [ref=e1864] [cursor=pointer]
+        - generic [ref=e1865]:
+          - generic [ref=e1866]:
+            - generic [ref=e1868]:
+              - generic [ref=e1869]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1870]: May 17, 2026 12:52 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1871]
+            - generic [ref=e1876]:
+              - button "" [ref=e1877] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1878] [cursor=pointer]
+            - text:       
+          - group [ref=e1879]:
+            - generic "Thought for 45 seconds " [ref=e1880]:
+              - generic [ref=e1882] [cursor=pointer]:
+                - generic "44.884 seconds [parsed]" [ref=e1883]: Thought for 45 seconds
+                - generic [ref=e1884]: 
+              - text:      
+      - generic [ref=e1886]:
+        - img [ref=e1889] [cursor=pointer]
+        - generic [ref=e1890]:
+          - generic [ref=e1891]:
+            - generic [ref=e1893]:
+              - generic [ref=e1894]: Rabbit
+              - text: 
+              - generic [ref=e1895]: May 17, 2026 12:56 PM
+            - generic [ref=e1896]:
+              - button "" [ref=e1897] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1898] [cursor=pointer]
+            - text:       
+          - text:       
+      - generic [ref=e1900]:
+        - img [ref=e1903] [cursor=pointer]
+        - generic [ref=e1904]:
+          - generic [ref=e1905]:
+            - generic [ref=e1907]:
+              - generic [ref=e1908]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1909]: May 17, 2026 12:56 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1910]
+            - generic [ref=e1915]:
+              - button "" [ref=e1916] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1917] [cursor=pointer]
+            - text:       
+          - group [ref=e1918]:
+            - generic "Thought for 34 seconds " [ref=e1919]:
+              - generic [ref=e1921] [cursor=pointer]:
+                - generic "33.894 seconds [parsed]" [ref=e1922]: Thought for 34 seconds
+                - generic [ref=e1923]: 
+              - text:      
+      - generic [ref=e1925]:
+        - img [ref=e1928] [cursor=pointer]
+        - generic [ref=e1929]:
+          - generic [ref=e1930]:
+            - generic [ref=e1932]:
+              - generic [ref=e1933]: Rabbit
+              - text: 
+              - generic [ref=e1934]: May 17, 2026 1:25 PM
+            - generic [ref=e1935]:
+              - button "" [ref=e1936] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1937] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e1939]: 我低聲地説 "喂..外面很多人. 揉碎你就不行…不過…你幫我用口直至我射出來, 倒可以"
+      - generic [ref=e1940]:
+        - img [ref=e1943] [cursor=pointer]
+        - generic [ref=e1944]:
+          - generic [ref=e1945]:
+            - generic [ref=e1947]:
+              - generic [ref=e1948]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1949]: May 17, 2026 1:26 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e1950]
+            - generic [ref=e1955]:
+              - button "" [ref=e1956] [cursor=pointer]
+              - text:              
+              - button "" [ref=e1957] [cursor=pointer]
+            - text:       
+          - group [ref=e1958]:
+            - generic "Thought for 31 seconds " [ref=e1959]:
+              - generic [ref=e1961] [cursor=pointer]:
+                - generic "31.487 seconds [parsed]" [ref=e1962]: Thought for 31 seconds
+                - generic [ref=e1963]: 
+              - text:      
+          - generic [ref=e1964]:
+            - paragraph [ref=e1965]: 【Sea of Pradesh, 幻想, 1572年5月1日 18:30】
+            - paragraph [ref=e1966]: 船長室的木地板隨著海浪的起伏發出細微的呻吟。懸掛在船艙頂部的油燈來回搖擺，投射出的暗黃色光影在 Charlotte 那張充滿慾望和驚愕的臉上瘋狂跳動。她現在跪在我的雙腿之間，那件昂貴的黑色絲綢長裙此時完全堆疊在她的膝蓋處，凌亂的裙擺像是黑色的浪潮，襯托出她大腿皮膚那種刺眼的白。
+            - paragraph [ref=e1967]: 我的手掌按在她豐滿的肩膀上，指尖陷進那層薄薄的絲綢布料裡。我低頭看著這位平日裡高不可攀的 Cassia 伯爵夫人，看著她用那雙滿是霧氣的淡褐色眼睛仰視著我。她的一頭黑髮披散下來，幾縷髮絲因為汗水而黏在她那張精緻的臉頰上，遮住了她平日裡那種冷冽的氣場。
+            - paragraph [ref=e1968]: 我感覺到了胯間傳來的陣陣涼意和緊繃感，因為她剛剛顫抖著解開了我的褲扣。那根早已充血跳動的巨大肉棒，像是野獸般從束縛中彈跳了出來，正不偏不倚地拍擊在她那紅透了的臉頰上，發出一聲沈悶的肉體撞擊聲。
+            - heading "啪嗒……" [level=3] [ref=e1969]:
+              - emphasis [ref=e1970]: 啪嗒……
+            - paragraph [ref=e1971]: 「喂..外面很多人。揉碎你就不行……」
+            - paragraph [ref=e1972]: 我故意壓低了聲音，湊到她的耳邊輕輕吐氣。我的目光穿過船長室厚重的房門，彷彿能透過那道障礙看到外面甲板上正在忙碌的三大海軍上將和數百名喧鬧的水手。那種近在咫尺卻又絕對私密的禁忌感，讓我在這一瞬間感覺體內的血液流速加快了幾倍。
+            - paragraph [ref=e1973]: 我能感覺到 Charlotte 的身體在聽到「揉碎」這個詞時猛地瑟縮了一下。她那對淡褐色的瞳孔劇烈收縮，原本按在我大腿上的手指猛然攥緊，指甲劃過布料的聲音在沈悶的船艙內異常清晰。
+            - paragraph [ref=e1974]: 「不過……妳幫我用口直至我射出來，倒可以。」
+            - paragraph [ref=e1975]: 我的語氣懶散中帶著一絲不容拒絕的命令感。我用手掌按住她的後腦勺，用力地向下按壓，強迫她的鼻子幾乎貼上我那根正散發著濃烈雄性麝香味道的肉棒頂端。那根肉棒上的青筋因為亢奮而瘋狂跳動，紫紅色的龜頭上，那枚狹窄的孔洞已經滲出了一絲晶瑩剔透的馬眼水。
+            - paragraph [ref=e1976]: Charlotte 聽著我的要求，喉嚨深處發出了一聲飽含情慾的嗚咽。她沒有露出任何被冒犯的表情，反而像是得到了某種神聖敕令一般，整個人徹底癱軟在了我的跨間。她仰起臉，雙手有些迫切地握住了我那根粗大的屌，那種濕潤的、發燙的掌心溫度讓我忍不住發出一聲沈重的喘息。
+            - heading "“唔……主人……哈啊……遵命。”" [level=4] [ref=e1977]:
+              - emphasis [ref=e1978]: “唔……主人……哈啊……遵命。”
+            - paragraph [ref=e1979]: 她呢喃著這個稱呼。這不再是那種公事公辦的應付，而是從靈魂深處發出的，對於強者的徹底認同與跪拜。她那一臉如痴如醉的阿嘿顏，在昏暗的油燈下顯得無比墮落。她緩緩張開那雙平日裡只會吐露高傲詞彙的紅唇，露出裡面粉紅色的嫩舌和整齊的皓齒。
+            - paragraph [ref=e1980]: 那一小截舌尖像是一條游動的蛇，先是在我飽滿的龜頭頂端輕輕舔舐了一下，帶走了那一滴晶瑩的液體。隨後，她像是下定了某種決心，雙手用力向下擼動著我的肉棒，同時猛地張大嘴巴，將我的大肉棒頂端直接塞進了她溫熱、狹小且充滿唾液的口腔中。
+            - heading "滋溜……咕啾……" [level=3] [ref=e1981]:
+              - emphasis [ref=e1982]: 滋溜……咕啾……
+            - paragraph [ref=e1983]: 那一瞬間，極致的溫熱與濕潤感將我那根敏感的屌頭徹底包裹。我感覺到她那緊緻的雙唇死死扣住我的龜頭邊緣，帶起一股強力的吸吮感。她那靈活的舌頭甚至在努力地打著圈，試圖去撩撥我冠狀溝底部的每一根神經。
+            - paragraph [ref=e1984]: 「唔……就是那裡……Charlotte，用力吸……」
+            - paragraph [ref=e1985]: 我坐在床沿，向後仰著身體，一隻手死死抓住柔軟的床墊，另一隻手則插進她的長髮中，粗暴地掌控著她上下起伏的節奏。
+            - heading "噗嘰……啪啪……咕啾……" [level=3] [ref=e1986]:
+              - emphasis [ref=e1987]: 噗嘰……啪啪……咕啾……
+            - paragraph [ref=e1988]: 由於我的肉棒實在太過粗壯，Charlotte 的嘴巴被撐到了極限。她每向下一扣，那對原本紅潤的臉頰就會向內凹陷，發出一種沈悶的、充滿液體擠壓感的吸吮聲。她的眼角被撐出了一絲生理性的淚水，順著眼角滑落，滴落在我的腹肌上，帶著點燙人的溫度。
+            - paragraph [ref=e1989]: 她不時地抬頭看我一眼，眼神中充滿了那種卑微的乞求與瘋狂的愛慕。她甚至開始加快了速度，拼命地想要把整根肉棒都吞進喉嚨深處。那根紫紅色的屌頭一次又一次地撞擊在她柔軟的咽喉壁上，發出讓她渾身顫抖的咕聲。
+            - heading "“嗯嗚……嗚……唔嗯……”" [level=4] [ref=e1990]:
+              - emphasis [ref=e1991]: “嗯嗚……嗚……唔嗯……”
+            - paragraph [ref=e1992]: 她發出模糊不清的淫語，大量透明的津液順著她的嘴角溢了出來，滴落在那件墨黑色的絲綢裙擺上，留下一片又一片顯眼的、帶著淫糜氣息的水漬。外面海浪拍擊船身的節奏，彷彿正與她嘴部吞吐的節奏重合在一起，構成了一曲專屬於新帝國誕生前的污穢序曲。
+            - paragraph [ref=e1993]: 我的呼吸變得愈發沈重，胯間那股滾燙的熱流在她的吸吮下已經積累到了臨界點。我能感覺到精囊在瘋狂抽搐，那種即將噴發的生理快感混合著支配一位女領主的心理爽感，讓我全身的肌肉都因為緊張而隆起。
+            - paragraph [ref=e1994]: 「快了……就是這樣……吸出來……全部吸出來……」
+            - paragraph [ref=e1995]: 我咬緊牙關，感受著她那濕滑的口腔內壁帶來的極致刺激。她聽到了我的催促，動作變得更加瘋狂。她那對原本優雅修長的雙手，此時因為過度用力而指尖發紅，她甚至開始用那對飽滿的、被擠壓出深深乳溝的大乳房，配合著雙手的動作，夾住我肉棒的下端不停地磨蹭著。
+            - heading "噗嘰……噗嘰……咕唧……" [level=3] [ref=e1996]:
+              - emphasis [ref=e1997]: 噗嘰……噗嘰……咕唧……
+            - paragraph [ref=e1998]: 濃郁的水漬聲在船長室內瘋狂迴響。Charlotte 此時已經完全忘記了外界的一切。她眼前的視野已經被這根充滿力量感的肉棒佔據。她能聞到那股讓她大腦發暈的雄性氣味，能感受到這根東西在她的口腔裡每一秒都在變得更加燙、更加硬。
+            - paragraph [ref=e1999]: 她感覺到自己的兩腿之間已經變成了一片汪洋。那股被壓抑了太久的、對於這根肉棒的渴望，此時正透過這種口交的方式，一點一點地蠶食著她的理智。她想聽這個男人更多的命令，想被這個男人用這種方式徹底踩碎。
+            - paragraph [ref=e2000]: 她猛地張大喉嚨，這一次直接將整根屌身都吞到了最底部。那種極致的包裹感讓我的腰部猛地挺直，一股濃烈的精液產生的預兆在大腦中炸裂。
+            - heading "“唔嗯嗯嗯……唔！！”" [level=4] [ref=e2001]:
+              - emphasis [ref=e2002]: “唔嗯嗯嗯……唔！！”
+            - paragraph [ref=e2003]: Charlotte 發出一聲沈悶的驚呼，感受到我那根肉棒在她的喉嚨深處劇烈跳動了一下。
+            - paragraph [ref=e2004]:
+              - progressbar [ref=e2005]: PG.6 时间推进:1572-05-01 18:25 → 1572-05-01 18:40 地点:HMS Amber Private Captain's Quarters 主线任务进度:聯合艦隊航行中，Rabbit正在確認與Charlotte的權力與肉體鎖定。 事件:船長室口交服侍（耗時15分鐘）。 概括:Rabbit在船長室以命令語氣要求Charlotte進行口交。Charlotte在極度興奮與臣服欲的驅使下徹底墮落，展現出極強的服從性。兩人進行了露骨的肉體互動，夏洛特在過程中表現出明顯的M屬性與阿嘿顏。
+            - paragraph
+            - group [ref=e2006]:
+              - generic "✨ Update Variables" [ref=e2007] [cursor=pointer]
+            - paragraph
+            - paragraph
+            - group [ref=e2008]:
+              - generic "✨ Combat Log" [ref=e2009] [cursor=pointer]
+            - paragraph
+            - paragraph [ref=e2010]: Sea_of_Pradesh.HMS_Amber.Captains_Quarters
+            - generic [ref=e2011]:
+              - text: 
+              - iframe [ref=e2012]:
+                - generic [ref=f28e3]:
+                  - generic [ref=f28e4]:
+                    - generic [ref=f28e5] [cursor=pointer]: Overview
+                    - generic [ref=f28e6] [cursor=pointer]: Partners
+                    - generic [ref=f28e7] [cursor=pointer]: Items
+                    - generic [ref=f28e8] [cursor=pointer]: World
+                  - generic [ref=f28e10]:
+                    - generic [ref=f28e12]:
+                      - generic [ref=f28e13]: Avatar
+                      - generic [ref=f28e18]:
+                        - img "Avatar" [ref=f28e19] [cursor=pointer]
+                        - generic [ref=f28e20] [cursor=pointer]: ✎
+                    - generic [ref=f28e22]:
+                      - generic [ref=f28e23]: Core Status
+                      - generic [ref=f28e24]:
+                        - generic [ref=f28e26]:
+                          - generic [ref=f28e27]: Name
+                          - generic [ref=f28e29]: Rabbit
+                        - generic [ref=f28e31]:
+                          - generic [ref=f28e32]: Age
+                          - generic [ref=f28e34]: "25"
+                        - generic [ref=f28e36]:
+                          - generic [ref=f28e37]: Gender
+                          - generic [ref=f28e39]: Male
+                        - generic [ref=f28e41]:
+                          - generic [ref=f28e42]: Race
+                          - generic [ref=f28e44]: Human
+                        - generic [ref=f28e46]:
+                          - generic [ref=f28e47]: Job
+                          - generic [ref=f28e49]: Lord / Political Bureau Captain
+                        - generic [ref=f28e51]:
+                          - generic [ref=f28e52]: Mental
+                          - generic [ref=f28e54]: Calm
+                        - generic [ref=f28e57]:
+                          - generic [ref=f28e58]: Energy
+                          - generic [ref=f28e59]: 40 / 100
+                        - generic [ref=f28e64]:
+                          - generic [ref=f28e65]: Stress
+                          - generic [ref=f28e66]: 5 / 100
+                        - generic [ref=f28e70]:
+                          - generic [ref=f28e71]: Charisma
+                          - generic [ref=f28e73]: "70"
+                        - generic [ref=f28e75]:
+                          - generic [ref=f28e76]: SocialEnergy
+                          - generic [ref=f28e78]: "70"
+                        - generic [ref=f28e80]:
+                          - generic [ref=f28e81]: Money (JPM)
+                          - generic [ref=f28e83]: "960000"
+                        - generic [ref=f28e85]:
+                          - generic [ref=f28e86]: Salary (Monthly)
+                          - generic [ref=f28e88]: "860000"
+                    - generic [ref=f28e90]:
+                      - generic [ref=f28e91]: World Info
+                      - generic [ref=f28e92]:
+                        - generic [ref=f28e94]:
+                          - generic [ref=f28e95]: Date
+                          - generic [ref=f28e97]: May 1, 1572
+                        - generic [ref=f28e99]:
+                          - generic [ref=f28e100]: Time
+                          - generic [ref=f28e102]: 18:40
+                        - generic [ref=f28e104]:
+                          - generic [ref=f28e105]: Weather
+                          - generic [ref=f28e107]: Clear
+                        - generic [ref=f28e109]:
+                          - generic [ref=f28e110]: Location
+                          - generic [ref=f28e112]: Sea_of_Pradesh.HMS_Amber.Deck
+                    - generic [ref=f28e114]:
+                      - generic [ref=f28e115]: Current Quests
+                      - generic [ref=f28e119]:
+                        - generic [ref=f28e121] [cursor=pointer]: ▼
+                        - generic [ref=f28e123]:
+                          - generic [ref=f28e124] [cursor=pointer]:
+                            - generic [ref=f28e125]:
+                              - generic [ref=f28e126]: Build_New_Governors_Mansion
+                              - generic [ref=f28e127]:
+                                - generic [ref=f28e128]: Moderate
+                                - button "×" [ref=f28e129]
+                            - generic [ref=f28e130]: Charlotte受命建造新的琥珀群島總督府。規格：10間房，2層樓，需包含廚房、餐廳、會客廳等public space，總面積約500平方米。預算不限，地點由Charlotte選擇(需離Eleanor主宅不遠)，工期越快越好。 1572-05-12 號前完成
+                            - generic [ref=f28e131]: 🏆 Proper accommodation for expanding household + operational headquarters for Claymore Empire
+                            - generic [ref=f28e132]: "Status: Active"
+                            - generic [ref=f28e133]: "Last Updated: 1572-05-01 09:00"
+                          - generic [ref=f28e134] [cursor=pointer]:
+                            - generic [ref=f28e135]:
+                              - generic [ref=f28e136]: Voyage_to_Duran
+                              - generic [ref=f28e137]:
+                                - generic [ref=f28e138]: Hard
+                                - button "×" [ref=f28e139]
+                            - generic [ref=f28e140]: 隨著Jakob Sullivan的加入，Claymore帝國的海軍三巨頭（Aarav、Francisca、Jakob）已正式集結完成。為了應對Loren即將到來的報復，下一階段的戰略核心是直接前往Duran與第一王子Charles進行軍事同盟談判。
+                            - generic [ref=f28e141]: 🏆 正式確立Duran-Claymore同盟，免除Loren的軍事威脅
+                            - generic [ref=f28e142]: "Status: Active"
+                            - generic [ref=f28e143]: "Last Updated: 1572-05-01 17:35"
+                    - generic [ref=f28e145]:
+                      - generic [ref=f28e146]: Skills
+                      - generic [ref=f28e150]:
+                        - generic [ref=f28e152] [cursor=pointer]: ▼
+                        - generic [ref=f28e155]: None
+      - generic [ref=e2013]:
+        - img [ref=e2016] [cursor=pointer]
+        - generic [ref=e2017]:
+          - generic [ref=e2018]:
+            - generic [ref=e2020]:
+              - generic [ref=e2021]: Rabbit
+              - text: 
+              - generic [ref=e2022]: May 17, 2026 1:29 PM
+            - generic [ref=e2023]:
+              - button "" [ref=e2024] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2025] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e2027]: 我對charlotte 説 "伸出你的舌頭讓我看看…然後在吞掉它"
+      - generic [ref=e2028]:
+        - img [ref=e2031] [cursor=pointer]
+        - generic [ref=e2032]:
+          - generic [ref=e2033]:
+            - generic [ref=e2035]:
+              - generic [ref=e2036]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2037]: May 17, 2026 1:36 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2038]
+            - generic [ref=e2043]:
+              - button "" [ref=e2044] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2045] [cursor=pointer]
+            - text:       
+          - group [ref=e2046]:
+            - generic "Thought for 27 seconds " [ref=e2047]:
+              - generic [ref=e2049] [cursor=pointer]:
+                - generic "27 seconds [parsed]" [ref=e2050]: Thought for 27 seconds
+                - generic [ref=e2051]: 
+              - text:      
+          - generic [ref=e2052]:
+            - paragraph [ref=e2053]: 【Sea of Pradesh，幻想，1572年5月1日 18:40】
+            - paragraph [ref=e2054]: 海浪拍擊船身的聲音在厚實的艙壁外顯得有些沉悶，像是一聲接一聲的低吼。在這狹窄卻奢華的船長室內，昏黃的防風油燈懸在天花板上，隨著船身的起伏而左右晃動。光影忽明忽暗，將跪在床邊的 Charlotte 勾勒出一道淒美而墮落的輪廓。她那件墨黑色的絲綢長裙此時已經凌亂地鋪散在地毯上，大片大片雪白細嫩的皮膚在昏暗中閃爍著誘人的色澤。
+            - paragraph [ref=e2055]: 我坐在床沿，居高臨下地俯視著這位 Cassia 郡的最高女領主。我看著她那雙平時充滿傲慢與理智的淡褐色眼睛，此刻正蒙著一層厚厚的水霧，眼角因為極度的興奮而呈現出一種近乎病態的潮紅。她的理智已經被剛才甲板上那幕充滿男性權威的景象徹底粉碎，剩下的是最原始、最卑微的雌性服從。
+            - paragraph [ref=e2056]: 「伸出妳的舌頭讓我看看……」
+            - paragraph [ref=e2057]: 我低聲下達了命令，聲音在安靜的室內顯得格外清晰，帶著一種不容置疑的帝王威壓。我感受到身體裡流淌著一股灼熱的燥氣，那根已經青筋暴起的大肉棒正劇烈地抽動著，紫紅色的龜頭頂部溢出了幾滴亮晶晶的馬眼水，正一點一點地滴落在她那張滿佈紅暈的臉蛋上。
+            - paragraph [ref=e2058]: Charlotte 的身體猛地戰慄了一下，喉嚨裡發出一聲短促而甜膩的嗚咽。她幾乎沒有任何猶豫，那是從骨子裡滲出來的奴性。她微微張開了那雙平日裡只會宣讀法令的粉色紅唇，一條柔軟、濕潤且不斷顫抖著的粉嫩小舌緩緩伸了出來，暴露在微涼的空氣中。
+            - paragraph [ref=e2059]: 舌尖上還掛著銀色的唾液，在燈光下閃爍著淫糜的光。
+            - heading "“唔……唔嗯……主人……”" [level=4] [ref=e2060]:
+              - emphasis [ref=e2061]: “唔……唔嗯……主人……”
+            - paragraph [ref=e2062]: 她含糊不清地呢喃著，眼神中充滿了被玩弄的快感。那張精緻的臉孔此時完全呈現出一副阿嘿顏的墮落姿態，雙眼失去焦點地向上翻動，露出大片的眼白。這就是我帶領三位海軍上將歸來的獎勵——讓這朵自命清高的黑玫瑰，在我跨間徹底枯萎並任我踐踏。
+            - paragraph [ref=e2063]: 「然後，再吞掉它。」
+            - paragraph [ref=e2064]: 我用手掌死死扣住她的後腦勺，五指插入那頭烏黑柔順的長髮中，用力向前一按。那根粗大如手臂的大肉棒猛地撞向她那張嬌嫩的小臉。
+            - heading "啪唧……" [level=3] [ref=e2065]:
+              - emphasis [ref=e2066]: 啪唧……
+            - paragraph [ref=e2067]: 肉棒橫向拍擊在她那伸出的舌尖上，帶起一陣清晰的黏膩水聲。Charlotte 的腦袋被撞得向後一仰，但她立刻更加卑微地主動湊了上來。她張大那雙被撐開到極限的嘴角，喉嚨深處發出渴望被塞滿的咕嚕聲，在那溫熱的口腔內壁包裹上來的一瞬間，我感覺到全身的血液都衝向了跨間。
+            - heading "滋溜……咕啾……" [level=3] [ref=e2068]:
+              - emphasis [ref=e2069]: 滋溜……咕啾……
+            - paragraph [ref=e2070]: 她費力地將那碩大圓潤的龜頭含進嘴裡，濕滑的舌尖瘋狂地圍繞著那圈性感的冠狀溝打圈。隨著我的腰部開始有節奏地前後律動，那根大肉棒在她的口腔與喉頭之間瘋狂地穿梭著。每向下一寸，都能感受到她那狹窄喉管的緊致擠壓。
+            - heading "噗嘰……啪啪……噗嘰……" [level=3] [ref=e2071]:
+              - emphasis [ref=e2072]: 噗嘰……啪啪……噗嘰……
+            - paragraph [ref=e2073]: 「吸緊一點，Charlotte……妳不是想要獎勵嗎？這就是妳應得的。」
+            - paragraph [ref=e2074]: 我咬緊牙關，感受著那種幾乎要讓我直接射出來的極致吸吮力。門外隱約傳來水手們豪邁的酒歌聲，與室內這種淫穢到讓人作嘔的水漬聲交疊在一起，形成了一種病態的愉悅感。大肉棒一次又一次地撞擊在她柔軟的咽喉深處，帶起一陣陣劇烈的乾嘔感，但這反而讓她更加興奮，身體因為過度的快感而劇烈抽搐著。
+            - paragraph [ref=e2075]: 大量的津液順著她的嘴角滿溢而出，浸濕了她的下巴，又順著她優美的頸部曲線滴落在她隆起的乳溝裡。她那雙修長且佈滿紅暈的手正瘋狂地擼動著我的肉棒根部，指甲在我的大腿內側留下幾道淺淺的抓痕。
+            - heading "“哈啊……唔……主人……好大……要被塞壞了……唔呃！！”" [level=4] [ref=e2076]:
+              - emphasis [ref=e2077]: “哈啊……唔……主人……好大……要被塞壞了……唔呃！！”
+            - paragraph [ref=e2078]: 那一瞬間，我猛地加快了速度，幾乎是帶著發洩般的情緒在蹂躪她那尊貴的口腔。大肉棒發了瘋似地在她喉嚨深處進進出出，每一次抽離都帶出大量的拉絲。Charlotte 此時已經完全失去了領主的身分，她只是在瘋狂地吞吐著這根統治她的巨物，汗水混合著淚水在她的臉上肆意流淌。
+            - paragraph [ref=e2079]: 這場慶功宴的序幕，才剛剛拉開。
+            - paragraph [ref=e2080]: Charlotte 再次發出一聲短促的悶哼，雙手像是溺水的人抓住浮木般死死抱住我的腰，將臉蛋徹底埋進了我的跨間，喉部發出沈重的、吞嚥重物的咕嚕聲。
+            - paragraph
+            - paragraph
+            - group [ref=e2081]:
+              - generic "✨ Combat Log" [ref=e2082] [cursor=pointer]
+            - paragraph
+            - paragraph [ref=e2083]: Sea_of_Pradesh.HMS_Amber.Captains_Quarters
+            - paragraph
+            - group [ref=e2084]:
+              - generic "✨ Update Variables" [ref=e2085] [cursor=pointer]
+            - paragraph
+            - generic [ref=e2086]:
+              - text: 
+              - iframe [ref=e2087]:
+                - generic [ref=f27e3]:
+                  - generic [ref=f27e4]:
+                    - generic [ref=f27e5] [cursor=pointer]: Overview
+                    - generic [ref=f27e6] [cursor=pointer]: Partners
+                    - generic [ref=f27e7] [cursor=pointer]: Items
+                    - generic [ref=f27e8] [cursor=pointer]: World
+                  - generic [ref=f27e10]:
+                    - generic [ref=f27e12]:
+                      - generic [ref=f27e13]: Avatar
+                      - generic [ref=f27e18]:
+                        - img "Avatar" [ref=f27e19] [cursor=pointer]
+                        - generic [ref=f27e20] [cursor=pointer]: ✎
+                    - generic [ref=f27e22]:
+                      - generic [ref=f27e23]: Core Status
+                      - generic [ref=f27e24]:
+                        - generic [ref=f27e26]:
+                          - generic [ref=f27e27]: Name
+                          - generic [ref=f27e29]: Rabbit
+                        - generic [ref=f27e31]:
+                          - generic [ref=f27e32]: Age
+                          - generic [ref=f27e34]: "25"
+                        - generic [ref=f27e36]:
+                          - generic [ref=f27e37]: Gender
+                          - generic [ref=f27e39]: Male
+                        - generic [ref=f27e41]:
+                          - generic [ref=f27e42]: Race
+                          - generic [ref=f27e44]: Human
+                        - generic [ref=f27e46]:
+                          - generic [ref=f27e47]: Job
+                          - generic [ref=f27e49]: Lord / Political Bureau Captain
+                        - generic [ref=f27e51]:
+                          - generic [ref=f27e52]: Mental
+                          - generic [ref=f27e54]: Calm
+                        - generic [ref=f27e57]:
+                          - generic [ref=f27e58]: Energy
+                          - generic [ref=f27e59]: 30 / 100
+                        - generic [ref=f27e64]:
+                          - generic [ref=f27e65]: Stress
+                          - generic [ref=f27e66]: 5 / 100
+                        - generic [ref=f27e70]:
+                          - generic [ref=f27e71]: Charisma
+                          - generic [ref=f27e73]: "70"
+                        - generic [ref=f27e75]:
+                          - generic [ref=f27e76]: SocialEnergy
+                          - generic [ref=f27e78]: "70"
+                        - generic [ref=f27e80]:
+                          - generic [ref=f27e81]: Money (JPM)
+                          - generic [ref=f27e83]: "960000"
+                        - generic [ref=f27e85]:
+                          - generic [ref=f27e86]: Salary (Monthly)
+                          - generic [ref=f27e88]: "860000"
+                    - generic [ref=f27e90]:
+                      - generic [ref=f27e91]: World Info
+                      - generic [ref=f27e92]:
+                        - generic [ref=f27e94]:
+                          - generic [ref=f27e95]: Date
+                          - generic [ref=f27e97]: May 1, 1572
+                        - generic [ref=f27e99]:
+                          - generic [ref=f27e100]: Time
+                          - generic [ref=f27e102]: 18:45
+                        - generic [ref=f27e104]:
+                          - generic [ref=f27e105]: Weather
+                          - generic [ref=f27e107]: Clear
+                        - generic [ref=f27e109]:
+                          - generic [ref=f27e110]: Location
+                          - generic [ref=f27e112]: Sea_of_Pradesh.HMS_Amber.Deck
+                    - generic [ref=f27e114]:
+                      - generic [ref=f27e115]: Current Quests
+                      - generic [ref=f27e119]:
+                        - generic [ref=f27e121] [cursor=pointer]: ▼
+                        - generic [ref=f27e123]:
+                          - generic [ref=f27e124] [cursor=pointer]:
+                            - generic [ref=f27e125]:
+                              - generic [ref=f27e126]: Build_New_Governors_Mansion
+                              - generic [ref=f27e127]:
+                                - generic [ref=f27e128]: Moderate
+                                - button "×" [ref=f27e129]
+                            - generic [ref=f27e130]: Charlotte受命建造新的琥珀群島總督府。規格：10間房，2層樓，需包含廚房、餐廳、會客廳等public space，總面積約500平方米。預算不限，地點由Charlotte選擇(需離Eleanor主宅不遠)，工期越快越好。 1572-05-12 號前完成
+                            - generic [ref=f27e131]: 🏆 Proper accommodation for expanding household + operational headquarters for Claymore Empire
+                            - generic [ref=f27e132]: "Status: Active"
+                            - generic [ref=f27e133]: "Last Updated: 1572-05-01 09:00"
+                          - generic [ref=f27e134] [cursor=pointer]:
+                            - generic [ref=f27e135]:
+                              - generic [ref=f27e136]: Voyage_to_Duran
+                              - generic [ref=f27e137]:
+                                - generic [ref=f27e138]: Hard
+                                - button "×" [ref=f27e139]
+                            - generic [ref=f27e140]: 隨著Jakob Sullivan的加入，Claymore帝國的海軍三巨頭（Aarav、Francisca、Jakob）已正式集結完成。為了應對Loren即將到來的報復，下一階段的戰略核心是直接前往Duran與第一王子Charles進行軍事同盟談判。
+                            - generic [ref=f27e141]: 🏆 正式確立Duran-Claymore同盟，免除Loren的軍事威脅
+                            - generic [ref=f27e142]: "Status: Active"
+                            - generic [ref=f27e143]: "Last Updated: 1572-05-01 17:35"
+                    - generic [ref=f27e145]:
+                      - generic [ref=f27e146]: Skills
+                      - generic [ref=f27e150]:
+                        - generic [ref=f27e152] [cursor=pointer]: ▼
+                        - generic [ref=f27e155]: None
+      - generic [ref=e2088]:
+        - img [ref=e2091] [cursor=pointer]
+        - generic [ref=e2092]:
+          - generic [ref=e2093]:
+            - generic [ref=e2095]:
+              - generic [ref=e2096]: Rabbit
+              - text: 
+              - generic [ref=e2097]: May 17, 2026 1:41 PM
+            - generic [ref=e2098]:
+              - button "" [ref=e2099] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2100] [cursor=pointer]
+            - text:       
+          - text:       
+          - generic [ref=e2101]:
+            - paragraph [ref=e2102]: Francisca 突然在外面敲門説 "殿下, 有事找你, 先出來一下吧"
+            - paragraph [ref=e2103]: 我壓著聲説 "charlotte, 先整理一下, 我要出去"
+            - paragraph [ref=e2104]: 我立刻穿回褲子.
+            - paragraph [ref=e2105]: 我走出去外面問"Francisca , 找我嗎? 甚麼事?"
+      - generic [ref=e2106]:
+        - img [ref=e2109] [cursor=pointer]
+        - generic [ref=e2110]:
+          - generic [ref=e2111]:
+            - generic [ref=e2113]:
+              - generic [ref=e2114]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2115]: May 17, 2026 1:41 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2116]
+            - generic [ref=e2121]:
+              - button "" [ref=e2122] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2123] [cursor=pointer]
+            - text:       
+          - group [ref=e2124]:
+            - generic "Thought for 28 seconds " [ref=e2125]:
+              - generic [ref=e2127] [cursor=pointer]:
+                - generic "28.035 seconds [parsed]" [ref=e2128]: Thought for 28 seconds
+                - generic [ref=e2129]: 
+              - text:      
+          - generic [ref=e2130]:
+            - paragraph [ref=e2131]: 【Sea of Pradesh.HMS_Amber.Captains_Quarters，幻想，1572年5月1日 18:45】
+            - paragraph [ref=e2132]: 船長室沈重的橡木門外，傳來了那種充滿節奏感的、毫不客氣的敲擊聲。
+            - paragraph [ref=e2133]: 「殿下，有事找你，先出來一下吧。」
+            - paragraph [ref=e2134]: Francisca 那充滿辨識度的、帶著海鹽與辛辣酒味的聲線穿透了門板，將室內那股幾乎要燃燒起來的淫靡氛圍瞬間撕裂。她的語氣雖然依舊用著尊敬的頭銜，但那種隨性且帶著一絲探究的調子，讓人懷疑她是不是已經察覺到了這扇門後隱藏著怎樣的荒唐景象。
+            - paragraph [ref=e2135]: 我能感覺到，原本死死抱著我腰部的 Charlotte，嬌軀猛地一縮。她那張原本正處於極致阿嘿顏、翻著眼白沈浸在權力快感中的精緻臉孔，在那一瞬間閃過了一抹難以掩飾的驚愕。
+            - paragraph [ref=e2136]: 「喂..外面很多人。揉碎妳就不行……」
+            - paragraph [ref=e2137]: 我故意將聲音壓得極低，在那溫暖且充滿汗水氣息的陰影中，我的手指用力扣住她的下巴，強迫她那雙還帶著迷離霧氣的淡褐色眸子與我對視。在那如暗潮般湧動的燈影下，我看到了這位平日裡冷傲的領主，眼底深處那一絲因被強行中斷而產生的空虛與焦躁。
+            - paragraph [ref=e2138]: 「不過……妳幫我用口直至我射出來，倒可以。」
+            - paragraph [ref=e2139]: 我原本打算看著她徹底崩潰在我的獎勵中，但 Francisca 的干擾顯然讓這場「加冕禮」不得不提前收場。
+            - paragraph [ref=e2140]: 「Charlotte，先整理一下，我要出去。」
+            - paragraph [ref=e2141]: 我的語氣變得平淡而果決，這是不容爭辯的命令。我沒有等她回應，而是直接強行從她那雙濕潤且顫抖的手中抽離了自己的肉棒。
+            - heading "“啪唧……嘶溜……”" [level=4] [ref=e2142]:
+              - emphasis [ref=e2143]: “啪唧……嘶溜……”
+            - paragraph [ref=e2144]: 那根還帶著大量透明津液與溫熱唾液的巨大肉棒，從她那被撐得有些紅腫發亮的口腔中猛地拔出，帶出了一道長長的、晶瑩剔透的淫靡拉絲。那細長的絲線橫跨在我的胯間與她的唇瓣之間，最終在一陣急促的晃動中斷裂，滴落在她那件凌亂不堪的黑色絲綢裙擺上。
+            - paragraph [ref=e2145]: 我迅速站起身，動作乾脆利落地把那根依舊硬如鐵石、因為沒有得到最終釋放而微微跳動的大屌塞回了褲襠裡。布料摩擦過敏感冠狀溝的瞬間，那種被禁錮的緊繃感讓我不禁皺了皺眉。
+            - heading "“咔……啪嗒！”" [level=4] [ref=e2146]:
+              - emphasis [ref=e2147]: “咔……啪嗒！”
+            - paragraph [ref=e2148]: 我利索地扣上皮質腰帶，隨手整理了一下胸前那排代表著地位的金飾扣。轉過頭時，我看見 Charlotte 還維持著跪坐的姿勢，像是被主人遺棄的寵物一般，眼底滿是那種快要溢出來的渴望和不知所措。她那原本整理得一絲不苟的黑髮，此刻有幾縷狼狽地貼在火紅的臉頰上，嘴唇微微顫動，似乎還想要追逐那股消失的雄性氣味。
+            - paragraph [ref=e2149]: 「唔……哈啊……遵命，主人……」
+            - paragraph [ref=e2150]: 她呢喃著，聲音裡帶著讓人骨頭酥軟的失落。她伸出舌尖，有些貪婪地舔去了嘴角殘留的一絲銀色液體。我知道，這種「差一點就抵達天堂」的懲罰，對她這種渴望被權力碾碎的女人來說，是比任何肉體折磨都要深刻的烙印。
+            - paragraph [ref=e2151]: 我拉開那道沈重的橡木門，船長室內那股令人發暈的麝香與玫瑰混合的味道瞬間被門外吹進來的、冷烈且帶著自由氣息的海風吹散了大半。
+            - paragraph [ref=e2152]: Francisca 正斜靠在對面的走廊牆壁上。她今天將那件鑲金邊的私掠船長大衣穿得很隨意，兩手插在腰間，腰間那把黃銅護手的彎刀隨著船身的航行輕微叩擊著大腿。看到我出來，她那對深綠色的瞳孔像是發現了獵物的貓科動物一般，從上到下肆無忌憚地掃視了我一眼，最後停留在我稍微有些起伏不定的胸口上。
+            - paragraph [ref=e2153]: 「Francisca，找我嗎？甚麼事？」
+            - paragraph [ref=e2154]: 我反手關上房門，將還在裡面慌亂整理裙擺的 Charlotte 隔絕在另一個世界。我的聲音回復了那種身為領袖的冷靜與從容，但那種剛經歷過激烈交鋒的餘韻，還是讓我的語氣中帶著點危險的攻擊性。
+            - paragraph [ref=e2155]: Francisca 挑了挑眉毛，嘴角勾起一抹極具挑釁感的弧度。她湊近了一步，那頭暗紅色的野性捲髮幾乎要掃到我的肩膀，我能聞到她身上那股與室內完全不同的、純粹的烈酒味道。
+            - paragraph [ref=e2156]: 「喔？看來我選了一個不太合適的時間來敲這扇門呢，殿下。」
+            - paragraph [ref=e2157]: 她壓低了聲線，眼神若有似無地掠過我身後緊閉的房門，語氣裡帶著一種看穿一切的玩味。
+            - paragraph [ref=e2158]: 「既然您這麼效率地就把事情『辦完』了，那我們就談點正事吧。」
+            - paragraph [ref=e2159]: 她後退了一步，收起了那副調笑的姿態，手掌熟練地搭在了刀柄上，目光投向了窗外已經沈入黑暗的深海。
+            - paragraph [ref=e2160]: 「Aarav 的眼線在南面海域發現了點有趣的小東西。三艘懸掛著無標識黑旗的護衛艦，正咬在我們艦隊的側翼十海里處。Sullivan 覺得那是巡邏隊，但我知道那個航行角度……」
+            - paragraph [ref=e2161]: 她轉過頭，在昏暗的走廊燈光下，她的眼底閃爍著瘋狂且興奮的冷光。
+            - paragraph [ref=e2162]: 「那是 Loren 派來的惡狗。她顯然不想等兩位星期後再跟你敘舊，殿下。你想在我的甲板上，用這三位上將的第一次聯合行動，來迎接這份見面禮嗎？」
+            - paragraph [ref=e2163]: 走廊深處，Jakob Sullivan 那沈重且有力的軍靴踏地板聲正由遠及近，像是催促著戰爭降臨的鼓點。
+            - paragraph
+            - group [ref=e2164]:
+              - generic "⭐ ( =ω=)♪ Master，点击查看事件记录" [ref=e2165] [cursor=pointer]:
+                - generic [ref=e2166]: ⭐
+                - generic [ref=e2167]: ( =ω=)♪ Master，点击查看事件记录
+            - paragraph
+            - paragraph
+            - group [ref=e2168]:
+              - generic "✨ Update Variables" [ref=e2169] [cursor=pointer]
+            - paragraph
+            - paragraph
+            - group [ref=e2170]:
+              - generic "✨ Combat Log" [ref=e2171] [cursor=pointer]
+            - paragraph
+            - generic [ref=e2172]:
+              - text: 
+              - iframe [ref=e2173]:
+                - generic [ref=f26e3]:
+                  - generic [ref=f26e4]:
+                    - generic [ref=f26e5] [cursor=pointer]: Overview
+                    - generic [ref=f26e6] [cursor=pointer]: Partners
+                    - generic [ref=f26e7] [cursor=pointer]: Items
+                    - generic [ref=f26e8] [cursor=pointer]: World
+                  - generic [ref=f26e10]:
+                    - generic [ref=f26e12]:
+                      - generic [ref=f26e13]: Avatar
+                      - generic [ref=f26e18]:
+                        - img "Avatar" [ref=f26e19] [cursor=pointer]
+                        - generic [ref=f26e20] [cursor=pointer]: ✎
+                    - generic [ref=f26e22]:
+                      - generic [ref=f26e23]: Core Status
+                      - generic [ref=f26e24]:
+                        - generic [ref=f26e26]:
+                          - generic [ref=f26e27]: Name
+                          - generic [ref=f26e29]: Rabbit
+                        - generic [ref=f26e31]:
+                          - generic [ref=f26e32]: Age
+                          - generic [ref=f26e34]: "25"
+                        - generic [ref=f26e36]:
+                          - generic [ref=f26e37]: Gender
+                          - generic [ref=f26e39]: Male
+                        - generic [ref=f26e41]:
+                          - generic [ref=f26e42]: Race
+                          - generic [ref=f26e44]: Human
+                        - generic [ref=f26e46]:
+                          - generic [ref=f26e47]: Job
+                          - generic [ref=f26e49]: Lord / Political Bureau Captain
+                        - generic [ref=f26e51]:
+                          - generic [ref=f26e52]: Mental
+                          - generic [ref=f26e54]: Calm
+                        - generic [ref=f26e57]:
+                          - generic [ref=f26e58]: Energy
+                          - generic [ref=f26e59]: 25 / 100
+                        - generic [ref=f26e64]:
+                          - generic [ref=f26e65]: Stress
+                          - generic [ref=f26e66]: 15 / 100
+                        - generic [ref=f26e70]:
+                          - generic [ref=f26e71]: Charisma
+                          - generic [ref=f26e73]: "70"
+                        - generic [ref=f26e75]:
+                          - generic [ref=f26e76]: SocialEnergy
+                          - generic [ref=f26e78]: "70"
+                        - generic [ref=f26e80]:
+                          - generic [ref=f26e81]: Money (JPM)
+                          - generic [ref=f26e83]: "960000"
+                        - generic [ref=f26e85]:
+                          - generic [ref=f26e86]: Salary (Monthly)
+                          - generic [ref=f26e88]: "860000"
+                    - generic [ref=f26e90]:
+                      - generic [ref=f26e91]: World Info
+                      - generic [ref=f26e92]:
+                        - generic [ref=f26e94]:
+                          - generic [ref=f26e95]: Date
+                          - generic [ref=f26e97]: May 1, 1572
+                        - generic [ref=f26e99]:
+                          - generic [ref=f26e100]: Time
+                          - generic [ref=f26e102]: 18:50
+                        - generic [ref=f26e104]:
+                          - generic [ref=f26e105]: Weather
+                          - generic [ref=f26e107]: Clear
+                        - generic [ref=f26e109]:
+                          - generic [ref=f26e110]: Location
+                          - generic [ref=f26e112]: Sea_of_Pradesh.HMS_Amber.Deck
+                    - generic [ref=f26e114]:
+                      - generic [ref=f26e115]: Current Quests
+                      - generic [ref=f26e119]:
+                        - generic [ref=f26e121] [cursor=pointer]: ▼
+                        - generic [ref=f26e123]:
+                          - generic [ref=f26e124] [cursor=pointer]:
+                            - generic [ref=f26e125]:
+                              - generic [ref=f26e126]: Build_New_Governors_Mansion
+                              - generic [ref=f26e127]:
+                                - generic [ref=f26e128]: Moderate
+                                - button "×" [ref=f26e129]
+                            - generic [ref=f26e130]: Charlotte受命建造新的琥珀群島總督府。規格：10間房，2層樓，需包含廚房、餐廳、會客廳等public space，總面積約500平方米。預算不限，地點由Charlotte選擇(需離Eleanor主宅不遠)，工期越快越好。 1572-05-12 號前完成
+                            - generic [ref=f26e131]: 🏆 Proper accommodation for expanding household + operational headquarters for Claymore Empire
+                            - generic [ref=f26e132]: "Status: Active"
+                            - generic [ref=f26e133]: "Last Updated: 1572-05-01 09:00"
+                          - generic [ref=f26e134] [cursor=pointer]:
+                            - generic [ref=f26e135]:
+                              - generic [ref=f26e136]: Voyage_to_Duran
+                              - generic [ref=f26e137]:
+                                - generic [ref=f26e138]: Hard
+                                - button "×" [ref=f26e139]
+                            - generic [ref=f26e140]: 隨著Jakob Sullivan的加入，Claymore帝國的海軍三巨頭（Aarav、Francisca、Jakob）已正式集結完成。為了應對Loren即將到來的報復，下一階段的戰略核心是直接前往Duran與第一王子Charles進行軍事同盟談判。
+                            - generic [ref=f26e141]: 🏆 正式確立Duran-Claymore同盟，免除Loren的軍事威脅
+                            - generic [ref=f26e142]: "Status: Active"
+                            - generic [ref=f26e143]: "Last Updated: 1572-05-01 17:35"
+                    - generic [ref=f26e145]:
+                      - generic [ref=f26e146]: Skills
+                      - generic [ref=f26e150]:
+                        - generic [ref=f26e152] [cursor=pointer]: ▼
+                        - generic [ref=f26e155]: None
+      - generic [ref=e2174]:
+        - img [ref=e2177] [cursor=pointer]
+        - generic [ref=e2178]:
+          - generic [ref=e2179]:
+            - generic [ref=e2181]:
+              - generic [ref=e2182]: Rabbit
+              - text: 
+              - generic [ref=e2183]: May 17, 2026 1:45 PM
+            - generic [ref=e2184]:
+              - button "" [ref=e2185] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2186] [cursor=pointer]
+            - text:       
+          - text:       
+          - generic [ref=e2187]:
+            - paragraph [ref=e2188]: 這個時候, charlotte 也走出來, 她很不肖的瞄了Francisca 一眼, 因為她中斷了我們的甜蜜時間.
+            - paragraph [ref=e2189]: 我走過去跟Jakob 説 "讓我看看你的邊打邊走, 配合上Aarav 跟 Francisca 的合作, 怎樣驅趕走那隻loren 的船吧, 哈"
+      - generic [ref=e2190]:
+        - img [ref=e2193] [cursor=pointer]
+        - generic [ref=e2194]:
+          - generic [ref=e2195]:
+            - generic [ref=e2197]:
+              - generic [ref=e2198]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2199]: May 17, 2026 1:45 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2200]
+            - generic [ref=e2205]:
+              - button "" [ref=e2206] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2207] [cursor=pointer]
+            - text:       
+          - group [ref=e2208]:
+            - generic "Thought for 26 seconds " [ref=e2209]:
+              - generic [ref=e2211] [cursor=pointer]:
+                - generic "26.486 seconds [parsed]" [ref=e2212]: Thought for 26 seconds
+                - generic [ref=e2213]: 
+              - text:      
+          - generic [ref=e2214]:
+            - group [ref=e2216]:
+              - generic "💕 小此在思考✨ ⌄" [ref=e2217] [cursor=pointer]:
+                - generic [ref=e2218]:
+                  - generic [ref=e2219]: 💕
+                  - generic [ref=e2220]: 小此在思考✨
+                - text: ⌄
+            - paragraph [ref=e2221]: 【Sea of Pradesh.HMS_Amber.走廊，幻想，1572年5月1日 18:55】
+            - paragraph [ref=e2222]: 船艙走廊的燈火在海風穿堂而過時劇烈搖曳，將我和 Francisca 的影子拉扯得支離破碎。我能感覺到背後的房門再次被推開，那一股尚未完全散去的玫瑰香氣伴隨著一陣略顯急促且不平穩的呼吸，從那道窄窄的門縫中洩漏了出來。
+            - paragraph [ref=e2223]: Charlotte 走了出來。
+            - paragraph [ref=e2224]: 她那件剪裁精緻的黑色絲綢長裙已經被重新整理過，但稍微有些凌亂的領口以及那抹壓抑不住的火紅臉頰，都在無聲地控訴著剛才被強行中斷的荒唐。她那雙平時總帶著冷靜算計的淡褐色眸子，此時像是被霧氣浸透的寶石，滿是因慾求不滿而產生的焦慮與躁動。
+            - paragraph [ref=e2225]: 她很不屑地瞄了 Francisca 一眼。
+            - paragraph [ref=e2226]: 那種眼神裡帶著極強的領地保護欲，還有那種被壞了「好事」的深層厭惡。對 Charlotte 來說，眼前的 Francisca 不僅僅是一位海軍上將，更是一個在錯誤時間敲響房門的入侵者。她那原本有些癱軟的步伐在看到 Francisca 那副玩味的表情後，強行撐起了一種冷傲的姿態，甚至故意挺了挺胸口，試圖用女主人的威壓將這股尷尬感強行驅逐。
+            - paragraph [ref=e2227]: 「殿下，戰況不等人。」
+            - paragraph [ref=e2228]: Francisca 像是完全沒看見 Charlotte 的敵對信號，或者說，她對這種貴族夫人的「小情緒」根本毫不在意。她那頭野性的暗紅色短髮在昏暗中閃爍著不羈的光。
+            - paragraph [ref=e2229]: 「Sullivan 已經在通往甲板的梯子口等了兩分鐘了。他的耐性跟他的軍裝一樣破舊。」
+            - paragraph [ref=e2230]: 我沒有回頭去安撫 Charlotte，因為我知道，對現在的她來說，展現身為領袖的殺伐果斷，比任何溫言軟語都能讓她沉溺得更深。我邁開步子，靴底在木質地板上敲出沈穩的節奏，直接走向那道通往風暴與硝煙的出口。
+            - paragraph [ref=e2231]: 走廊盡頭，Jakob Sullivan 正站在那裡。他那頂變形的軍帽下，一雙被煙霧醺黃的眼睛正死死盯著我。
+            - paragraph [ref=e2232]: 「讓我看看你的邊打邊走，配合上 Aarav 跟 Francisca 的合作，怎樣驅趕走那隻 loren 的船吧，哈。」
+            - paragraph [ref=e2233]: 我走過去，手掌重重地拍在了 Jakob 的肩膀上。那疊厚實的軍服布料下是堅硬如鐵的骨骼。我笑得有些張狂，那種剛從情慾戰場退下的熾熱感，被我完美地轉化成了對戰爭的渴望。
+            - paragraph [ref=e2234]: Jakob 的嘴角微微抽搐了一下，似乎是被我這種「在床上和戰場間無縫切換」的瘋狂勁頭給驚到了。他冷哼一聲，隨手將嘴裡那根沒點燃的雪茄嚼得稀爛。
+            - paragraph [ref=e2235]: 「你要的邊打邊走，殿下。但願你的這艘旗艦能跟上我那艘老舊小獵犬的頻率。」
+            - paragraph [ref=e2236]: 他轉身推開通往露天甲板的沈重木門。
+            - heading "哐當！" [level=3] [ref=e2237]:
+              - emphasis [ref=e2238]: 哐當！
+            - paragraph [ref=e2239]: 門開的瞬間，漆黑的海平面迎面撲來一股夾帶著冷雨味道的強風。遠處，那三艘掛著黑旗的護衛艦像是在夜色中游動的鯊魚，微弱的燈火在波濤中若隱若現。
+            - paragraph [ref=e2240]: 甲板上，Aarav Moksha 像是一尊漆黑的戰神，手裡提著那把巨大的彎刀，他那深色的皮膚在月光下泛著一種像金屬般的寒光。他身後那群普拉德希的海盜們正無聲地調整著帆索，那種訓練有素的沈默，比狂叫的水手更讓人膽寒。
+            - paragraph [ref=e2241]: Francisca 緊跟在我身後，她拔出了腰間的彎刀，刀鋒劃過空氣的聲音清脆且冰冷。
+            - paragraph [ref=e2242]: 「Sullivan，你去負責側翼騷擾，用你那該死的風箏戰術把那三條狗引進交叉火力區。」
+            - paragraph [ref=e2243]: 她這是在下令，語氣裡沒有絲毫的身分客氣。她看向遠方敵艦的眼神裡燒動著最純粹的野心。
+            - paragraph [ref=e2244]: 「Aarav，我要你的人在第一輪齊射後直接接舷。Loren 既然想探底，那我們就讓她的這幾艘船一塊木板都回不去！」
+            - paragraph [ref=e2245]: 我站在高高的艦橋上，雙手按在微涼的銅質扶欄上。身後的 Charlotte 終究還是跟了上來，她像是一道黑色的影子，沈默地站在我身側，手指有些神經質地絞著裙擺的邊緣。
+            - paragraph [ref=e2246]: 遠處的海面上，第一道亮光刺破了黑暗。
+            - heading "砰——！！" [level=3] [ref=e2247]:
+              - emphasis [ref=e2248]: 砰——！！
+            - paragraph [ref=e2249]: 那是敵方的試探性開火。一發實心彈擊中了 HMS Amber 號前方幾百米的海面，激起了一道幾十米高的巨大白色水柱。
+            - paragraph [ref=e2250]: 「呵呵……」
+            - paragraph [ref=e2251]: Jakob 站在他的指揮位上，發出了一聲飽含惡意的低笑。
+            - paragraph [ref=e2252]: 「夥計們，讓這些不知死活的內地雜碎看看，什麼才叫真正的海洋藝術。滿帆！轉向左舷二十度！」
+            - paragraph
+            - group [ref=e2253]:
+              - generic "⭐ ( =ω=)♪ Master，点击查看事件记录" [ref=e2254] [cursor=pointer]:
+                - generic [ref=e2255]: ⭐
+                - generic [ref=e2256]: ( =ω=)♪ Master，点击查看事件记录
+            - paragraph
+            - paragraph
+            - group [ref=e2257]:
+              - generic "✨ Update Variables" [ref=e2258] [cursor=pointer]
+            - paragraph
+            - paragraph
+            - group [ref=e2259]:
+              - generic "✨ Combat Log" [ref=e2260] [cursor=pointer]
+            - paragraph
+            - generic [ref=e2261]:
+              - text: 
+              - iframe [ref=e2262]:
+                - generic [ref=f25e3]:
+                  - generic [ref=f25e4]:
+                    - generic [ref=f25e5] [cursor=pointer]: Overview
+                    - generic [ref=f25e6] [cursor=pointer]: Partners
+                    - generic [ref=f25e7] [cursor=pointer]: Items
+                    - generic [ref=f25e8] [cursor=pointer]: World
+                  - generic [ref=f25e10]:
+                    - generic [ref=f25e12]:
+                      - generic [ref=f25e13]: Avatar
+                      - generic [ref=f25e18]:
+                        - img "Avatar" [ref=f25e19] [cursor=pointer]
+                        - generic [ref=f25e20] [cursor=pointer]: ✎
+                    - generic [ref=f25e22]:
+                      - generic [ref=f25e23]: Core Status
+                      - generic [ref=f25e24]:
+                        - generic [ref=f25e26]:
+                          - generic [ref=f25e27]: Name
+                          - generic [ref=f25e29]: Rabbit
+                        - generic [ref=f25e31]:
+                          - generic [ref=f25e32]: Age
+                          - generic [ref=f25e34]: "25"
+                        - generic [ref=f25e36]:
+                          - generic [ref=f25e37]: Gender
+                          - generic [ref=f25e39]: Male
+                        - generic [ref=f25e41]:
+                          - generic [ref=f25e42]: Race
+                          - generic [ref=f25e44]: Human
+                        - generic [ref=f25e46]:
+                          - generic [ref=f25e47]: Job
+                          - generic [ref=f25e49]: Lord / Political Bureau Captain
+                        - generic [ref=f25e51]:
+                          - generic [ref=f25e52]: Mental
+                          - generic [ref=f25e54]: Calm
+                        - generic [ref=f25e57]:
+                          - generic [ref=f25e58]: Energy
+                          - generic [ref=f25e59]: 20 / 100
+                        - generic [ref=f25e64]:
+                          - generic [ref=f25e65]: Stress
+                          - generic [ref=f25e66]: 20 / 100
+                        - generic [ref=f25e70]:
+                          - generic [ref=f25e71]: Charisma
+                          - generic [ref=f25e73]: "70"
+                        - generic [ref=f25e75]:
+                          - generic [ref=f25e76]: SocialEnergy
+                          - generic [ref=f25e78]: "70"
+                        - generic [ref=f25e80]:
+                          - generic [ref=f25e81]: Money (JPM)
+                          - generic [ref=f25e83]: "960000"
+                        - generic [ref=f25e85]:
+                          - generic [ref=f25e86]: Salary (Monthly)
+                          - generic [ref=f25e88]: "860000"
+                    - generic [ref=f25e90]:
+                      - generic [ref=f25e91]: World Info
+                      - generic [ref=f25e92]:
+                        - generic [ref=f25e94]:
+                          - generic [ref=f25e95]: Date
+                          - generic [ref=f25e97]: May 1, 1572
+                        - generic [ref=f25e99]:
+                          - generic [ref=f25e100]: Time
+                          - generic [ref=f25e102]: 19:05
+                        - generic [ref=f25e104]:
+                          - generic [ref=f25e105]: Weather
+                          - generic [ref=f25e107]: Clear
+                        - generic [ref=f25e109]:
+                          - generic [ref=f25e110]: Location
+                          - generic [ref=f25e112]: Sea_of_Pradesh.HMS_Amber.Deck
+                    - generic [ref=f25e114]:
+                      - generic [ref=f25e115]: Current Quests
+                      - generic [ref=f25e119]:
+                        - generic [ref=f25e121] [cursor=pointer]: ▼
+                        - generic [ref=f25e123]:
+                          - generic [ref=f25e124] [cursor=pointer]:
+                            - generic [ref=f25e125]:
+                              - generic [ref=f25e126]: Build_New_Governors_Mansion
+                              - generic [ref=f25e127]:
+                                - generic [ref=f25e128]: Moderate
+                                - button "×" [ref=f25e129]
+                            - generic [ref=f25e130]: Charlotte受命建造新的琥珀群島總督府。規格：10間房，2層樓，需包含廚房、餐廳、會客廳等public space，總面積約500平方米。預算不限，地點由Charlotte選擇(需離Eleanor主宅不遠)，工期越快越好。 1572-05-12 號前完成
+                            - generic [ref=f25e131]: 🏆 Proper accommodation for expanding household + operational headquarters for Claymore Empire
+                            - generic [ref=f25e132]: "Status: Active"
+                            - generic [ref=f25e133]: "Last Updated: 1572-05-01 09:00"
+                          - generic [ref=f25e134] [cursor=pointer]:
+                            - generic [ref=f25e135]:
+                              - generic [ref=f25e136]: Voyage_to_Duran
+                              - generic [ref=f25e137]:
+                                - generic [ref=f25e138]: Hard
+                                - button "×" [ref=f25e139]
+                            - generic [ref=f25e140]: 隨著Jakob Sullivan的加入，Claymore帝國的海軍三巨頭（Aarav、Francisca、Jakob）已正式集結完成。為了應對Loren即將到來的報復，下一階段的戰略核心是直接前往Duran與第一王子Charles進行軍事同盟談判。
+                            - generic [ref=f25e141]: 🏆 正式確立Duran-Claymore同盟，免除Loren的軍事威脅
+                            - generic [ref=f25e142]: "Status: Active"
+                            - generic [ref=f25e143]: "Last Updated: 1572-05-01 17:35"
+                    - generic [ref=f25e145]:
+                      - generic [ref=f25e146]: Skills
+                      - generic [ref=f25e150]:
+                        - generic [ref=f25e152] [cursor=pointer]: ▼
+                        - generic [ref=f25e155]: None
+      - generic [ref=e2263]:
+        - img [ref=e2266] [cursor=pointer]
+        - generic [ref=e2267]:
+          - generic [ref=e2268]:
+            - generic [ref=e2270]:
+              - generic [ref=e2271]: Rabbit
+              - text: 
+              - generic [ref=e2272]: May 17, 2026 1:46 PM
+            - generic [ref=e2273]:
+              - button "" [ref=e2274] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2275] [cursor=pointer]
+            - text:       
+          - text:       
+          - paragraph [ref=e2277]: continue
+      - generic [ref=e2278]:
+        - img [ref=e2281] [cursor=pointer]
+        - generic [ref=e2282]:
+          - generic [ref=e2283]:
+            - generic [ref=e2285]:
+              - generic [ref=e2286]: Your Wives
+              - text: 
+              - generic "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2287]: May 17, 2026 1:47 PM
+              - img "custom - gemini-3-flash-high-真流-[星星公益站-CLI渠道]" [ref=e2288]
+            - generic [ref=e2293]:
+              - button "" [ref=e2294] [cursor=pointer]
+              - text:              
+              - button "" [ref=e2295] [cursor=pointer]
+            - text:       
+          - group [ref=e2296]:
+            - generic "Thought for 40 seconds " [ref=e2297]:
+              - generic [ref=e2299] [cursor=pointer]:
+                - generic "40.252 seconds [parsed]" [ref=e2300]: Thought for 40 seconds
+                - generic [ref=e2301]: 
+              - text:      
+          - generic [ref=e2302]:
+            - paragraph [ref=e2303]: 【Sea of Pradesh.HMS_Amber.Deck，幻想，1572年5月1日 19:10】
+            - paragraph [ref=e2304]: 海面上炸開的水柱還未完全落下，空氣中已經充斥著一股海鹽與刺鼻硝煙混合的焦灼味道。巨大的水花像一塊冰冷的帷幕，細碎的水珠順著海風拂過我的側臉，帶來一絲冷咧。
+            - paragraph [ref=e2305]: 我看著遠方那三艘在夜色中如孤魂野鬼般的黑旗艦隊。對方的指揮官顯然深諳試探之道，剛才那一發實心彈的著點精準地落在了我們航線的交叉點上，這是不折不扣的挑釁。
+            - paragraph [ref=e2306]: 身側傳來一陣輕微的絲綢摩擦聲。Charlotte 貼得很近，近到我能感覺到她那飽滿的乳房正若有似無地撞擊著我的手臂。她的呼吸依舊不穩，指尖死死扣著艦橋的銅質欄杆，淡褐色的雙眸鎖死在 Francisca 那火紅的背影上。那種混合著被中斷的高潮餘韻、以及對不速之客的瘋狂嫉妒，讓她此時的氣場顯得扭曲而危險。
+            - paragraph [ref=e2307]: 「殿下，風向變了。」
+            - paragraph [ref=e2308]: Charlotte 的聲音在我耳畔響起。她像是完全感覺不到外界那毀滅性的炮火，眼神閃爍著一種近乎病態的聰慧。
+            - paragraph [ref=e2309]: 「普拉德希的海風在入夜後會因為溫差而轉為東北向。如果 Sullivan 繼續保持現在的轉向角度，他在三分鐘內會進入敵艦的側舷盲區……但也會失去逃逸航道。」
+            - paragraph [ref=e2310]: 我點了點頭，沒有回頭看她，而是將目光投向甲板下層正忙碌穿梭的水手。
+            - paragraph [ref=e2311]: 「Jakob！轉向二十五度！不要管對方的旗艦，直接切斷他們第二艘船的航向！讓他們以為妳要接舷，把他們逼進 Francisca 的口袋裡！」
+            - paragraph [ref=e2312]: 我對著下方那個戴著破舊軍帽的身影大吼。Jakob 像是早已預料到我的指令，他朝著海面吐掉殘餘的雪茄渣，揮動著那雙布滿老繭的大手，嗓音沙啞地回應。
+            - paragraph [ref=e2313]: 「如您所願，我的殿下！聽到了嗎你們這群蠢貨？滿帆！左舷炮組準備撤火，給老子把那艘船撞進口袋裡去！」
+            - paragraph [ref=e2314]: 旗艦 HMS Amber 號在風浪中發出一聲雄渾的震顫，那沈重的船身在 Jakob 精湛的操作下，像是一頭巨大的海獸優雅地擺尾。側舷的炮窗整齊劃一地關閉，木板碰撞的悶響像是一串冰冷的音節，敲擊在每個人的胸腔上。
+            - paragraph [ref=e2315]: 此時，Francisca 正站在她的分艦隊指揮位上。她手中的彎刀在月光下折射出冰冷的光弧，那對深綠色的瞳孔裡燃燒著一種名為「征服」的火焰。她看準了 Jakob 創造出的空隙，猛地將長刀指向敵方艦群的左翼。
+            - paragraph [ref=e2316]: 「HMS Nightingale！側舷齊射！不要在乎準頭，我要的是煙霧和恐慌！把這群 Loren 的狗燒紅、燒焦！」
+            - heading "轟——轟轟！！" [level=3] [ref=e2317]:
+              - emphasis [ref=e2318]: 轟——轟轟！！
+            - paragraph [ref=e2319]: 一連串悶雷般的巨響在海平面上炸裂。Francisca 的艦隊在瞬間傾瀉出恐怖的火力。炮火噴發的火光將周圍的海水照得一片慘白，濃密的硝煙瞬間在海面上鋪開一場巨大的迷霧。那種近距離發射產生的衝擊波讓 HMS Amber 號的甲板都跟著劇烈顫抖。
+            - paragraph [ref=e2320]: Charlotte 被這股震動晃得站不穩，整個人像是尋求庇護般撞進了我的懷裡。她那雙因焦慮而發燙的手環住了我的腰，柔軟的身體死死貼著我的胸膛，隔著單薄的衣物，我能感覺到她心臟瘋狂搏動的頻率。
+            - paragraph [ref=e2321]: 她在戰慄，但那不是恐慌。
+            - paragraph [ref=e2322]: 「看啊……這就是你帶來的地獄，Rabbit。」
+            - paragraph [ref=e2323]: 她仰起那張滿佈紅暈的臉，眼神中充滿了近乎神聖的迷戀。她不顧周圍是否有水手在看，墊起腳尖湊近我的頸側，舌尖在那裡輕輕一舔。
+            - heading "“嘶溜……唔嗯……”" [level=4] [ref=e2324]:
+              - emphasis [ref=e2325]: “嘶溜……唔嗯……”
+            - paragraph [ref=e2326]: 「指揮他們……碾碎他們……然後在凱旋的炮火中，徹底地……揉碎我……」
+            - paragraph [ref=e2327]: 那混雜著野心與情慾的呢喃在我的耳根炸開，與遠處敵艦傳來的哀嚎聲交織在一起。
+            - paragraph [ref=e2328]: 海面的煙霧中，Aarav 帶領的海盜船隊正像一道黑色的閃電般穿出。普拉德希的戰神此時已經脫掉了那件代表著戰功的 officer coat，露出精壯且佈滿傷疤的古銅色上身。
+            - paragraph [ref=e2329]: 「普拉德希的子民！為了殿下！為了未來的帝國！接舷！」
+            - paragraph [ref=e2330]: Aarav 發出一聲震天動地的戰吼。數百名普拉德希戰士甩出了帶鉤的鎖鏈，像是一群從深淵爬出的惡鬼，朝著那一艘被 Francisca 轟得支離破碎的敵方護衛艦撲了上去。
+            - paragraph [ref=e2331]: 火光。硝煙。慘叫。
+            - paragraph [ref=e2332]: 第一場屬於 Claymore 帝國的洗禮，正在這片普拉德希的深海上演。
+            - paragraph [ref=e2333]: Francisca 站在火光沖天的船頭，反手將彎刀插回鞘中，朝著我所在的方向露出了一個張狂且帶著血腥氣的笑容。
+            - paragraph [ref=e2334]: 「殿下，獵物已經進網了，您不打算親自下來……給這場處刑畫上最後一筆嗎？」
+            - paragraph
+            - group [ref=e2335]:
+              - generic "✨ Combat Log" [ref=e2336] [cursor=pointer]
+            - paragraph
+            - paragraph [ref=e2337]: Sea_of_Pradesh.HMS_Amber.Deck
+            - paragraph
+            - group [ref=e2338]:
+              - generic "✨ Update Variables" [ref=e2339] [cursor=pointer]
+            - paragraph
+            - paragraph
+            - group [ref=e2340]:
+              - generic "⭐ ( =ω=)♪ Master，点击查看事件记录" [ref=e2341] [cursor=pointer]:
+                - generic [ref=e2342]: ⭐
+                - generic [ref=e2343]: ( =ω=)♪ Master，点击查看事件记录
+            - paragraph
+            - generic [ref=e2344]:
+              - text: 
+              - iframe [ref=e2345]:
+                - generic [ref=f24e3]:
+                  - generic [ref=f24e4]:
+                    - generic [ref=f24e5] [cursor=pointer]: Overview
+                    - generic [ref=f24e6] [cursor=pointer]: Partners
+                    - generic [ref=f24e7] [cursor=pointer]: Items
+                    - generic [ref=f24e8] [cursor=pointer]: World
+                  - generic [ref=f24e10]:
+                    - generic [ref=f24e12]:
+                      - generic [ref=f24e13]: Avatar
+                      - generic [ref=f24e18]:
+                        - img "Avatar" [ref=f24e19] [cursor=pointer]
+                        - generic [ref=f24e20] [cursor=pointer]: ✎
+                    - generic [ref=f24e22]:
+                      - generic [ref=f24e23]: Core Status
+                      - generic [ref=f24e24]:
+                        - generic [ref=f24e26]:
+                          - generic [ref=f24e27]: Name
+                          - generic [ref=f24e29]: Rabbit
+                        - generic [ref=f24e31]:
+                          - generic [ref=f24e32]: Age
+                          - generic [ref=f24e34]: "25"
+                        - generic [ref=f24e36]:
+                          - generic [ref=f24e37]: Gender
+                          - generic [ref=f24e39]: Male
+                        - generic [ref=f24e41]:
+                          - generic [ref=f24e42]: Race
+                          - generic [ref=f24e44]: Human
+                        - generic [ref=f24e46]:
+                          - generic [ref=f24e47]: Job
+                          - generic [ref=f24e49]: Lord / Political Bureau Captain
+                        - generic [ref=f24e51]:
+                          - generic [ref=f24e52]: Mental
+                          - generic [ref=f24e54]: Calm
+                        - generic [ref=f24e57]:
+                          - generic [ref=f24e58]: Energy
+                          - generic [ref=f24e59]: 15 / 100
+                        - generic [ref=f24e64]:
+                          - generic [ref=f24e65]: Stress
+                          - generic [ref=f24e66]: 25 / 100
+                        - generic [ref=f24e70]:
+                          - generic [ref=f24e71]: Charisma
+                          - generic [ref=f24e73]: "70"
+                        - generic [ref=f24e75]:
+                          - generic [ref=f24e76]: SocialEnergy
+                          - generic [ref=f24e78]: "70"
+                        - generic [ref=f24e80]:
+                          - generic [ref=f24e81]: Money (JPM)
+                          - generic [ref=f24e83]: "960000"
+                        - generic [ref=f24e85]:
+                          - generic [ref=f24e86]: Salary (Monthly)
+                          - generic [ref=f24e88]: "860000"
+                    - generic [ref=f24e90]:
+                      - generic [ref=f24e91]: World Info
+                      - generic [ref=f24e92]:
+                        - generic [ref=f24e94]:
+                          - generic [ref=f24e95]: Date
+                          - generic [ref=f24e97]: May 1, 1572
+                        - generic [ref=f24e99]:
+                          - generic [ref=f24e100]: Time
+                          - generic [ref=f24e102]: 19:15
+                        - generic [ref=f24e104]:
+                          - generic [ref=f24e105]: Weather
+                          - generic [ref=f24e107]: Clear
+                        - generic [ref=f24e109]:
+                          - generic [ref=f24e110]: Location
+                          - generic [ref=f24e112]: Sea_of_Pradesh.HMS_Amber.Deck
+                    - generic [ref=f24e114]:
+                      - generic [ref=f24e115]: Current Quests
+                      - generic [ref=f24e119]:
+                        - generic [ref=f24e121] [cursor=pointer]: ▼
+                        - generic [ref=f24e123]:
+                          - generic [ref=f24e124] [cursor=pointer]:
+                            - generic [ref=f24e125]:
+                              - generic [ref=f24e126]: Build_New_Governors_Mansion
+                              - generic [ref=f24e127]:
+                                - generic [ref=f24e128]: Moderate
+                                - button "×" [ref=f24e129]
+                            - generic [ref=f24e130]: Charlotte受命建造新的琥珀群島總督府。規格：10間房，2層樓，需包含廚房、餐廳、會客廳等public space，總面積約500平方米。預算不限，地點由Charlotte選擇(需離Eleanor主宅不遠)，工期越快越好。 1572-05-12 號前完成
+                            - generic [ref=f24e131]: 🏆 Proper accommodation for expanding household + operational headquarters for Claymore Empire
+                            - generic [ref=f24e132]: "Status: Active"
+                            - generic [ref=f24e133]: "Last Updated: 1572-05-01 09:00"
+                          - generic [ref=f24e134] [cursor=pointer]:
+                            - generic [ref=f24e135]:
+                              - generic [ref=f24e136]: Voyage_to_Duran
+                              - generic [ref=f24e137]:
+                                - generic [ref=f24e138]: Hard
+                                - button "×" [ref=f24e139]
+                            - generic [ref=f24e140]: 隨著Jakob Sullivan的加入，Claymore帝國的海軍三巨頭（Aarav、Francisca、Jakob）已正式集結完成。為了應對Loren即將到來的報復，下一階段的戰略核心是直接前往Duran與第一王子Charles進行軍事同盟談判。
+                            - generic [ref=f24e141]: 🏆 正式確立Duran-Claymore同盟，免除Loren的軍事威脅
+                            - generic [ref=f24e142]: "Status: Active"
+                            - generic [ref=f24e143]: "Last Updated: 1572-05-01 17:35"
+                    - generic [ref=f24e145]:
+                      - generic [ref=f24e146]: Skills
+                      - generic [ref=f24e150]:
+                        - generic [ref=f24e152] [cursor=pointer]: ▼
+                        - generic [ref=f24e155]: None
+        - generic:
+          - button "" [ref=e2346] [cursor=pointer]
+          - generic [ref=e2347]: 1/1
+    - generic [ref=e2349]:
+      - text:  
+      - generic [ref=e2350]:
+        - generic [ref=e2351]:
+          - generic [ref=e2352] [cursor=pointer]: 
+          - generic "Extensions" [ref=e2353] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [ref=e2354]
+        - generic [ref=e2355]:
+          - text:      
+          - generic "Send a message" [ref=e2356] [cursor=pointer]: 
+  - text:                       1     
+  - generic [ref=e2357]: 
+  - status [ref=e2358]
+  - status [ref=e2359]
+  - status [ref=e2360]
+  - status [ref=e2361]
+  - status [ref=e2362]
+  - status [ref=e2363]
+  - status [ref=e2364]
+  - status [ref=e2365]
+  - status [ref=e2366]
+  - status [ref=e2367]
+  - status [ref=e2368]
+  - status [ref=e2369]
+  - text:  • • •  • • • • • • • • •  
+```
+
+# Test source
+
+```ts
+  1   | /**
+  2   |  * Eventbase-test.spec.js — Playwright integration tests for VectFox
+  3   |  *
+  4   |  * Run all:      npm run test:e2e
+  5   |  * Run one:      npx playwright test --grep "TEST 001"
+  6   |  * View report:  npm run test:e2e:report
+  7   |  *
+  8   |  * On first run: a Playwright browser window opens. Log in, then open the chat
+  9   |  * that has your locked collections. Tests start automatically once the chat is open.
+  10  |  */
+  11  | 
+  12  | import { test, expect } from '@playwright/test';
+  13  | 
+  14  | // ---------------------------------------------------------------------------
+  15  | // serial mode — one browser window, shared across all tests
+  16  | // ---------------------------------------------------------------------------
+  17  | test.describe.configure({ mode: 'serial' });
+  18  | 
+  19  | let sharedPage;
+  20  | let sharedContext;
+  21  | 
+  22  | test.beforeAll(async ({ browser }) => {
+  23  |     sharedContext = await browser.newContext();
+  24  |     sharedPage = await sharedContext.newPage();
+  25  |     await sharedPage.goto('/');
+  26  | 
+  27  |     // Show a banner in the Playwright window so the user knows what to do
+  28  |     await sharedPage.waitForSelector('body');
+  29  |     await sharedPage.evaluate(() => {
+  30  |         const el = document.createElement('div');
+  31  |         el.id = '__vf_test_hint';
+  32  |         el.style.cssText = [
+  33  |             'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
+  34  |             'background:#1a1a2e', 'color:#eee', 'padding:14px 20px',
+  35  |             'font:15px/1.5 sans-serif', 'text-align:center',
+  36  |             'box-shadow:0 2px 8px rgba(0,0,0,0.6)',
+  37  |         ].join(';');
+  38  |         el.innerHTML = '🧪 <b>VectFox Tests</b> — log in, then open the chat that has your locked collections. Tests start automatically once the chat is open.';
+  39  |         document.body.prepend(el);
+  40  |     }).catch(() => {});
+  41  | 
+  42  |     console.log('[setup] Log in and open the correct chat in the Playwright browser window...');
+  43  | 
+  44  |     // Wait for ST's send button — only present once logged in AND inside a chat
+  45  |     await sharedPage.waitForSelector('#send_but', { timeout: 120000 });
+  46  | 
+  47  |     // Wait until getContext returns a real chatId (chat is actually open)
+  48  |     console.log('[setup] Waiting for chat to become active...');
+> 49  |     await sharedPage.waitForFunction(
+      |                      ^ Error: page.waitForFunction: Target page, context or browser has been closed
+  50  |         () => typeof window.getContext === 'function' && !!window.getContext()?.chatId,
+  51  |         { timeout: 60000 }
+  52  |     );
+  53  | 
+  54  |     // Let VectFox and other extensions finish initialising
+  55  |     await sharedPage.waitForTimeout(2000);
+  56  |     console.log('[setup] Chat open — running tests ✓');
+  57  | });
+  58  | 
+  59  | test.afterAll(async () => {
+  60  |     await sharedContext?.close();
+  61  | });
+  62  | 
+  63  | // ---------------------------------------------------------------------------
+  64  | // Helpers
+  65  | // ---------------------------------------------------------------------------
+  66  | 
+  67  | async function runTestInPage(testFn) {
+  68  |     const logs = [];
+  69  |     const handler = msg => logs.push({ type: msg.type(), text: msg.text() });
+  70  |     sharedPage.on('console', handler);
+  71  |     try {
+  72  |         await sharedPage.evaluate(testFn);
+  73  |     } catch (err) {
+  74  |         logs.push({ type: 'error', text: `page.evaluate threw: ${err.message}` });
+  75  |     }
+  76  |     sharedPage.off('console', handler);
+  77  |     return logs;
+  78  | }
+  79  | 
+  80  | function assertPassed(logs) {
+  81  |     const failLines = logs.filter(m => m.text.includes('[FAIL]')).map(m => m.text);
+  82  |     const warnLines = logs.filter(m => m.text.includes('[WARN]')).map(m => m.text);
+  83  |     const passed    = logs.some(m => m.text.includes('[PASS]'));
+  84  | 
+  85  |     logs.forEach(m => {
+  86  |         if      (m.type === 'error')   console.error(m.text);
+  87  |         else if (m.type === 'warning') console.warn(m.text);
+  88  |         else                           console.log(m.text);
+  89  |     });
+  90  | 
+  91  |     if (warnLines.length) console.warn('WARNINGS:\n' + warnLines.join('\n'));
+  92  |     expect(failLines.length, '[FAIL] found:\n' + failLines.join('\n')).toBe(0);
+  93  |     expect(passed, 'No [PASS] found — test did not reach success path').toBe(true);
+  94  | }
+  95  | 
+  96  | 
+  97  | // ═══════════════════════════════════════════════════════════════════
+  98  | // TEST 001 — Qdrant lorebook: vectorize → lock → query isolation
+  99  | // ═══════════════════════════════════════════════════════════════════
+  100 | // Setup: lorebook vectorized with Qdrant backend + locked to current chat/character in DB Browser
+  101 | test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
+  102 |     const logs = await runTestInPage(async () => {
+  103 |         const TEST = 'TEST 001 [QdrantLorebook]';
+  104 |         const base = '/scripts/extensions/third-party/VectFox/';
+  105 |         const { getCollectionListing } = await import(base + 'core/collection-loader.js');
+  106 |         const { shouldCollectionActivate, getCollectionMeta } = await import(base + 'core/collection-metadata.js');
+  107 |         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+  108 | 
+  109 |         const { extension_settings } = await import('/scripts/extensions.js');
+  110 |         const vf = extension_settings?.vectfox;
+  111 |         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
+  112 | 
+  113 |         const ctx = window.getContext?.() ?? {};
+  114 |         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
+  115 |         if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
+  116 |         const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
+  117 | 
+  118 |         const listing = getCollectionListing(vf);
+  119 |         const lorebookCols = listing.filter(e => e.collectionId.startsWith('vf_lorebook_'));
+  120 |         if (!lorebookCols.length) { console.warn(`${TEST} [WARN] No lorebook collections`); return; }
+  121 | 
+  122 |         const qdrantLorebooks = lorebookCols.filter(e => e.registryKey.startsWith('qdrant:'));
+  123 |         if (!qdrantLorebooks.length) { console.error(`${TEST} [FAIL] No qdrant lorebook found`); return; }
+  124 | 
+  125 |         console.log(`${TEST} Lorebook collections: ${lorebookCols.length} total, ${qdrantLorebooks.length} qdrant`);
+  126 |         lorebookCols.forEach(e => {
+  127 |             const meta = getCollectionMeta(e.registryKey);
+  128 |             console.log(`  ${e.registryKey}  scope=${meta.scope ?? '?'}`);
+  129 |         });
+  130 | 
+  131 |         const active = [];
+  132 |         for (const e of lorebookCols) {
+  133 |             if (await shouldCollectionActivate(e.registryKey, context)) active.push(e);
+  134 |         }
+  135 |         if (!active.length) { console.error(`${TEST} [FAIL] No lorebook activated — lock the qdrant lorebook first`); return; }
+  136 |         if (active.length > 1) {
+  137 |             console.error(`${TEST} [FAIL] ${active.length} lorebooks activated — expected exactly 1`);
+  138 |             active.forEach(e => console.error(`  UNEXPECTED: ${e.registryKey}`));
+  139 |             return;
+  140 |         }
+  141 | 
+  142 |         const locked = active[0];
+  143 |         if (!locked.registryKey.startsWith('qdrant:')) console.warn(`${TEST} [WARN] Activated lorebook is not qdrant: ${locked.registryKey}`);
+  144 |         console.log(`${TEST} Activated: ${locked.registryKey} ✓`);
+  145 | 
+  146 |         const chat = ctx.chat ?? [];
+  147 |         const lastMsg = [...chat].reverse().find(m => !m.is_system && m.mes)?.mes || 'charlotte';
+  148 |         let result;
+  149 |         try { result = await runLorebookWIDryRun({ chat, testMessage: lastMsg, settings: vf }); }
+```

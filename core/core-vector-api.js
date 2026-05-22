@@ -1202,6 +1202,20 @@ export async function purgeAllVectorIndexes(settings) {
 }
 
 /**
+ * List chunks in a collection
+ * Routes through the active backend so model is resolved via getModelFromSettings,
+ * not from a stale collection.model field.
+ * @param {string} collectionId - Collection ID
+ * @param {object} settings - VectFox settings (must include vector_backend + source)
+ * @param {object} options - {offset, limit, includeVectors}
+ * @returns {Promise<{items: Array<{hash, text, metadata}>, total: number}>}
+ */
+export async function listChunks(collectionId, settings, options = {}) {
+    const backend = await getBackend(settings);
+    return await backend.listChunks(collectionId, settings, options);
+}
+
+/**
  * Update chunk text (triggers re-embedding)
  * @param {string} collectionId - Collection ID
  * @param {number} hash - Chunk hash

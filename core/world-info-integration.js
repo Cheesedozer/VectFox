@@ -13,14 +13,14 @@
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
 import { getCollectionListing } from './collection-loader.js';
-import { getCollectionMeta } from './collection-metadata.js';
+import { getCollectionMeta, shouldCollectionActivate } from './collection-metadata.js';
 import { parseRegistryKey } from './collection-ids.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
-import { eventSource, event_types, setExtensionPrompt, substituteParams } from '../../../../../script.js';
+import { eventSource, event_types, setExtensionPrompt, substituteParams, getCurrentChatId } from '../../../../../script.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
@@ -158,10 +158,14 @@ async function getEnabledLorebookCollections(settings) {
     const listing = getCollectionListing(settings);
     const collections = [];
 
+    const currentChatId = getCurrentChatId() ? String(getCurrentChatId()) : null;
+    const currentCharacterId = getContext().characterId != null ? String(getContext().characterId) : null;
+    const context = { currentChatId, currentCharacterId };
+
     for (const entry of listing) {
         if (!entry.collectionId.startsWith('vf_lorebook_')) continue;
-        // Skip explicitly paused collections (meta.enabled === false).
         if (entry.meta.enabled === false) continue;
+        if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;
 
         const sourceName = entry.meta?.sourceName || null;
         const name = sourceName || entry.collectionId;
@@ -396,7 +400,11 @@ async function handleGenerationStarted(type, options, dryRun) {
         // Format entries into direct prompt injection under <VectFoxLorebook>
         const entryTexts = semanticEntries
             .filter(e => e.content?.trim())
-            .map(e => e.content.trim());
+            .map(e => {
+                const title = e.metadata?.entryName || (Array.isArray(e.key) ? e.key.slice(0, 3).join(', ') : String(e.key || ''));
+                const content = e.content.trim();
+                return title ? `# ${title}\n${content}` : content;
+            });
 
         if (!entryTexts.length) return;
 
@@ -436,7 +444,11 @@ export async function runLorebookWIDryRun({ chat, testMessage, settings }) {
     const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, testMessage || null, lorebookCollections);
     if (!semanticEntries.length) return { injectionText: null, entryCount: 0 };
 
-    const entryTexts = semanticEntries.filter(e => e.content?.trim()).map(e => e.content.trim());
+    const entryTexts = semanticEntries.filter(e => e.content?.trim()).map(e => {
+        const title = e.metadata?.entryName || (Array.isArray(e.key) ? e.key.slice(0, 3).join(', ') : String(e.key || ''));
+        const content = e.content.trim();
+        return title ? `# ${title}\n${content}` : content;
+    });
     if (!entryTexts.length) return { injectionText: null, entryCount: 0 };
 
     const xmlTag = settings.lorebook_xml_tag || 'VectFoxLorebook';

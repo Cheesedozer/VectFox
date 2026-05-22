@@ -14,10 +14,10 @@
  * ============================================================================
  */
 
-import { getRequestHeaders } from "../../../../../script.js";
 import { extension_settings } from "../../../../extensions.js";
 import { loadAllCollections } from "../core/collection-loader.js";
 import { buildRegistryKey } from "../core/collection-ids.js";
+import { listChunks } from "../core/core-vector-api.js";
 import { icons } from "./icons.js";
 
 // Cache of last scan so the detail view can reuse already-fetched items
@@ -174,7 +174,6 @@ async function runScan() {
             // (source, model) on disk, so forwarding the discovered values is
             // mandatory — defaults would silently hit an empty new index.
             const source = entry.source || "transformers";
-            const model = entry.model || "";
             const registryKey = entry.registryKey || buildRegistryKey(collectionId, backend);
             if (!collectionId) {
                 done++;
@@ -182,17 +181,13 @@ async function runScan() {
             }
 
             try {
-                const r = await fetch("/api/plugins/similharity/chunks/list", {
-                    method: "POST",
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({ backend, collectionId, source, model, limit: 5000 }),
-                });
-
-                let items = [];
-                if (r.ok) {
-                    const data = await r.json();
-                    items = data.items || [];
-                }
+                const entrySettings = {
+                    ...settings,
+                    vector_backend: backend,
+                    source,
+                };
+                const data = await listChunks(collectionId, entrySettings, { limit: 5000 });
+                const items = data.items || [];
 
                 const row = summarize(collectionId, backend, items, registryKey);
                 summaries.push(row);

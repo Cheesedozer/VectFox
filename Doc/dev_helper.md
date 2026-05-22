@@ -192,6 +192,53 @@ Three retrieval paths exist. The path is chosen automatically inside `queryColle
 | **Knobs that apply** | `bm25_k1`, `bm25_b`, `bm25_use_corpus_idf`, `hybrid_keyword_level` | Above + `hybrid_fusion_method`, `hybrid_vector_weight`, `hybrid_text_weight`, `hybrid_rrf_k` | None of the above — Qdrant uses its internal defaults |
 | **Native EventBase rerank (cosine + importance + persist + recency in one call)** | n/a | n/a | Available when `eventbase_native_rerank=true` (default) + Qdrant ≥ 1.13 |
 
+### ⚠️ Standard backend: `vectorScore=0.0000` and what it means for A1 vs A2
+
+ST's `/api/vector/query` computes cosine similarity internally (it uses it for threshold filtering and
+result ordering) but **strips the scores from the response before returning**. VectFox receives only
+hashes and text — every `vectorScore` is `0.0000` on standard backend regardless of actual similarity.
+This is a hard API limitation; it cannot be fixed without either patching ST upstream or re-embedding
+client-side (expensive).
+
+**Effect on A1 (BM25 re-rank):** No impact. A1 ignores `vectorScore` entirely and re-ranks the
+candidate set using BM25 alone. ST's internal similarity still controls *which* candidates come back;
+A1 just ignores the ordering ST applied to them.
+
+**Effect on A2 (client-side hybrid RRF):** A2 cannot use `vectorScore` for fusion (it's always 0),
+so it falls back to using ST's **rank ordering** as the vector signal instead — via the RRF formula
+`1 / (k + vectorRank)`. This means:
+- A result that ST placed at rank 1 gets a small RRF boost even with no BM25 match.
+- A result with a BM25 match but weak vector rank gets a small RRF penalty compared to A1.
+- Results with no BM25 match AND weak vector rank score only `rrfRankFactor × 0.25` (very low).
+- Text-only matches (BM25 > 0, vectorScore = 0) are penalized by a ×0.60 multiplier in hybrid-search.js.
+
+**Practical difference between A1 and A2 on standard backend:**
+
+| | A1 (BM25 re-rank) | A2 (client-side RRF) |
+|---|---|---|
+| Uses ST's similarity ordering | ❌ — discarded | ✅ — used as `vectorRank` in RRF |
+| Uses BM25 scores | ✅ — primary signal | ✅ — secondary signal, penalized ×0.60 if no vector match |
+| Penalty on BM25 matches | None | ×0.60 (text-only path) |
+| Results with zero BM25 match | Score = 0, dropped | Score = `0.25 × rrfRankFactor` — may still appear |
+| Predictability | High | Lower — rank-based fusion is noisy without real scores |
+
+**When does the difference matter?**
+- **Semantic queries (no keyword overlap):** A1 scores everything 0 — results fall back to arbitrary
+  ordering. A2 uses ST's `vectorRank` as a fallback signal via RRF, preserving ST's internal semantic
+  ordering even without scores. A2 degrades more gracefully here.
+- **Keyword queries (BM25 matches exist):** Both paths rank primarily by BM25. A2 adds `vectorRank` as
+  a secondary tie-breaker for results with equal BM25 scores. The ×0.60 penalty is applied uniformly
+  to all results and does not change their relative order — it only affects absolute score values.
+- **Score threshold sensitivity:** The ×0.60 penalty lowers all A2 absolute scores. If `score_threshold`
+  is set above zero, A2 may filter out results that A1 would keep. With the default `score_threshold=0`
+  this is not an issue.
+
+**Recommendation:** A2 (Hybrid) is at least as good as A1 on standard backend, and better for semantic
+queries (uses ST's rank ordering as a fallback). There is no quality reason to prefer A1. The only
+reason to prefer A1 is simpler, more predictable scoring — useful if you are debugging threshold
+behaviour or want to isolate the BM25 signal. A2 / Hybrid becomes **meaningfully** better (not just
+marginally) only on Qdrant (path A3) where real `vectorScore` values are available.
+
 ### ⚠️ "Corpus-wide IDF" is NOT "Corpus-wide search"
 
 The `bm25_use_corpus_idf` toggle is the source of the most common misconception. It is worth being explicit:

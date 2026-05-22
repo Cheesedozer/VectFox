@@ -703,10 +703,13 @@ export function getCollectionCharacterLockCount(collectionId) {
 export function isCollectionActiveForContext(collectionId, { chatId, characterId } = {}) {
     if (!collectionId) return false;
     const meta = getCollectionMeta(collectionId);
-    if (meta.scope === 'chat') {
+    // Infer missing scope from type so old collections (created before scope stamping)
+    // still resolve correctly instead of silently returning false.
+    const scope = (meta.scope && meta.scope !== 'unknown') ? meta.scope : (meta.type || 'chat');
+    if (scope === 'chat') {
         return Boolean(chatId && isCollectionLockedToChat(collectionId, chatId));
     }
-    if (meta.scope === 'character') {
+    if (scope === 'character') {
         return Boolean(characterId && isCollectionLockedToCharacter(collectionId, String(characterId)));
     }
     return false;
