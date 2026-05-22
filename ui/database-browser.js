@@ -2300,7 +2300,15 @@ function saveActivation() {
   // The "Active for current chat" checkbox controls a single lock keyed by the collection's scope.
   //   scope='chat'      → chat lock for currentChatId
   //   scope='character' → character lock for currentCharacterId
-  if (saveMeta.scope === 'chat') {
+  //   scope='unknown'   → infer from type; stamp correct scope so future reads work
+  const rawScope = saveMeta.scope;
+  const effectiveScope = (rawScope && rawScope !== 'unknown') ? rawScope : (saveMeta.type || 'chat');
+  if (rawScope === 'unknown' || !rawScope) {
+    // Auto-stamp so isCollectionActiveForContext resolves correctly on next load
+    setCollectionMeta(state.collectionId, { scope: effectiveScope });
+  }
+
+  if (effectiveScope === 'chat') {
     if (!currentChatId) {
       toastr.info('No active chat context; "Active for current chat" was not changed');
     } else if (isChecked) {
@@ -2308,7 +2316,7 @@ function saveActivation() {
     } else {
       removeCollectionLock(state.collectionId, currentChatId);
     }
-  } else if (saveMeta.scope === 'character') {
+  } else if (effectiveScope === 'character') {
     if (!currentCharacterId) {
       toastr.info('No active character; "Active for current chat" was not changed');
     } else if (isChecked) {
