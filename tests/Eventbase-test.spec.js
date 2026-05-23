@@ -952,7 +952,7 @@ test('TEST 008 — DB Browser standard + plugin: listing + delete', async () => 
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
-        const { StandardBackend } = await import(base + 'backends/standard.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -998,7 +998,14 @@ test('TEST 008 — DB Browser standard + plugin: listing + delete', async () => 
         console.log(`${TEST} Vectorized ${vectorizeResult.chunkCount} chunks → ${registryKey}`);
 
         try {
-            const backend = new StandardBackend();
+            // Use the backend manager so we get the shared, properly-initialized
+            // StandardBackend (pluginAvailable already detected). A fresh
+            // `new StandardBackend()` would have pluginAvailable=false until
+            // initialize() runs — silently routing every listChunks call to
+            // the native fallback and masking real plugin issues.
+            const backend = await getBackend({ ...vf, vector_backend: 'standard' });
+            console.log(`${TEST} backend.pluginAvailable=${backend.pluginAvailable}`);
+
             let listResult;
             try { listResult = await backend.listChunks(collectionId, vf, { limit: 10 }); }
             catch (err) { console.error(`${TEST} [FAIL] listChunks threw: ${err.message}`); return; }
@@ -1053,22 +1060,30 @@ test('TEST 008 — DB Browser standard + plugin: listing + delete', async () => 
 // Read the "Why TEST 008 AND TEST 009?" block above test 008 first.
 //
 // This test verifies graceful degradation: when the Similharity plugin
-// is unavailable, listChunks must still work — it just returns the lean
-// shape ({ hash, text: '', metadata: {} }) instead of full metadata.
-// The standard backend's top comment in backends/standard.js mandates
-// that the standard backend remain fully functional without the plugin.
+// is unavailable, the standard backend must still support the basic
+// vectorize → list → delete cycle through ST's native /api/vector/*.
+// The top comment in backends/standard.js mandates this contract.
 //
 // We can't uninstall the plugin from a test, so we simulate it by
-// forcing `pluginAvailable = false` on a freshly-instantiated backend
-// before calling listChunks. This exercises the native fallback branch
-// at backends/standard.js:697.
+// forcing `pluginAvailable = false` on the SHARED cached backend
+// instance from getBackend(). This must be done BEFORE vectorize, so
+// insert ALSO routes through the native API — otherwise data lands at
+// vectors/{source}/{collectionId}/{model}/ (plugin path) while our list
+// and delete look at vectors/{source}/{collectionId}/ (native path),
+// and the delete silently no-ops because it can't find the data. That
+// path-mismatch isn't a real-world scenario; either users have plugin
+// (all ops plugin) or don't (all ops native). The test must mirror one.
+//
+// We restore pluginAvailable in the finally block so subsequent
+// operations (cleanup, any later tests, the running ST session) aren't
+// poisoned by our override.
 //
 // Expectations:
+//   - vectorize via native /api/vector/insert succeeds
 //   - listChunks returns N items where N matches what insert wrote
-//   - Each item has `hash` populated
-//   - Each item has `text` === '' (degraded, expected)
-//   - Each item has `metadata` === {} (degraded, expected)
-//   - Delete by hash still works via native /api/vector/delete
+//   - Each item has `hash` populated; text === '' and metadata === {}
+//     are degraded-but-expected
+//   - Delete by hash via native /api/vector/delete actually removes it
 //
 // A FAIL here means the no-plugin contract is broken — real users on
 // vanilla SillyTavern would lose DB Browser functionality entirely.
@@ -1079,7 +1094,7 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
-        const { StandardBackend } = await import(base + 'backends/standard.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -1106,32 +1121,53 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
             },
         ];
 
-        console.log(`${TEST} Vectorizing test lorebook (3 entries) with Standard backend...`);
+        // ───────────────────────────────────────────────────────────────
+        //  Boundary rules for this test:
+        //
+        //  ✗ DO NOT mutate extension_settings.vectfox — that's the user's
+        //    config and must remain untouched. All settings overrides go
+        //    through the `settings: { ...vf, ...override }` parameter on
+        //    function calls (e.g. vector_backend, source, model).
+        //
+        //  ✓ DO mutate `backend.pluginAvailable` (the cached singleton's
+        //    runtime flag) because there's no settings-level toggle for
+        //    "pretend the plugin isn't installed." The flag lives on the
+        //    backend instance, not in config. Restore it in `finally` so
+        //    a test crash doesn't leak degraded-mode into the live ST
+        //    session.
+        //
+        //  Why mutate the SHARED instance (not a fresh `new StandardBackend()`):
+        //  vectorizeContent calls getBackend() internally, which returns the
+        //  cached singleton. If we only flip pluginAvailable on a fresh
+        //  instance, vectorize uses the cached one (pluginAvailable=true) →
+        //  data lands at vectors/{source}/{cid}/{model}/, but our list+delete
+        //  via the fresh instance look at vectors/{source}/{cid}/ → delete
+        //  silently no-ops. That's a mismatched-mode test, not the real
+        //  no-plugin scenario.
+        // ───────────────────────────────────────────────────────────────
+        const backend = await getBackend({ ...vf, vector_backend: 'standard' });
+        const originalPluginAvailable = backend.pluginAvailable;
+        backend.pluginAvailable = false;
+        console.log(`${TEST} Forced pluginAvailable=false on the shared StandardBackend (was ${originalPluginAvailable}) — exercising native end-to-end`);
+
         let vectorizeResult;
+        let collectionId, registryKey;
         try {
-            vectorizeResult = await vectorizeContent({
-                contentType: 'lorebook',
-                source: { type: 'file', name: '__vf_playwright_test_009__', entries: testEntries },
-                settings: { ...vf, vector_backend: 'standard', strategy: 'per_entry', scope: 'chat' },
-            });
-        } catch (err) { console.error(`${TEST} [FAIL] vectorizeContent threw: ${err.message}`); return; }
+            try {
+                vectorizeResult = await vectorizeContent({
+                    contentType: 'lorebook',
+                    source: { type: 'file', name: '__vf_playwright_test_009__', entries: testEntries },
+                    settings: { ...vf, vector_backend: 'standard', strategy: 'per_entry', scope: 'chat' },
+                });
+            } catch (err) { console.error(`${TEST} [FAIL] vectorizeContent threw: ${err.message}`); return; }
 
-        if (!vectorizeResult?.success || !vectorizeResult.collectionId) {
-            console.error(`${TEST} [FAIL] Vectorization failed`); return;
-        }
+            if (!vectorizeResult?.success || !vectorizeResult.collectionId) {
+                console.error(`${TEST} [FAIL] Vectorization failed`); return;
+            }
 
-        const collectionId = vectorizeResult.collectionId;
-        const registryKey  = `vectra:${collectionId}`;
-        console.log(`${TEST} Vectorized ${vectorizeResult.chunkCount} chunks → ${registryKey}`);
-
-        try {
-            // Force the no-plugin code path. NOTE: getBackend() caches a backend
-            // instance with pluginAvailable=true from earlier tests — we deliberately
-            // instantiate a FRESH backend here so our override doesn't poison the
-            // shared singleton for later test cases.
-            const backend = new StandardBackend();
-            backend.pluginAvailable = false;
-            console.log(`${TEST} Forced pluginAvailable=false on a fresh StandardBackend — exercising native fallback`);
+            collectionId = vectorizeResult.collectionId;
+            registryKey  = `vectra:${collectionId}`;
+            console.log(`${TEST} Vectorized ${vectorizeResult.chunkCount} chunks via native path → ${registryKey}`);
 
             let listResult;
             try { listResult = await backend.listChunks(collectionId, vf, { limit: 10 }); }
@@ -1175,15 +1211,217 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
             if (afterResult.total >= listResult.total) console.warn(`${TEST} [WARN] total count did not decrease`);
 
             console.log(`${TEST} After delete: ${listResult.total} → ${afterResult.total} ✓`);
-            console.log(`${TEST} [PASS] Standard (no plugin) listChunks returns hashes, delete-by-hash works`);
+            console.log(`${TEST} [PASS] Standard (no plugin) end-to-end: insert + list + delete via native path`);
         } finally {
-            try {
-                await deleteContentCollection(collectionId);
-                deleteCollectionMeta(registryKey);
-                unregisterCollection(registryKey);
-                console.log(`${TEST} Cleanup: test collection removed ✓`);
-            } catch (cleanupErr) {
-                console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
+            // Restore plugin availability on the SHARED backend instance BEFORE cleanup
+            // so deleteContentCollection / unregisterCollection don't take native paths
+            // and leak state to any subsequent test or to the running ST session.
+            backend.pluginAvailable = originalPluginAvailable;
+            console.log(`${TEST} Restored backend.pluginAvailable=${originalPluginAvailable}`);
+
+            if (collectionId) {
+                try {
+                    await deleteContentCollection(collectionId);
+                    deleteCollectionMeta(registryKey);
+                    unregisterCollection(registryKey);
+                    console.log(`${TEST} Cleanup: test collection removed ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
+                }
+            }
+        }
+    });
+    assertPassed(logs);
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEST 010 — Cross-collection isolation: chat-lock controls visibility
+// ═══════════════════════════════════════════════════════════════════
+//
+// Why this test exists:
+//   On prod (qdrant) we observed `<VectFoxLorebook>` injection containing
+//   entries from TWO different lorebooks (e.g. Henry from "Your Wives" leaking
+//   into a chat that should only see ArtificRealm content). That's a contract
+//   violation — only collections active for the current chat should appear in
+//   the semantic WI injection.
+//
+//   This test isolates the bug to either:
+//     (a) Our activation filter — `getEnabledLorebookCollections` returns
+//         collections it shouldn't, OR
+//     (b) The plugin/Qdrant query path — multitenancy `content_type` filter
+//         is missing, so one logical collection's query returns vectors from
+//         another sharing the same physical Qdrant collection.
+//
+//   Phase 1 (baseline) proves both lorebooks ARE searchable when both are
+//   locked — confirms the search-across-multiple-active-books flow works.
+//   Phase 2 (leak check) unlocks one and re-queries. If the unlocked book's
+//   content still shows up, we've reproduced the leak under controlled
+//   conditions and isolated it to one of the two layers above.
+//
+// What we touch (boundary rules — same as TEST 009):
+//   ✗ DO NOT mutate extension_settings.vectfox
+//   ✓ DO mutate collection lock state via canonical `setLock(...)` API
+//     (per dev_helper.md §14) — these are user-level lock changes on our
+//     test collections, restored to baseline / removed entirely in finally.
+//   ✓ DO use registry-key form for all lock + activation calls (§14).
+//
+// Backend choice: Qdrant — that's where the prod symptom appeared. Falls
+// back gracefully if user doesn't have Qdrant configured.
+test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility', async () => {
+    const logs = await runTestInPage(async () => {
+        const TEST = 'TEST 010 [LeakCheck]';
+        const base = '/scripts/extensions/third-party/VectFox/';
+        const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setLock } = await import(base + 'core/collection-metadata.js');
+        const { unregisterCollection } = await import(base + 'core/collection-loader.js');
+        const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+        const { extension_settings } = await import('/scripts/extensions.js');
+
+        const vf = extension_settings?.vectfox;
+        if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured — leak test targets Qdrant since prod symptom was there`); return; }
+
+        const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
+        const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
+        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
+        const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
+
+        // Sentinel strings: unique enough that they should NEVER appear in any
+        // existing user lorebook. Used to detect cross-collection content leak.
+        const SENTINEL_A = 'FIDDLEHEAD_OBELISK_X9F2';
+        const SENTINEL_B = 'QUASAR_LANTERN_M7K4';
+
+        const entriesA = [
+            {
+                uid: 'vf_test_010_a1',
+                comment: 'Fiddlehead Obelisk',
+                key: ['fiddlehead', 'obelisk'],
+                content: `The ${SENTINEL_A} stands at the centre of the moss-glade in the Verlan Reach. Sentinel-A research catalogues its quartz veins as the only known anchor for the broken Sundering Glyphs. Pilgrims rub their palms raw against its base in spring.`,
+            },
+        ];
+
+        const entriesB = [
+            {
+                uid: 'vf_test_010_b1',
+                comment: 'Quasar Lantern',
+                key: ['quasar', 'lantern'],
+                content: `The ${SENTINEL_B} is a hand-held void-glass orb forged in the Embertide trenches. Sentinel-B chronicles describe it shedding a cold blue light that ignores wind, rain, and the breath of dragons. Three are known to exist; one is held by the Aurelian Conclave.`,
+            },
+        ];
+
+        let collectionIdA = null, registryKeyA = null;
+        let collectionIdB = null, registryKeyB = null;
+
+        try {
+            // ── Vectorize lorebook A (auto-locks to current chat via scope=chat) ──
+            console.log(`${TEST} Vectorizing lorebook A (sentinel "${SENTINEL_A}") with Qdrant...`);
+            const resA = await vectorizeContent({
+                contentType: 'lorebook',
+                source: { type: 'file', name: '__vf_playwright_test_010_A__', entries: entriesA },
+                settings: { ...vf, vector_backend: 'qdrant', strategy: 'per_entry', scope: 'chat' },
+            });
+            if (!resA?.success || !resA.collectionId) { console.error(`${TEST} [FAIL] Lorebook A vectorization failed`); return; }
+            collectionIdA = resA.collectionId;
+            registryKeyA  = `qdrant:${collectionIdA}`;
+            console.log(`${TEST} A vectorized → ${registryKeyA}`);
+
+            // ── Vectorize lorebook B (auto-locks to current chat via scope=chat) ──
+            console.log(`${TEST} Vectorizing lorebook B (sentinel "${SENTINEL_B}") with Qdrant...`);
+            const resB = await vectorizeContent({
+                contentType: 'lorebook',
+                source: { type: 'file', name: '__vf_playwright_test_010_B__', entries: entriesB },
+                settings: { ...vf, vector_backend: 'qdrant', strategy: 'per_entry', scope: 'chat' },
+            });
+            if (!resB?.success || !resB.collectionId) { console.error(`${TEST} [FAIL] Lorebook B vectorization failed`); return; }
+            collectionIdB = resB.collectionId;
+            registryKeyB  = `qdrant:${collectionIdB}`;
+            console.log(`${TEST} B vectorized → ${registryKeyB}`);
+
+            // Confirm both activated by chat lock
+            const activeA = await shouldCollectionActivate(registryKeyA, context);
+            const activeB = await shouldCollectionActivate(registryKeyB, context);
+            if (!activeA || !activeB) {
+                console.error(`${TEST} [FAIL] Both lorebooks should be locked to chat — activeA=${activeA}, activeB=${activeB}`);
+                return;
+            }
+            console.log(`${TEST} Both lorebooks locked to chat ✓`);
+
+            // ═══════ PHASE 1 — baseline: both should appear ═══════
+            const chat = ctx.chat ?? [];
+            const query = `${SENTINEL_A} ${SENTINEL_B} fiddlehead obelisk quasar lantern`;
+            console.log(`${TEST} Phase 1 query: "${query.slice(0, 80)}..."`);
+
+            let p1;
+            try { p1 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            catch (err) { console.error(`${TEST} [FAIL] Phase 1 dry-run threw: ${err.message}`); return; }
+
+            const injection1 = p1?.injectionText || '';
+            const p1HasA = injection1.includes(SENTINEL_A);
+            const p1HasB = injection1.includes(SENTINEL_B);
+            console.log(`${TEST} Phase 1 entries=${p1.entryCount}, contains SENTINEL_A=${p1HasA}, SENTINEL_B=${p1HasB}`);
+
+            if (!p1HasA || !p1HasB) {
+                console.error(`${TEST} [FAIL] Phase 1 baseline broken — both lorebooks locked but injection missing content. A=${p1HasA}, B=${p1HasB}. Without a valid baseline we can't tell what Phase 2 isolation means.`);
+                return;
+            }
+            console.log(`${TEST} Phase 1 baseline ✓ — both A and B searchable when both locked`);
+
+            // ═══════ PHASE 2 — unlock B, re-query, B must NOT appear ═══════
+            console.log(`${TEST} Phase 2: removing chat lock from B via canonical setLock(...)...`);
+            const unlockResult = setLock(registryKeyB, { kind: 'chat', op: 'remove', target: currentChatId }, { settings: vf });
+            if (!unlockResult?.success) {
+                console.error(`${TEST} [FAIL] setLock failed to remove B's chat lock: ${unlockResult?.reason}`);
+                return;
+            }
+
+            // Confirm activation filter now agrees B is out of scope
+            const stillActiveA = await shouldCollectionActivate(registryKeyA, context);
+            const stillActiveB = await shouldCollectionActivate(registryKeyB, context);
+            console.log(`${TEST} After unlock — activeA=${stillActiveA}, activeB=${stillActiveB}`);
+            if (!stillActiveA) { console.error(`${TEST} [FAIL] A should still be active after unlocking B`); return; }
+            if (stillActiveB) {
+                console.error(`${TEST} [FAIL] B still active after setLock op='remove' — lock removal not honored by shouldCollectionActivate. Bug in lock state, not in query path.`);
+                return;
+            }
+
+            let p2;
+            try { p2 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            catch (err) { console.error(`${TEST} [FAIL] Phase 2 dry-run threw: ${err.message}`); return; }
+
+            const injection2 = p2?.injectionText || '';
+            const p2HasA = injection2.includes(SENTINEL_A);
+            const p2HasB = injection2.includes(SENTINEL_B);
+            console.log(`${TEST} Phase 2 entries=${p2.entryCount}, contains SENTINEL_A=${p2HasA}, SENTINEL_B=${p2HasB}`);
+            console.log(`${TEST} Phase 2 injection preview: ${injection2.slice(0, 200)}`);
+
+            if (!p2HasA) {
+                console.error(`${TEST} [FAIL] Phase 2: A's content missing after unlocking B — query path stopped working for active collections`);
+                return;
+            }
+            if (p2HasB) {
+                console.error(`${TEST} [FAIL] LEAK DETECTED — B's content (${SENTINEL_B}) appeared in injection despite chat lock being removed. shouldCollectionActivate reported inactive but query path still returned B's vectors. Either (a) getEnabledLorebookCollections is bypassing the activation filter, or (b) the Qdrant content_type filter isn't applied and one physical collection is leaking vectors across logical collections.`);
+                return;
+            }
+
+            console.log(`${TEST} [PASS] Lock-controlled isolation works: unlocking B removed its content from query results, A unaffected`);
+        } finally {
+            // Cleanup both — use the canonical setLock op='clear' first to drop any
+            // remaining locks, then delete vectors + meta + registry entries.
+            for (const { cid, rk, label } of [
+                { cid: collectionIdA, rk: registryKeyA, label: 'A' },
+                { cid: collectionIdB, rk: registryKeyB, label: 'B' },
+            ]) {
+                if (!cid) continue;
+                try {
+                    setLock(rk, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    await deleteContentCollection(cid);
+                    deleteCollectionMeta(rk);
+                    unregisterCollection(rk);
+                    console.log(`${TEST} Cleanup ${label}: ${rk} removed ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] Cleanup ${label} failed: ${cleanupErr.message}`);
+                }
             }
         }
     });

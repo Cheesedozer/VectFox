@@ -43,8 +43,23 @@ const tee = (chunk, target) => {
     if (filtered) logStream.write(filtered);
 };
 
-const args = ['playwright', 'test', ...process.argv.slice(2)];
-const child = spawn('npx', args, {
+// Spawning .cmd files on Windows requires `shell: true` since Node 22+
+// (CVE-2024-27980 mitigation). With shell:true, Node concatenates command
+// + args verbatim, so we must pre-quote any arg containing whitespace or
+// shell metacharacters — otherwise `--grep "TEST 008"` becomes
+// `--grep TEST 008` and Playwright sees `TEST` and `008` as separate args.
+const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+const shellQuote = (arg) => {
+    if (typeof arg !== 'string') arg = String(arg);
+    if (arg === '' || /[\s"\\^<>|&;()\[\]{}*?$`!]/.test(arg)) {
+        return `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    }
+    return arg;
+};
+
+const args = ['playwright', 'test', ...process.argv.slice(2)].map(shellQuote);
+const child = spawn(npxCmd, args, {
     cwd: repoRoot,
     env: { ...process.env, FORCE_COLOR: '0' },
     shell: true,

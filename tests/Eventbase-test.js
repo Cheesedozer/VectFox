@@ -27,6 +27,11 @@
  * # Run all 8 tests
 npm run test:e2e
 npm run test:e2e:no-log.
+npm run test:e2e -- --grep "TEST 008"
+--grep "TEST 008|TEST 009" (regex, run multiple)
+--grep "TEST 008" --debug (Playwright inspector)
+--grep-invert "TEST 00[1-7]" (everything except 1-7)
+
 
 # Run a specific test
 npx playwright test --grep "TEST 001"

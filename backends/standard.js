@@ -371,8 +371,12 @@ export class StandardBackend extends VectorBackend {
             bareCollectionId = parts.slice(1).join(':');
         }
 
-        // When the plugin is available, data lives at vectors/{source}/{collectionId}/{model}/
-        // The native /api/vector/delete doesn't know about the model subfolder — route through plugin.
+        // Storage path is vectors/{source}/{collectionId}/{model}/. Both the plugin
+        // and ST's native /api/vector/delete honor `model` when it's in the body —
+        // mirror the insertVectorItems/getSavedHashes payload shape so delete lands
+        // in the same partition the insert wrote to.
+        // This fix exists on `main` (commit bcc4302) but was lost in Dev during
+        // merge `e9ed4c5`. TEST 009 catches the regression — re-applied 2026-05-23.
         if (this.pluginAvailable) {
             const response = await fetch('/api/plugins/similharity/chunks/delete', {
                 method: 'POST',
@@ -394,6 +398,7 @@ export class StandardBackend extends VectorBackend {
         }
 
         // Fallback: native ST API
+        const providerParams = getProviderSpecificParams(settings, false);
         const response = await fetch('/api/vector/delete', {
             method: 'POST',
             headers: getRequestHeaders(),
@@ -401,6 +406,8 @@ export class StandardBackend extends VectorBackend {
                 collectionId: bareCollectionId,
                 hashes: hashes,
                 source,
+                model,
+                ...providerParams,
             }),
         });
 
