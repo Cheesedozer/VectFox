@@ -70,7 +70,7 @@ export const KNOWN_BACKEND_LABELS = Object.freeze(['standard', 'qdrant', 'vectra
  * Normalize backend names used in IDs.
  * Keeps old alias "vectra" mapped to "standard" to avoid split IDs.
  * Exported (was private) so collection-export.js and any other caller stops
- * rolling its own version. See dev_helper.md §14 single-source-of-truth rule.
+ * rolling its own version. See Doc/collection_helper.md (single-source-of-truth rule).
  *
  * @param {string} backend
  * @returns {string} normalized backend label suitable for use in a collection ID
@@ -171,6 +171,46 @@ export function buildRegistryKey(collectionId, settingsOrBackend) {
         ? settingsOrBackend
         : getRegistryBackend(settingsOrBackend?.vector_backend);
     return `${backend}:${collectionId}`;
+}
+
+/**
+ * Canonical resolver: given either a registry-key ("backend:collectionId")
+ * or a bare collection ID, return the backend label + the bare collection ID.
+ *
+ * Use this anywhere routing must pick the right backend for a collection.
+ * Replaces three previously-scattered patterns:
+ *   1. `parseRegistryKey(id).backend ?? settings.vector_backend`  (silent wrong
+ *       backend for mixed-backend users; root cause of the 2026-05-23 EventBase
+ *       cross-backend retrieval bug)
+ *   2. `getBackendFromCollectionId(bareId)` alone (works for bare, but doesn't
+ *       handle the case where the caller already has a registry-key form)
+ *   3. Hand-rolled `id.includes('qdrant') ? 'qdrant' : 'standard'` (drift bait)
+ *
+ * Resolution order:
+ *   1. If the input has a known backend prefix (`qdrant:` / `vectra:` /
+ *      `standard:`), use that. This is the canonical post-2026-05-23 form.
+ *   2. Otherwise, try to detect the backend from the ID's structure
+ *      (`vf_<kind>_<backend>_…`). Handles legacy bare entries from before
+ *      the registry-key convention.
+ *   3. If both fail, return `{ backend: null }`. Caller decides whether to
+ *      throw, warn, or fall through to a settings-level default.
+ *
+ * The returned `collectionId` is always the BARE form — backend methods
+ * (e.g. StandardBackend.queryCollection, plugin REST calls) expect bare IDs
+ * and route by the `backend` field returned here.
+ *
+ * @param {string} input - registry key or bare collection ID
+ * @returns {{ backend: string|null, collectionId: string }}
+ *   `backend` is one of {@link KNOWN_BACKEND_LABELS} or `null` if unresolvable.
+ *   `collectionId` is always the bare form.
+ */
+export function resolveBackendForCollection(input) {
+    const parsed = parseRegistryKey(input);
+    if (parsed.backend) {
+        return { backend: parsed.backend, collectionId: parsed.collectionId };
+    }
+    const detected = getBackendFromCollectionId(parsed.collectionId);
+    return { backend: detected, collectionId: parsed.collectionId };
 }
 
 // ============================================================================

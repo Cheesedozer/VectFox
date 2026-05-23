@@ -135,11 +135,18 @@ test.beforeAll(async ({ browser }) => {
     // Let VectFox and other extensions finish initialising
     await sharedPage.waitForTimeout(2000);
 
-    // Pre-test cleanup: remove broken registry entries and leftover __vf_playwright_test_*
-    // collections from previous (possibly interrupted) runs.
-    //   - Broken entries: collectionId contains backend (e.g. vf_eventbase_qdrant_…) but
-    //     registryKey does not start with `<backend>:` — a legacy/migration corruption.
-    //   - Leftover test data: any collection whose collectionId contains '__vf_playwright_test_'.
+    // Pre-test cleanup: remove leftover *playwright_test* collections from
+    // previous (possibly interrupted) runs.
+    //
+    // Match pattern: case-insensitive `playwright_test` substring on EITHER
+    // the collectionId or the registryKey. This is broader than the previous
+    // `__vf_playwright_test_` check and catches:
+    //   • IDs without the leading double-underscore (`vf_playwright_test_…`)
+    //   • Registry-key-only orphans whose collectionId has been stripped
+    //   • Any future test naming convention as long as it includes the
+    //     unambiguous `playwright_test` marker
+    // The marker is unique enough that a real user collection would never
+    // contain it accidentally.
     const cleanupReport = await sharedPage.evaluate(async () => {
         const base = '/scripts/extensions/third-party/VectFox/';
         const { getCollectionListing, unregisterCollection } = await import(base + 'core/collection-loader.js');
@@ -147,15 +154,16 @@ test.beforeAll(async ({ browser }) => {
         const { deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { extension_settings } = await import('/scripts/extensions.js');
         const vf = extension_settings?.vectfox;
-        if (!vf) return { broken: [], leftover: [] };
+        if (!vf) return { leftover: [] };
 
         const listing = getCollectionListing(vf);
         const leftover = [];
+        const isTestMarker = (s) => typeof s === 'string' && s.toLowerCase().includes('playwright_test');
 
         for (const e of listing) {
             const cid = e.collectionId || '';
             const rk  = e.registryKey  || '';
-            if (cid.includes('__vf_playwright_test_')) leftover.push({ cid, rk });
+            if (isTestMarker(cid) || isTestMarker(rk)) leftover.push({ cid, rk });
         }
 
         // Full cleanup for leftover test data only (vectors + meta + registry).
@@ -164,6 +172,9 @@ test.beforeAll(async ({ browser }) => {
             try { await deleteContentCollection(cid); } catch {}
             try { deleteCollectionMeta(rk); } catch {}
             try { unregisterCollection(rk); } catch {}
+            // Defensive: also try the bare-ID form in case a pre-B4-fix run
+            // left a duplicate entry behind.
+            try { unregisterCollection(cid); } catch {}
         }
 
         return { leftover };
@@ -349,7 +360,6 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
         const base = '/scripts/extensions/third-party/VectFox/';
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
         const { deleteCollection } = await import(base + 'core/collection-loader.js');
-        const { QdrantBackend } = await import(base + 'backends/qdrant.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
         const vf = extension_settings?.vectfox;
@@ -420,7 +430,11 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
         console.log(`${TEST} Insert complete ✓`);
 
         try {
-            const backend = new QdrantBackend();
+            // Per Doc/collection_helper.md (canonical-API rule): use
+            // getBackend so the shared singleton (with pluginAvailable +
+            // Qdrant init already done) is returned.
+            // A fresh `new QdrantBackend()` would skip that initialization.
+            const backend = await getBackend(settings);
             let results;
             try {
                 results = await backend.queryCollection(collectionId, 'naval alliance combat pirate', 10, settings);
@@ -546,7 +560,6 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
-        const { QdrantBackend } = await import(base + 'backends/qdrant.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
@@ -594,7 +607,11 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
         console.log(`${TEST} Vectorized ${vectorizeResult.chunkCount} chunks → ${registryKey}`);
 
         try {
-            const backend = new QdrantBackend();
+            // Per Doc/collection_helper.md (canonical-API rule): use
+            // getBackend so the shared, initialized singleton is returned. A
+            // fresh `new QdrantBackend()` would skip the plugin probe and
+            // Qdrant init that happens at first use.
+            const backend = await getBackend({ ...vf, vector_backend: 'qdrant' });
             let listResult;
             try { listResult = await backend.listChunks(collectionId, vf, { limit: 10 }); }
             catch (err) { console.error(`${TEST} [FAIL] listChunks threw: ${err.message}`); return; }
@@ -778,7 +795,6 @@ test('TEST 006 — Standard EventBase: insert + parseEmbedText recovery', async 
         const base = '/scripts/extensions/third-party/VectFox/';
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
         const { deleteCollection } = await import(base + 'core/collection-loader.js');
-        const { StandardBackend } = await import(base + 'backends/standard.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { parseEmbedText } = await import(base + 'core/eventbase-schema.js');
         const { extension_settings } = await import('/scripts/extensions.js');
@@ -851,7 +867,12 @@ test('TEST 006 — Standard EventBase: insert + parseEmbedText recovery', async 
         console.log(`${TEST} Insert complete ✓`);
 
         try {
-            const backend = new StandardBackend();
+            // Per Doc/collection_helper.md (canonical-API rule): use
+            // getBackend so the shared, initialized singleton is returned. A
+            // fresh `new StandardBackend()` would have pluginAvailable=false
+            // until initialize() runs — silently routing every call to the
+            // native fallback and masking real plugin paths.
+            const backend = await getBackend(settings);
             let results;
             try { results = await backend.queryCollection(collectionId, 'saltglass anvil quartzwood beetle', 10, settings); }
             catch (err) { console.error(`${TEST} [FAIL] queryCollection threw: ${err.message}`); return; }
@@ -1335,9 +1356,10 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
 // What we touch (boundary rules — same as TEST 009):
 //   ✗ DO NOT mutate extension_settings.vectfox
 //   ✓ DO mutate collection lock state via canonical `setLock(...)` API
-//     (per dev_helper.md §14) — these are user-level lock changes on our
-//     test collections, restored to baseline / removed entirely in finally.
-//   ✓ DO use registry-key form for all lock + activation calls (§14).
+//     (per Doc/collection_helper.md) — these are user-level lock changes on
+//     our test collections, restored to baseline / removed entirely in finally.
+//   ✓ DO use registry-key form for all lock + activation calls
+//     (see Doc/collection_helper.md).
 //
 // Backend choice: Qdrant — that's where the prod symptom appeared. Falls
 // back gracefully if user doesn't have Qdrant configured.
@@ -1527,7 +1549,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
 //   activation TRIGGERS (keyword matches in chat content) firing on a
 //   collection owned by a DIFFERENT persona.
 //
-//   Per dev_helper.md §14 activation priority chain, triggers (step 2)
+//   Per Doc/collection_helper.md activation priority chain, triggers (step 2)
 //   activate BEFORE the lock check (steps 4-5). Ownership (`isOwn`) was
 //   NOT checked anywhere in the chain — that's the gap B7 closes.
 //
@@ -1874,6 +1896,217 @@ test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () =
                     console.log(`${TEST} Phase 2 cleanup ✓`);
                 } catch (cleanupErr) {
                     console.warn(`${TEST} [WARN] Phase 2 cleanup failed: ${cleanupErr.message}`);
+                }
+            }
+        }
+    });
+    assertPassed(logs);
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  TEST 013 — Synthetic E2E: self-contained lorebook + EventBase round-trip (qdrant)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Why this test exists:
+//   TEST 003 and TEST 007 are E2E tests that depend on whatever the user
+//   happens to have locked in their current chat. That's useful coverage
+//   for the real environment, but means E2E confidence vanishes the
+//   moment a fresh ST install or empty chat is involved.
+//
+//   TEST 013 covers the same E2E pipeline (lorebook activation + EventBase
+//   retrieval, both queried in one cycle) on PURELY SYNTHETIC test data —
+//   it creates its own lorebook, its own EventBase collection, locks both
+//   to the current chat, runs the dry-run pipeline, asserts both sentinels
+//   appear in the injection, then nukes every artifact like nothing was
+//   ever done. No reliance on user data, settings, or pre-existing locked
+//   collections.
+//
+// Backend choice: qdrant — production-relevant path and what TEST 003 is
+// shaped after. Gracefully fails the test config check if Qdrant is not
+// configured rather than crashing.
+//
+// Cleanup contract: every artifact this test creates is removed in finally:
+//   - lorebook vectors + meta + registry (both canonical and bare forms)
+//   - EventBase vectors + meta + registry + explicit lock removal
+//   - vectra-side-effect folder (B4) for both
+test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async () => {
+    const logs = await runTestInPage(async () => {
+        const TEST = 'TEST 013 [SyntheticE2E]';
+        const base = '/scripts/extensions/third-party/VectFox/';
+        const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
+        const { insertEvents } = await import(base + 'core/eventbase-store.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
+        const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
+        const { extension_settings } = await import('/scripts/extensions.js');
+
+        const vf = extension_settings?.vectfox;
+        if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured`); return; }
+
+        const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
+        const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
+        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
+        const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
+
+        // Derive the current persona's handle the same way collection-ids.js
+        // does. We need this in the synthetic EventBase collection ID so that
+        // registerCollection's creatorHandle-stamp condition (`_<handle>_` in
+        // the ID) matches — without it, setLock denies the chat-lock add
+        // because the persona's name1 doesn't match the stamped creator
+        // (since nothing got stamped to begin with).
+        const personaHandle = (ctx?.name1 || 'user')
+            .normalize('NFC')
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}]+/gu, '_')
+            .replace(/^_|_$/g, '')
+            .substring(0, 30) || 'user';
+
+        // Sentinels: unique enough that they CANNOT exist in any real user data
+        // or any other test's fixture. Used to verify the retrieval pipeline
+        // returned OUR synthetic content (not leaked from elsewhere).
+        const LOREBOOK_SENTINEL = 'PHOSPHORIC_ANTHELION_J4M9';
+        const EVENTBASE_SENTINEL = 'ZIRCONIC_OSCILLATOR_T2P6';
+
+        const ts = Date.now();
+        const lorebookEntries = [{
+            uid: 'vf_test_013_a',
+            comment: 'Phosphoric Anthelion',
+            key: ['phosphoric', 'anthelion'],
+            content: `The ${LOREBOOK_SENTINEL} is a circular halo of phosphor-light that appears around the moon during the Stilled Tide. Sentinel-lorebook records describe it as visible only from the cliffs of Astrelle and only on nights when the sea lies perfectly flat. Astronomers of the Pale Conclave have catalogued its appearance 14 times in two centuries.`,
+        }];
+
+        const eventbaseCollectionId = `vf_eventbase_qdrant_${personaHandle}___vf_playwright_test_013__${ts}`;
+        const eventbaseRegistryKey  = `qdrant:${eventbaseCollectionId}`;
+        const testEvents = [{
+            event_type: 'discovery',
+            importance: 9,
+            summary: `Astrelle expedition records the ${EVENTBASE_SENTINEL} — a resonance instrument unearthed beneath the Stilled Tide cliffs`,
+            DateTime: '2027-08-12T22:30:00Z',
+            cause: 'Routine survey of phosphor-light anomalies',
+            result: 'Instrument catalogued, primary resonance frequency logged at 7.3 Hz',
+            characters: ['Saskia Marrow', 'Halvard Cresswell'],
+            locations: ['Astrelle Cliffs', 'Stilled Tide'],
+            factions: ['Pale Conclave'],
+            items: [EVENTBASE_SENTINEL],
+            concepts: ['discovery', 'resonance', 'phosphoric phenomena'],
+            keywords: ['zirconic', 'oscillator', 'astrelle', 'discovery'],
+            open_threads: ['What does the oscillator resonate with?'],
+            should_persist: true,
+            chat_uuid: currentChatId, // pivot for getCollectionLocks lookup
+            event_id: `test_event_013_001_${ts}`,
+            source_window_start: 0,
+            source_window_end: 5,
+            source_message_hashes: [77701, 77702],
+            schema_version: 1,
+        }];
+
+        let lorebookCollectionId = null, lorebookRegistryKey = null;
+        let eventbaseCreated = false;
+
+        try {
+            // ── Phase A: vectorize lorebook (scope='chat' → auto-locks to current chat) ──
+            console.log(`${TEST} Phase A: vectorizing synthetic lorebook (sentinel "${LOREBOOK_SENTINEL}")...`);
+            const lbRes = await vectorizeContent({
+                contentType: 'lorebook',
+                source: { type: 'file', name: '__vf_playwright_test_013_lb__', entries: lorebookEntries },
+                settings: { ...vf, vector_backend: 'qdrant', strategy: 'per_entry', scope: 'chat' },
+            });
+            if (!lbRes?.success || !lbRes.collectionId) { console.error(`${TEST} [FAIL] Lorebook vectorization failed`); return; }
+            lorebookCollectionId = lbRes.collectionId;
+            lorebookRegistryKey  = `qdrant:${lorebookCollectionId}`;
+            console.log(`${TEST} Lorebook ready → ${lorebookRegistryKey}`);
+
+            const lbActive = await shouldCollectionActivate(lorebookRegistryKey, context);
+            if (!lbActive) { console.error(`${TEST} [FAIL] Lorebook didn't auto-lock to current chat`); return; }
+
+            // ── Phase B: insert synthetic events into a fresh EventBase, then lock it ──
+            console.log(`${TEST} Phase B: inserting 1 synthetic event into ${eventbaseCollectionId}...`);
+            await insertEvents(testEvents, { ...vf, vector_backend: 'qdrant' }, null, eventbaseCollectionId);
+            eventbaseCreated = true;
+
+            // EventBase doesn't auto-lock via scope='chat' the way lorebook does
+            // (insertEvents skips the auto-lock path because the collection ID is
+            // supplied explicitly). Lock it manually so runEventBaseRetrieval
+            // picks it up as a live locked collection.
+            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
+            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase to current chat: ${lockResult?.reason}`); return; }
+
+            const ebLocks = getCollectionLocks(eventbaseRegistryKey);
+            if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
+            console.log(`${TEST} EventBase locked to chat ✓ (locks=${ebLocks.length})`);
+
+            // ── Phase C: query lorebook via dry-run WI activation ──
+            const chat = ctx.chat ?? [];
+            const query = `${LOREBOOK_SENTINEL} ${EVENTBASE_SENTINEL} phosphoric anthelion stilled tide astrelle zirconic oscillator`;
+
+            console.log(`${TEST} Phase C: querying lorebook + EventBase against synthetic data...`);
+            let lbResult;
+            try { lbResult = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
+
+            const lbInjection = lbResult?.injectionText || '';
+            if (!lbInjection.includes(LOREBOOK_SENTINEL)) {
+                console.error(`${TEST} [FAIL] Lorebook sentinel "${LOREBOOK_SENTINEL}" not found in injection (entries=${lbResult.entryCount})`);
+                return;
+            }
+            console.log(`${TEST} Lorebook ✓ — ${lbResult.entryCount} entry/entries, sentinel found`);
+
+            // ── Phase D: query EventBase via dry-run retrieval ──
+            const { runEventBaseRetrieval } = await import(base + 'core/eventbase-workflow.js').catch(() => ({}));
+            if (typeof runEventBaseRetrieval !== 'function') { console.warn(`${TEST} [WARN] runEventBaseRetrieval not exported — EventBase E2E half skipped`); return; }
+
+            let ebResult;
+            try { ebResult = await runEventBaseRetrieval({ chat, settings: vf, dryRun: true, testMessage: query }); }
+            catch (err) { console.error(`${TEST} [FAIL] runEventBaseRetrieval threw: ${err.message}`); return; }
+
+            const ebInjection = ebResult?.injectionText || '';
+            if (!ebResult?.eventCount) { console.error(`${TEST} [FAIL] EventBase returned 0 events`); return; }
+            if (!ebInjection.includes(EVENTBASE_SENTINEL)) {
+                console.error(`${TEST} [FAIL] EventBase sentinel "${EVENTBASE_SENTINEL}" not in injection (events=${ebResult.eventCount})`);
+                console.log(`${TEST} EventBase injection preview: ${ebInjection.slice(0, 300)}`);
+                return;
+            }
+            console.log(`${TEST} EventBase ✓ — ${ebResult.eventCount} event(s), sentinel found`);
+
+            console.log(`${TEST} [PASS] Synthetic E2E qdrant: lorebook + EventBase both round-trip with sentinels intact`);
+        } finally {
+            // ── Cleanup: remove every trace this test created ──
+            // Order: locks → vectors → meta → registry (both canonical + bare).
+            // EventBase first because we explicitly locked it; lorebook auto-cleans
+            // its lock via deleteContentCollection.
+            if (eventbaseCreated) {
+                try {
+                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'qdrant' }, eventbaseRegistryKey);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(eventbaseCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] EventBase folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseCollectionId);
+                    console.log(`${TEST} EventBase cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] EventBase cleanup failed: ${cleanupErr.message}`);
+                }
+            }
+
+            if (lorebookCollectionId) {
+                try {
+                    await deleteContentCollection(lorebookCollectionId);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(lorebookCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] Lorebook folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(lorebookRegistryKey);
+                    unregisterCollection(lorebookRegistryKey);
+                    unregisterCollection(lorebookCollectionId);
+                    console.log(`${TEST} Lorebook cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] Lorebook cleanup failed: ${cleanupErr.message}`);
                 }
             }
         }

@@ -14,7 +14,6 @@ import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
 import { getCollectionListing } from './collection-loader.js';
 import { getCollectionMeta, shouldCollectionActivate } from './collection-metadata.js';
-import { parseRegistryKey } from './collection-ids.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
@@ -87,16 +86,22 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 
     for (const collection of lorebookCollections) {
         try {
-            // collection.id is the registry key form; parse to extract the raw collection ID for the backend
-            const parsed = parseRegistryKey(collection.id || collection.registryKey || '');
-            const rawCollectionId = parsed.collectionId || collection.id;
+            // Canonical routing (Doc/collection_helper.md): pass the
+            // registry-key form ("backend:id") to queryCollection. Its
+            // resolveBackendForCollection helper picks
+            // the right backend per-collection. Previously we extracted the
+            // bare ID here and passed that down, which silently routed all
+            // lorebook queries through settings.vector_backend — broken for
+            // any user with mixed-backend lorebooks (e.g. a qdrant lorebook
+            // locked alongside a vectra lorebook).
+            const lookupKey = collection.id || collection.registryKey;
 
             // Run all query texts in parallel, merge by uid keeping the highest score.
             // In dual-query mode the user's last message runs alongside the full context —
             // a chunk that ranks outside topK for the context query can still be surfaced
             // if it ranks within topK for the focused user-message query.
             const queryResults = await Promise.all(
-                queryTexts.map(qt => queryCollection(rawCollectionId, qt, topK, settings).catch(() => null))
+                queryTexts.map(qt => queryCollection(lookupKey, qt, topK, settings).catch(() => null))
             );
 
             const bestByUid = new Map();
@@ -183,7 +188,7 @@ async function getEnabledLorebookCollections(settings) {
         if (!entry.collectionId.startsWith('vf_lorebook_')) continue;
         if (entry.meta.enabled === false) continue;
         // Respect persona ownership before checking activation. The activation
-        // chain (§14 in Doc/dev_helper.md) lets trigger keywords activate a
+        // chain (Doc/collection_helper.md) lets trigger keywords activate a
         // collection regardless of who owns it — which leaks another persona's
         // lorebooks into the current persona's chat when keywords coincide.
         // `isOwn` (from getCollectionListing) is true when the current persona

@@ -540,9 +540,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     // query them via queryCollection directly and attach _hash (same as queryEvents does).
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2;
     const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
-    const archiveEventPromises = archiveCollections.map(async ({ collectionId: archColId }) => {
+    const archiveEventPromises = archiveCollections.map(async ({ registryKey: archKey, collectionId: archColId }) => {
         try {
-            const { hashes, metadata } = await queryCollection(archColId, effectiveSearchText, topK, ebSettings);
+            // Canonical routing (Doc/collection_helper.md): pass registry-key
+            // form so queryCollection routes per-collection-backend. Previously
+            // passed the bare `archColId` which silently sent every archive
+            // query through settings.vector_backend.
+            const { hashes, metadata } = await queryCollection(archKey, effectiveSearchText, topK, ebSettings);
             if (!hashes?.length) return [];
             return metadata.map((meta, i) => ({ ...meta, _hash: hashes[i] }));
         } catch (err) {
@@ -574,7 +578,14 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
         keywordQuery,
         chatLength: getContext().chat?.length || chat?.length || 0,
         settings,
-        liveCollectionIds: lockedLiveCollections.map(c => c.collectionId),
+        // Canonical routing (Doc/collection_helper.md): pass registry-key form
+        // ("backend:id") so queryCollection's resolveBackendForCollection picks the right
+        // backend per-collection. Previously passing the bare collectionId
+        // here silently routed EVERY locked collection through
+        // settings.vector_backend, breaking mixed-backend users (e.g. a
+        // standard EventBase locked + a qdrant EventBase locked at the same
+        // time would both query whichever backend was the default).
+        liveCollectionIds: lockedLiveCollections.map(c => c.registryKey),
         additionalCandidates,
         skipLiveQuery: !queryEventbase,
         skipContextDedup: isCrossChat,

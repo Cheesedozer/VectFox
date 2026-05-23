@@ -16,7 +16,7 @@
  * Plugin-enhanced features (metadata, chunk listing, chunk editing) degrade
  * gracefully to reduced functionality — never to a hard error.
  *
- * See Doc/dev_helper.md §16 for the full plugin dependency policy.
+ * See Doc/dev_helper.md §15 for the full plugin dependency policy.
  *
  * !! DO NOT add any unconditional plugin calls here !!
  *
@@ -770,6 +770,11 @@ export class StandardBackend extends VectorBackend {
                 // back to native list (hashes only) so the UI stays usable.
                 const errBody = await response.text().catch(() => '<no body>');
                 if (response.status >= 400 && response.status < 500) {
+                    // Log BEFORE throwing so the failure leaves a console trace
+                    // even if the throw is caught silently upstream. This branch
+                    // hasn't been triggered in regression testing yet — keep the
+                    // log loud so a real 4xx in the wild is unmissable.
+                    console.error(`VectFox: Plugin listChunks ${response.status} ${response.statusText} for ${collectionId} — failing loud (misconfiguration / version skew suspected). Body: ${errBody.slice(0, 500)}`);
                     throw new Error(`Plugin listChunks ${response.status} ${response.statusText} for ${collectionId}: ${errBody.slice(0, 200)}`);
                 }
                 console.warn(`VectFox: Plugin listChunks returned ${response.status} ${response.statusText} — falling back to native (hashes only). Body: ${errBody.slice(0, 200)}`);

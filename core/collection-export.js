@@ -78,7 +78,7 @@ const EXPORT_BATCH_SIZE = 100;
 // Backend-name helpers (normalize / remap) used to live here as private copies;
 // they're now canonicalized in core/collection-ids.js (`normalizeBackendForId`,
 // `remapCollectionIdToBackend`). Importing from there keeps a single source of
-// truth — see dev_helper.md §14 single-source-of-truth rule.
+// truth — see Doc/collection_helper.md (single-source-of-truth rule).
 
 // ============================================================================
 // EXPORT FUNCTIONS

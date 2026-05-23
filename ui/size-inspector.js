@@ -148,7 +148,7 @@ async function runScan() {
         // discovery, dedup of (backend, collectionId) collisions, scope migration,
         // and per-entry source/model resolution. Each returned entry already
         // carries { id, registryKey, backend, source, model, chunkCount } — no
-        // local fetch + dedup needed here. See dev_helper.md §14.
+        // local fetch + dedup needed here. See Doc/collection_helper.md.
         const settings = extension_settings?.vectfox;
         if (!settings) {
             throw new Error("VectFox settings not initialized");

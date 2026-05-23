@@ -30,7 +30,7 @@ import { oai_settings } from '../../../../openai.js';
 import { isWebLlmSupported } from '../../../shared.js';
 import { getWebLlmProvider } from '../providers/webllm.js';
 import { getBackend, getBackendForCollection, invalidateBackendHealth, recordQuery, recordInsert, recordDelete, recordError } from '../backends/backend-manager.js';
-import { parseRegistryKey } from './collection-ids.js';
+import { parseRegistryKey, resolveBackendForCollection } from './collection-ids.js';
 import {
     getProviderConfig,
     getModelField,
@@ -822,9 +822,15 @@ export async function deleteVectorItems(collectionId, hashes, settings) {
  * @returns {Promise<{ hashes: number[], metadata: object[]}>} - Hashes and metadata of the results
  */
 export async function queryCollection(collectionId, searchText, topK, settings, filters = {}) {
-    const parsed = parseRegistryKey(collectionId);
-    const backend = parsed.backend
-        ? await getBackendForCollection(parsed.backend, settings)
+    // Canonical routing (Doc/collection_helper.md): resolveBackendForCollection accepts either form
+    //   (registry-key "backend:id" or bare ID) and returns the backend label
+    //   plus the BARE collectionId for downstream calls. Falls back to
+    //   getBackend(settings) only when BOTH resolution paths fail, which
+    //   should never happen for a well-formed VectFox collection ID.
+    const resolved = resolveBackendForCollection(collectionId);
+    const bareCollectionId = resolved.collectionId;
+    const backend = resolved.backend
+        ? await getBackendForCollection(resolved.backend, settings)
         : await getBackend(settings);
 
     // Sources that require client-side embedding generation
@@ -869,9 +875,9 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
         }
         const queryStart = Date.now();
         try {
-            const result = await hybridSearch(collectionId, searchText, topK, settings, { queryVector, filters });
+            const result = await hybridSearch(bareCollectionId, searchText, topK, settings, { queryVector, filters });
             const queryLatency = Date.now() - queryStart;
-            recordQuery(settings?.vector_backend || 'standard', queryLatency);
+            recordQuery(resolved.backend || settings?.vector_backend || 'standard', queryLatency);
             if (settings.eventbase_debug_logging) {
                 const scores = (result.metadata || []).map(m => (m.score ?? 0).toFixed(4));
                 const fusionMethod = (settings.hybrid_fusion_method || 'rrf').toUpperCase();
@@ -879,7 +885,7 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
             }
             return result;
         } catch (error) {
-            recordError(settings?.vector_backend || 'standard', error);
+            recordError(resolved.backend || settings?.vector_backend || 'standard', error);
             throw error;
         }
     }
@@ -893,11 +899,10 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
     // VEC-18: Track query latency for health dashboard
     const queryStart = Date.now();
     let rawResults;
-    // Derive the actual backend name from the collection's registry key prefix,
-    // falling back to settings.vector_backend so metrics go to the right backend.
-    const actualBackendName = parsed.backend || settings?.vector_backend || 'standard';
+    // Backend name for metrics — resolved backend wins, fall back to settings.
+    const actualBackendName = resolved.backend || settings?.vector_backend || 'standard';
     try {
-        rawResults = await backend.queryCollection(collectionId, searchText, overfetchAmount, settings, queryVector);
+        rawResults = await backend.queryCollection(bareCollectionId, searchText, overfetchAmount, settings, queryVector);
         const queryLatency = Date.now() - queryStart;
         recordQuery(actualBackendName, queryLatency);
         if (settings.eventbase_debug_logging) {
@@ -918,7 +923,7 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
         text: meta.text || ''
     }));
 
-    let finalResults = await scoreResults(resultsForBoost, searchText, topK, settings, collectionId);
+    let finalResults = await scoreResults(resultsForBoost, searchText, topK, settings, bareCollectionId);
 
     if (settings.eventbase_debug_logging) {
         const idfMode = settings.bm25_use_corpus_idf ? 'corpus-IDF' : 'local-IDF';
