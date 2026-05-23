@@ -34,6 +34,30 @@ import { test, expect } from '@playwright/test';
 import { existsSync } from 'fs';
 
 // ---------------------------------------------------------------------------
+// SillyTavern target URL — override here for quick A/B testing across machines
+// ---------------------------------------------------------------------------
+//
+// Set TEST_TARGET_URL to point the suite at a different ST instance for one
+// run. Leave it as `null` to fall back to the default chain:
+//   1. `process.env.SILLYTAVERN_URL` if set, otherwise
+//   2. `baseURL` in playwright.config.js
+//
+// Examples:
+//   const TEST_TARGET_URL = 'http://192.168.1.50:8000';   // LAN box
+//   const TEST_TARGET_URL = 'http://localhost:8000';      // local ST
+//   const TEST_TARGET_URL = null;                          // use config/env
+//
+// This override only affects THIS test file — it doesn't mutate the config
+// for any other suite.
+// ---------------------------------------------------------------------------
+const TEST_TARGET_URL = 'http://localhost:8000';
+
+if (TEST_TARGET_URL) {
+    test.use({ baseURL: TEST_TARGET_URL });
+    console.log(`[setup] Eventbase-test.spec.js: baseURL overridden → ${TEST_TARGET_URL}`);
+}
+
+// ---------------------------------------------------------------------------
 // serial mode — one browser window, shared across all tests
 // ---------------------------------------------------------------------------
 test.describe.configure({ mode: 'serial' });
@@ -214,6 +238,7 @@ async function runTestInPage(testFn) {
 function assertPassed(logs) {
     const failLines = logs.filter(m => m.text.includes('[FAIL]')).map(m => m.text);
     const warnLines = logs.filter(m => m.text.includes('[WARN]')).map(m => m.text);
+    const skipLines = logs.filter(m => m.text.includes('[SKIP]')).map(m => m.text);
     const passed    = logs.some(m => m.text.includes('[PASS]'));
 
     logs.forEach(m => {
@@ -223,8 +248,94 @@ function assertPassed(logs) {
     });
 
     if (warnLines.length) console.warn('WARNINGS:\n' + warnLines.join('\n'));
+
+    // [SKIP] is a soft-pass: the test couldn't run because a prerequisite
+    // wasn't met (no plugin, no qdrant config, wrong backend, etc.). In
+    // serial-mode suites this is critical — a hard FAIL halts every
+    // subsequent test, so a no-plugin user running the full suite would be
+    // stuck at TEST 001 and never reach the standard-backend tests that
+    // DO work on their machine. SKIP keeps the suite moving.
+    //
+    // Precedence: SKIP wins over the PASS-required check, so a test that
+    // skipped without emitting [FAIL] is treated as cleanly bypassed.
+    // SKIP does NOT override [FAIL] — a test that emits both is still a
+    // hard failure (someone should fix the test or the environment).
     expect(failLines.length, '[FAIL] found:\n' + failLines.join('\n')).toBe(0);
+    if (skipLines.length) {
+        console.warn('SKIPPED:\n' + skipLines.join('\n'));
+        return;
+    }
     expect(passed, 'No [PASS] found — test did not reach success path').toBe(true);
+}
+
+// ---------------------------------------------------------------------------
+// Environment probes — used by soft-skip helpers below
+// ---------------------------------------------------------------------------
+//
+// These probes run at the spec level (outside runTestInPage) so we can call
+// `test.skip(...)` cleanly before the test body executes. Skipping at this
+// layer marks the test as ⏭️ skipped in the Playwright report instead of as
+// failed — critical for serial-mode suites, where a hard FAIL halts every
+// subsequent test. Without soft-skip, a no-plugin user running the full
+// suite gets stuck at TEST 001 and never reaches TEST 009 (the test that
+// specifically validates their environment).
+
+let _pluginAvailableCache = null;
+async function isSimilharityPluginAvailable() {
+    if (_pluginAvailableCache !== null) return _pluginAvailableCache;
+    try {
+        _pluginAvailableCache = await sharedPage.evaluate(async () => {
+            try {
+                const resp = await fetch('/api/plugins/similharity/probe', { method: 'GET' });
+                // ST's generic 404 page (route not registered = plugin not
+                // installed/enabled) is text/html. Any other content-type
+                // means the request reached the plugin route table — even a
+                // 404 JSON inside the plugin counts as "plugin installed".
+                const ct = resp.headers.get('content-type') || '';
+                return !ct.includes('text/html');
+            } catch { return false; }
+        });
+    } catch { _pluginAvailableCache = false; }
+    return !!_pluginAvailableCache;
+}
+
+async function hasQdrantConfig() {
+    try {
+        return await sharedPage.evaluate(async () => {
+            const { extension_settings } = await import('/scripts/extensions.js');
+            const vf = extension_settings?.vectfox;
+            return !!(vf?.qdrant_url || vf?.qdrant_host);
+        });
+    } catch { return false; }
+}
+
+/**
+ * Soft-skip helper for tests that require the qdrant pipeline. Skips cleanly
+ * (test marked ⏭️ in report, not failed) when either:
+ *   1. The Similharity plugin isn't installed (qdrant requires it — see
+ *      Doc/dev_helper.md §15 plugin-dependency policy).
+ *   2. VectFox settings have no `qdrant_url` / `qdrant_host` configured.
+ *
+ * Use at the very top of any qdrant-requiring test body.
+ */
+async function skipIfQdrantUnavailable() {
+    if (!(await isSimilharityPluginAvailable())) {
+        test.skip(true, 'Similharity plugin not installed — qdrant requires it. See Doc/dev_helper.md §15.');
+    }
+    if (!(await hasQdrantConfig())) {
+        test.skip(true, 'Qdrant URL/host not configured in VectFox settings.');
+    }
+}
+
+/**
+ * Soft-skip helper for TEST 008 — uses standard backend but specifically
+ * exercises the plugin-enhanced path. Skips when the plugin isn't installed.
+ * (TEST 009 is the no-plugin counterpart and should run on any machine.)
+ */
+async function skipIfNoPlugin() {
+    if (!(await isSimilharityPluginAvailable())) {
+        test.skip(true, 'Similharity plugin not installed — this test exercises the plugin-enhanced path. TEST 009 is the no-plugin counterpart.');
+    }
 }
 
 
@@ -235,6 +346,7 @@ function assertPassed(logs) {
 // locks it to the current chat, runs a dry-run query, then cleans up.
 // No external setup required — just needs Qdrant configured in VectFox settings.
 test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 001 [QdrantLorebook]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -253,9 +365,10 @@ test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
         if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
         const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
 
-        // Verify Qdrant is configured before attempting vectorization
+        // Defensive in-eval check — spec-level skipIfQdrantUnavailable should
+        // have already returned for missing config, but belt-and-suspenders.
         const hasQdrant = !!(vf.qdrant_url || vf.qdrant_host);
-        if (!hasQdrant) { console.error(`${TEST} [FAIL] Qdrant not configured — set qdrant_url or qdrant_host in VectFox settings`); return; }
+        if (!hasQdrant) { console.warn(`${TEST} [SKIP] Qdrant not configured — set qdrant_url or qdrant_host in VectFox settings`); return; }
 
         // Synthetic lorebook entries with content that is clearly unique to this test
         const testEntries = [
@@ -355,6 +468,7 @@ test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
 // Self-contained: creates its own EventBase collection, inserts 2 test
 // events, queries them back, verifies fields, then cleans up.
 test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 002 [EventBaseQdrant]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -489,6 +603,7 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
 // ═══════════════════════════════════════════════════════════════════
 // Setup: TEST 001 + TEST 002 setups both complete
 test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 003 [E2EQuery]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -554,6 +669,7 @@ test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
 // verifies listChunks surfaces entryName + text, deletes one chunk,
 // verifies it's gone, then cleans up.
 test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 004 [DBBrowser]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -565,7 +681,7 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
-        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured`); return; }
 
         const testEntries = [
             {
@@ -1029,6 +1145,7 @@ test('TEST 007 — E2E standard: both locked, both return results', async () => 
 // after a self-contained insert. If this fails while pluginAvailable=true,
 // the plugin's /chunks/list endpoint or vectra's storeListItems is broken.
 test('TEST 008 — DB Browser standard + plugin: listing + delete', async () => {
+    await skipIfNoPlugin();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 008 [DBBrowserStd]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -1364,6 +1481,7 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
 // Backend choice: Qdrant — that's where the prod symptom appeared. Falls
 // back gracefully if user doesn't have Qdrant configured.
 test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 010 [LeakCheck]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -1376,7 +1494,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
-        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured — leak test targets Qdrant since prod symptom was there`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured — leak test targets Qdrant since prod symptom was there`); return; }
 
         const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
@@ -1571,6 +1689,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
 // would make Phase 2 fail because the filter wouldn't block anything.
 // We detect and skip with a clear signal in that case.
 test('TEST 011 — Cross-persona activation isolation', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 011 [CrossPersona]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -1583,7 +1702,7 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
-        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured`); return; }
 
         const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
@@ -1738,6 +1857,7 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
 //   ✓ DO use sentinel `__vf_playwright_test_012__` in IDs so beforeAll's
 //     orphan cleanup catches anything left behind by a crash.
 test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 012 [ImportRename]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -1751,7 +1871,7 @@ test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () =
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
-        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured — need both backends to test the rename`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured — need both backends to test the rename`); return; }
 
         // ═══ Pure-helper sanity checks (no I/O) ═══════════════════════════
         // Verify the helper does what it claims before triggering an actual
@@ -1931,6 +2051,7 @@ test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () =
 //   - EventBase vectors + meta + registry + explicit lock removal
 //   - vectra-side-effect folder (B4) for both
 test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async () => {
+    await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 013 [SyntheticE2E]';
         const base = '/scripts/extensions/third-party/VectFox/';
@@ -1944,7 +2065,7 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
-        if (!(vf.qdrant_url || vf.qdrant_host)) { console.error(`${TEST} [FAIL] Qdrant not configured`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured`); return; }
 
         const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;

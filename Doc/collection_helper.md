@@ -219,6 +219,24 @@ Three tiers exist. Call the highest tier that covers your use case:
 - `scope='character'` → `characterId` is in `lockedToCharacterIds`
 - anything else → `false` (no global scope; legacy `global` was migrated to `character` — see below)
 
+## Scope handling — `'unknown'` is dead, use `null`
+
+`defaultCollectionMeta.scope` is `null`, not the string `'unknown'`. This is load-bearing for the no-plugin fallback discovery path:
+
+- **The trap:** `'unknown'` is a truthy string. Code like `storedMeta.scope || parsedMeta.scope` will short-circuit on the truthy `'unknown'` and never fall through to the correctly-parsed scope from the ID structure.
+- **The symptom:** UI checkbox "Active for current chat" appears to toggle but doesn't persist. `saveActivation` has branches only for `scope='chat'` and `scope='character'`; with `scope='unknown'` it falls through silently. The next render re-reads the still-not-locked state and the checkbox flips back off.
+- **Who's affected:** No-plugin users specifically. With-plugin discovery pre-stamps scope from the plugin's collection listing, so the default never surfaces. Fallback discovery doesn't stamp scope → `getCollectionMeta` returns the default → bug bites.
+
+**Rules for new code:**
+- ✅ Treat `null`, `undefined`, AND the legacy string `'unknown'` as "not set". Pattern: `(meta.scope && meta.scope !== 'unknown') ? meta.scope : fallback`.
+- ✅ When merging stored + parsed scope, use the defensive pattern above — never bare `||`.
+- ❌ Do not introduce `defaultCollectionMeta.scope = 'unknown'` again. Use `null` if you need an explicit default.
+- ❌ Do not write `'unknown'` to `meta.scope` on disk anywhere. If scope can't be determined, leave the field absent (the loader's fallback chain handles it).
+
+**Legacy collections:** users who created collections before 2026-05-24 may have `scope: 'unknown'` saved on disk. The defensive check at [collection-loader.js:1007](../core/collection-loader.js#L1007) treats those as "not set" and falls through to the ID-parsed scope. No data migration needed — the read path silently corrects on each access.
+
+History: the 2026-05-24 no-plugin lock-activation regression was caused by `defaultCollectionMeta.scope = 'unknown'`. Fix landed same day. TEST 005/006/007 are the regression coverage — they exercise the standard-backend no-plugin path including the lock checkbox flow.
+
 ## Scope migration — global is gone
 
 `scope='global'` is no longer a valid choice. The Vectorize Content modal exposes only `Character` (default) and `This Chat`. Existing global collections are auto-migrated **once**, on first read by `loadAllCollections`:

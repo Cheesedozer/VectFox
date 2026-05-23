@@ -6,9 +6,10 @@ EventBase is the **exclusive** retrieval path for chat content. The legacy `even
 
 ### Two pipelines, strict ownership
 
-| Pipeline | Content scope | Owned collections | Code entry point |
-|---|---|---|---|
-| **EventBase pipeline** | Chat history only (live chat + archive `.jsonl`) | `vectfox_eventbase_*`, `vectfox_archiveevent_*` | `eventbase-workflow.js` → `eventbase-retrieval.js` |
+
+| Pipeline                      | Content scope                                                                                                                        | Owned collections                                  | Code entry point                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| **EventBase pipeline**        | Chat history only (live chat + archive`.jsonl`)                                                                                      | `vectfox_eventbase_*`, `vectfox_archiveevent_*`    | `eventbase-workflow.js` → `eventbase-retrieval.js`   |
 | **Standard (Chunk) pipeline** | Non-chat content only — Lorebook / World Info, Character Cards, URLs / web pages, custom documents, wiki pages, YouTube transcripts | `vf_lorebook_*`, `vf_document_*`, user collections | `chat-vectorization.js` → `queryAndMergeCollections` |
 
 The two paths never see each other's content. There is no overlap in collection prefixes or content types.
@@ -21,10 +22,11 @@ The two paths never see each other's content. There is no overlap in collection 
 
 ### Archive Chat History — Two content paths
 
-| Path | Content Type in UI | Collection prefix | Storage format | Retrieval |
-|---|---|---|---|---|
-| **A — EventBase** | `Chat → Upload` tab | `vectfox_archiveevent_*` | Event-shaped (same schema as live EventBase) | Phase A (EventBase re-ranker) |
-| **B — Chunk** | `Document` content type | `vectfox_document_*` | Chunk-shaped | Phase B (standard pipeline) |
+
+| Path               | Content Type in UI      | Collection prefix        | Storage format                               | Retrieval                     |
+| -------------------- | ------------------------- | -------------------------- | ---------------------------------------------- | ------------------------------- |
+| **A — EventBase** | `Chat → Upload` tab    | `vectfox_archiveevent_*` | Event-shaped (same schema as live EventBase) | Phase A (EventBase re-ranker) |
+| **B — Chunk**     | `Document` content type | `vectfox_document_*`     | Chunk-shaped                                 | Phase B (standard pipeline)   |
 
 Archive event collections are **not** auto-locked to any chat after ingestion. Users must manually check "Active for current chat" on the collection card to activate retrieval for a given chat.
 
@@ -35,6 +37,7 @@ Before the toggle removal, `vectfox_eventbase_*` collections could be included i
 ---
 
 ## 2) Extraction Level Location
+
 Extraction levels are defined in: `core/keyword-boost.js`
 
 Exact export name:
@@ -74,36 +77,53 @@ export const EXTRACTION_LEVELS = {
 };
 ```
 
-## 3) Default Summarizer Token/Timeout Constants 
+## 3) Default Summarizer Token/Timeout Constants
+
 Located in: `core/summarizer.js`
 
 Exact constant names:
+
 - `DEFAULT_MAX_TOKENS`
 - `DEFAULT_TIMEOUT_MS`
 
 ---
 
-## 4) EventBase Window Dedup — chat_metadata Fingerprint Cache
+## 4) EventBase Window Dedup — Fingerprint Cache
 
 ### Problem with old approach
+
 `isWindowAlreadyExtracted` used a semantic DB query (`queryCollection(..., 50, ...)`) to check if a window was already extracted. This was:
+
 - Capped at 50 results → missed already-extracted windows if >50 events in DB
 - Slow — requires embedding a dummy query + ANN search on every window
 
 ### Current approach (O(1), no DB query)
-Window fingerprints are stored in `extension_settings.vectfoxplus.eventbase_extracted_windows[chatUUID]` as a flat string array. Using `extension_settings` (not `chat_metadata`) ensures they survive page reloads — `saveSettingsDebounced()` is called after each window so the cache is immediately persisted.
 
-- **Fingerprint format:** sorted source hashes joined by comma, e.g. `"123,456,789"`
-- **On extraction:** `markWindowExtracted(sourceHashes, uuid)` appends the fingerprint (called in `eventbase-workflow.js` after successful insert)
-- **On dedup check:** `isWindowAlreadyExtracted(sourceHashes, ...)` does `array.includes(fingerprint)` — synchronous, instant
-- **Why NOT chat_metadata:** `chat_metadata` is only saved to disk when ST saves the chat (e.g. when a message is generated). Stopping mid-vectorization and reloading Chrome would lose all fingerprints written during that run.
+Two-tier storage:
+
+
+| Tier          | Where                                                              | Shape                          | When built                                                                                  |
+| --------------- | -------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Persisted** | `extension_settings.vectfox.eventbase_extracted_windows[chatUUID]` | Flat`string[]` of fingerprints | Written each time a window is marked;`saveSettingsDebounced()` flushes to disk              |
+| **In-memory** | `_windowCacheSet` (module-scope `Map<chatUUID, Set<fingerprint>>`) | `Set<string>` per chat         | Lazily built on first access from the persisted array; mutated in-place on subsequent marks |
+
+The persisted array is what survives a reload. The `Set` is what makes the lookup actually O(1) — `array.includes` would be O(N) and chats with thousands of windows would degrade.
+
+- **Fingerprint format:** sorted source hashes joined by comma, e.g. `"123,456,789"` (built by `windowFingerprint(hashes)`)
+- **On extraction:** `markWindowExtracted(sourceHashes, chatUUID)` — adds the fingerprint to both the in-memory Set AND the persisted array, then calls `saveSettingsDebounced()`. Called in `eventbase-workflow.js` after each successful `insertEvents`.
+- **On dedup check:** `isWindowAlreadyExtracted(sourceHashes, messageIds, settings, chatUUID)` — async signature (kept for API compat; `messageIds` and `settings` are ignored). Returns `set.has(fp)` from the in-memory Set — synchronous, O(1).
+- **Quick-exit check:** `isLastWindowExtracted(messages, windowSize, step, chatUUID, hashFn)` — checks just the *last* window. Windows process tail-to-head in order, so a hit means everything earlier is done too. Avoids building the full window list when nothing needs work. Used as a pre-flight gate before the per-window loop.
+- **Cache invalidation:** `clearWindowCacheForChat(chatUUID)` — drops both the in-memory Set entry and the persisted array for one chat. Called when an EventBase collection is deleted, so the next vectorization run starts fresh.
+- **Why NOT chat_metadata:** `chat_metadata` is only saved to disk when ST saves the chat (e.g. when a message is generated). Stopping mid-vectorization and reloading Chrome would lose all fingerprints written during that run. `extension_settings` + `saveSettingsDebounced` persists immediately.
 
 ### Key files
-- `core/eventbase-store.js` — `isWindowAlreadyExtracted`, `markWindowExtracted`, `EXTRACTED_WINDOWS_KEY`
-- `core/eventbase-workflow.js` — calls `markWindowExtracted(sourceHashes)` after `insertEvents` succeeds
+
+- `core/eventbase-store.js` — `markWindowExtracted`, `isWindowAlreadyExtracted`, `isLastWindowExtracted`, `clearWindowCacheForChat`, `windowFingerprint`, plus the private `_windowCacheSet` map
+- `core/eventbase-workflow.js` — calls `isLastWindowExtracted` as the pre-flight gate, `isWindowAlreadyExtracted` per-window inside the loop, and `markWindowExtracted` after `insertEvents` succeeds
 
 ### Migration note
-Windows extracted before this fix have no fingerprint in cache. First run after update will attempt to re-insert them — Qdrant silently overwrites same hash-keyed points (no duplicates). All future runs use the cache correctly.
+
+Windows extracted before this fix have no fingerprint in cache. First run after update will attempt to re-insert them — both backends are idempotent on `hash`: Qdrant overwrites same-ID points and Vectra's plugin upserts by hash, so no duplicates are created. All future runs use the cache correctly.
 
 ---
 
@@ -111,28 +131,26 @@ Windows extracted before this fix have no fingerprint in cache. First run after 
 
 After the Phase 2 GUI reorg, settings are grouped by which path consumes them:
 
-| Setting | UI tab | EventBase relevant? | What it actually does |
-|---|---|---|---|
-| **Insert Batch Size** (default 50) | ChunkBase → Ingestion | **No** | Controls chunks-per-API-call during chunk vectorization. EventBase inserts tiny batches (2–10 events per window) so this has no meaningful effect on EventBase. |
-| **Dedup Depth** (default 50 messages) | Core | **Yes** | Used in `eventbase-retrieval.js` as `settings.deduplication_depth`. Filters out retrieved events whose source window falls within the last N messages of the current chat — avoids injecting content already visible in context. 0 = disabled. Also used by chunk-path retrieval in `chat-vectorization.js`. |
-| **Hybrid Search & BM25 block** (Keyword Scoring Method, BM25 k1/b, Fusion Method, RRF K) | Core → Hybrid Search & BM25 | **A1/A2 only** | These are Vectra (Standard backend) controls. On Qdrant, hybrid is always A3 server-side native — k1/b/RRF K are managed by Qdrant's `modifier: idf` and the `fusion: rrf` API, and these UI knobs have no effect. EventBase callers inject `ebSettings` with `keyword_scoring_method` overridden from `eventbase_keyword_scoring_method` (internal, defaults `'bm25'`, not in UI). See §13 for the full matrix. |
-| **Query Keyword Budget** (`hybrid_keyword_level`) | ChunkBase → Keyword Budget | **No** | Read only by `scoreResults()` (A1) and `hybridSearch()` (A2). A3 doesn't use it — the sparse-vector encoder tokenizes the full query and Qdrant handles IDF weighting. EventBase has its own importance/persist/recency re-ranker that dominates the final order anyway. |
+
+| Setting                                                                                  | UI tab                       | EventBase relevant? | What it actually does                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------ | ------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Insert Batch Size** (default 50)                                                       | ChunkBase → Ingestion       | **No**              | Controls chunks-per-API-call during chunk vectorization. EventBase inserts tiny batches (2–10 events per window) so this has no meaningful effect on EventBase.                                                                                                                                                                                                                                                  |
+| **Dedup Depth** (default 50 messages)                                                    | Core                         | **Yes**             | Used in`eventbase-retrieval.js` as `settings.deduplication_depth`. Filters out retrieved events whose source window falls within the last N messages of the current chat — avoids injecting content already visible in context. 0 = disabled. Also used by chunk-path retrieval in `chat-vectorization.js`.                                                                                                      |
+| **Hybrid Search & BM25 block** (Keyword Scoring Method, BM25 k1/b, Fusion Method, RRF K) | Core → Hybrid Search & BM25 | **A1/A2 only**      | These are Vectra (Standard backend) controls. On Qdrant, hybrid is always A3 server-side native — k1/b/RRF K are managed by Qdrant's`modifier: idf` and the `fusion: rrf` API, and these UI knobs have no effect. EventBase callers inject `ebSettings` with `keyword_scoring_method` overridden from `eventbase_keyword_scoring_method` (internal, defaults `'bm25'`, not in UI). See §13 for the full matrix. |
+| **Query Keyword Budget** (`hybrid_keyword_level`)                                        | ChunkBase → Keyword Budget  | **No**              | Read only by`scoreResults()` (A1) and `hybridSearch()` (A2). A3 doesn't use it — the sparse-vector encoder tokenizes the full query and Qdrant handles IDF weighting. EventBase has its own importance/persist/recency re-ranker that dominates the final order anyway.                                                                                                                                          |
 
 ---
 
 ## 6) Similharity Plugin Speedup (Simultaneous Embedding Requests)
+
 Plugin file changed: `../similharity/index.js`
 
 What we changed:
+
 - In `getVectorsForSource(...)`, API/network providers now run embedding calls in parallel using `Promise.all(...)`.
 - Parallel provider set:
-  - `openai`
-  - `togetherai`
-  - `mistral`
-  - `electronhub`
+  - `vllm`
   - `openrouter`
-  - `nomicai`
-  - `cohere`
 - Local GPU providers remain sequential to avoid contention/queueing/OOM behavior:
   - `transformers`
   - `ollama`
@@ -140,10 +158,12 @@ What we changed:
   - `koboldcpp`
 
 Why this speeds up:
+
 - Before: one request embedding N items sequentially, total about N x T.
 - After (API providers): N requests fired concurrently inside one batch, total about T (subject to upstream limits).
 
 Related client-side behavior (vectfox):
+
 - In `core/core-vector-api.js`, local GPU sources default to small batch behavior unless user explicitly overrides `insert_batch_size`.
 
 ---
@@ -167,10 +187,11 @@ Do **not** call `hybridSearch()` directly from `eventbase-retrieval.js` or `even
 
 ### Summary table
 
-| Module | Add directly to EventBase? | Reason |
-|---|---|---|
-| `core/temporal-decay.js` | n/a — module deleted | Subsystem only fired on `source: 'chat'` chunks (legacy chunk path). Recency on EventBase is handled by `_recencyBonus` inside the 4-weight formula. |
-| [`hybrid-search.js`](core/hybrid-search.js) | No (used indirectly) | EventBase inherits A2/A3 hybrid automatically via `queryCollection()`. Direct calls would bypass `queryEvents()` and the store layer. |
+
+| Module                                      | Add directly to EventBase? | Reason                                                                                                                                              |
+| --------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/temporal-decay.js`                    | n/a — module deleted      | Subsystem only fired on`source: 'chat'` chunks (legacy chunk path). Recency on EventBase is handled by `_recencyBonus` inside the 4-weight formula. |
+| [`hybrid-search.js`](core/hybrid-search.js) | No (used indirectly)       | EventBase inherits A2/A3 hybrid automatically via`queryCollection()`. Direct calls would bypass `queryEvents()` and the store layer.                |
 
 ---
 
@@ -178,77 +199,86 @@ Do **not** call `hybridSearch()` directly from `eventbase-retrieval.js` or `even
 
 Three retrieval paths exist. The path is chosen automatically inside `queryCollection()` based on (a) backend and (b) `keyword_scoring_method`. EventBase, ChunkBase, and the Query Tester all flow through this same dispatch.
 
-| | **A1 — BM25 re-rank** | **A2 — Client-side hybrid** | **A3 — Qdrant native** ⭐ |
-|---|---|---|---|
-| **When active** | Standard backend default; or Qdrant + hidden `hybrid_native_prefer=false` + `keyword_scoring_method=bm25` | Standard backend + `keyword_scoring_method=hybrid`; or Qdrant + hidden `hybrid_native_prefer=false` + `hybrid` | Qdrant backend default — the **only** hybrid path on Qdrant |
-| **Where it runs** | Browser JS | Browser JS | Qdrant server |
-| **Candidate set (what BM25 actually scores)** | ANN top-K (`topK × 2`, capped 100) | ANN top-K × 3 (capped 100) | **Union of dense top-K + sparse top-K** — sparse can surface rare-term docs the dense layer missed |
-| **Retrieval recall ceiling** | Vector ANN only | Vector ANN only (slightly wider candidate window) | **Wider** — sparse retrieval finds docs the dense layer missed |
-| **BM25 IDF source** | Toggle: `bm25_use_corpus_idf` — `true` (default) uses **full-corpus df values** cached in browser; `false` uses local df over candidate set only | Same toggle as A1 | **Always full-corpus** via Qdrant's `modifier: "idf"` (server-side) |
-| **Sparse-vector index** | None — pure vector ANN | None — pure vector ANN | Yes — `text_sparse` named vector on every point, built at upsert via FNV-1a-hashed CJK tokens |
-| **Fusion algorithm** | Weighted linear: `α·vectorScore + β·BM25_norm` (after `BM25/maxBM25`) | RRF (default, `hybrid_rrf_k`=60) **or** weighted; min-max normalization; +0–8% dual-signal bonus; single-signal penalty (×0.55 / ×0.60) | Qdrant-native RRF via `prefetch: [dense, sparse]`, `fusion: "rrf"`. No bonuses, no penalties, no JS post-processing. |
-| **Network round-trips per query** | 1 (vector ANN); +1 one-time per session for cold corpus-stats build when toggle ON | Same as A1 | **1** (single `/points/query`) |
-| **Tokenizer** | Client-side (Intl.Segmenter / Jieba / Jieba TW / TinySegmenter) | Same | Client-side at query; locked **per collection** at upsert via sentinel point. Mismatch shows modal and refuses query. |
-| **Knobs that apply** | `bm25_k1`, `bm25_b`, `bm25_use_corpus_idf`, `hybrid_keyword_level` | Above + `hybrid_fusion_method`, `hybrid_vector_weight`, `hybrid_text_weight`, `hybrid_rrf_k` | None of the above — Qdrant uses its internal defaults |
-| **Native EventBase rerank (cosine + importance + persist + recency in one call)** | n/a | n/a | Available when `eventbase_native_rerank=true` (default) + Qdrant ≥ 1.13 |
 
-### ⚠️ Standard backend: `vectorScore=0.0000` and what it means for A1 vs A2
+|                                                                                   | **A1 — BM25 re-rank**                                                                                                                           | **A2 — Client-side hybrid**                                                                                                              | **A3 — Qdrant native** ⭐                                                                                           |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **When active**                                                                   | Standard backend default; or Qdrant + hidden`hybrid_native_prefer=false` + `keyword_scoring_method=bm25`                                         | Standard backend +`keyword_scoring_method=hybrid`; or Qdrant + hidden `hybrid_native_prefer=false` + `hybrid`                             | Qdrant backend default — the**only** hybrid path on Qdrant                                                          |
+| **Where it runs**                                                                 | Browser JS                                                                                                                                       | Browser JS                                                                                                                                | Qdrant server                                                                                                        |
+| **Candidate set (what BM25 actually scores)**                                     | ANN top-K (`topK × 2`, capped 100)                                                                                                              | ANN top-K × 3 (capped 100)                                                                                                               | **Union of dense top-K + sparse top-K** — sparse can surface rare-term docs the dense layer missed                  |
+| **Retrieval recall ceiling**                                                      | Vector ANN only                                                                                                                                  | Vector ANN only (slightly wider candidate window)                                                                                         | **Wider** — sparse retrieval finds docs the dense layer missed                                                      |
+| **BM25 IDF source**                                                               | Toggle:`bm25_use_corpus_idf` — `true` (default) uses **full-corpus df values** cached in browser; `false` uses local df over candidate set only | Same toggle as A1                                                                                                                         | **Always full-corpus** via Qdrant's `modifier: "idf"` (server-side)                                                  |
+| **Sparse-vector index**                                                           | None — pure vector ANN                                                                                                                          | None — pure vector ANN                                                                                                                   | Yes —`text_sparse` named vector on every point, built at upsert via FNV-1a-hashed CJK tokens                        |
+| **Fusion algorithm**                                                              | Weighted linear:`α·vectorScore + β·BM25_norm` (after `BM25/maxBM25`)                                                                         | RRF (default,`hybrid_rrf_k`=60) **or** weighted; min-max normalization; +0–8% dual-signal bonus; single-signal penalty (×0.55 / ×0.60) | Qdrant-native RRF via`prefetch: [dense, sparse]`, `fusion: "rrf"`. No bonuses, no penalties, no JS post-processing.  |
+| **Network round-trips per query**                                                 | 1 (vector ANN); +1 one-time per session for cold corpus-stats build when toggle ON                                                               | Same as A1                                                                                                                                | **1** (single `/points/query`)                                                                                       |
+| **Tokenizer**                                                                     | Client-side (Intl.Segmenter / Jieba / Jieba TW / TinySegmenter)                                                                                  | Same                                                                                                                                      | Client-side at query; locked**per collection** at upsert via sentinel point. Mismatch shows modal and refuses query. |
+| **Knobs that apply**                                                              | `bm25_k1`, `bm25_b`, `bm25_use_corpus_idf`, `hybrid_keyword_level`                                                                               | Above +`hybrid_fusion_method`, `hybrid_vector_weight`, `hybrid_text_weight`, `hybrid_rrf_k`                                               | None of the above — Qdrant uses its internal defaults                                                               |
+| **Native EventBase rerank (cosine + importance + persist + recency in one call)** | n/a                                                                                                                                              | n/a                                                                                                                                       | Available when`eventbase_native_rerank=true` (default) + Qdrant ≥ 1.13                                              |
 
-ST's `/api/vector/query` computes cosine similarity internally (it uses it for threshold filtering and
-result ordering) but **strips the scores from the response before returning**. VectFox receives only
-hashes and text — every `vectorScore` is `0.0000` on standard backend regardless of actual similarity.
-This is a hard API limitation; it cannot be fixed without either patching ST upstream or re-embedding
-client-side (expensive).
+### ⚠️ Standard backend: vectorScore depends on whether Similharity is installed
 
-**Effect on A1 (BM25 re-rank):** No impact. A1 ignores `vectorScore` entirely and re-ranks the
-candidate set using BM25 alone. ST's internal similarity still controls *which* candidates come back;
-A1 just ignores the ordering ST applied to them.
+What `vectorScore` looks like on standard backend depends on whether the **Similharity plugin** is available — see §15 for the plugin-dependency policy. Two paths, two behaviours:
 
-**Effect on A2 (client-side hybrid RRF):** A2 cannot use `vectorScore` for fusion (it's always 0),
-so it falls back to using ST's **rank ordering** as the vector signal instead — via the RRF formula
-`1 / (k + vectorRank)`. This means:
-- A result that ST placed at rank 1 gets a small RRF boost even with no BM25 match.
-- A result with a BM25 match but weak vector rank gets a small RRF penalty compared to A1.
-- Results with no BM25 match AND weak vector rank score only `rrfRankFactor × 0.25` (very low).
-- Text-only matches (BM25 > 0, vectorScore = 0) are penalized by a ×0.60 multiplier in hybrid-search.js.
-
-**Practical difference between A1 and A2 on standard backend:**
-
-| | A1 (BM25 re-rank) | A2 (client-side RRF) |
+| Path | When | What `vectorScore` looks like |
 |---|---|---|
-| Uses ST's similarity ordering | ❌ — discarded | ✅ — used as `vectorRank` in RRF |
-| Uses BM25 scores | ✅ — primary signal | ✅ — secondary signal, penalized ×0.60 if no vector match |
-| Penalty on BM25 matches | None | ×0.60 (text-only path) |
-| Results with zero BM25 match | Score = 0, dropped | Score = `0.25 × rrfRankFactor` — may still appear |
-| Predictability | High | Lower — rank-based fusion is noisy without real scores |
+| **Plugin-enhanced** | `StandardBackend.pluginAvailable === true` (the common case once the plugin is installed) | Real cosine values come back via `/api/plugins/similharity/chunks/query`. Scores are usable for A2's fusion math. |
+| **Degraded (no plugin)** | Fresh ST install without the optional plugin, or `pluginAvailable` forced `false` (TEST 009 scenario) | ST's native `/api/vector/query` computes cosine internally but **strips the scores from the response before returning**. VectFox receives only hashes and text — every `vectorScore` is `0.0000`. Hard ST-upstream limitation. |
 
-**When does the difference matter?**
-- **Semantic queries (no keyword overlap):** A1 scores everything 0 — results fall back to arbitrary
-  ordering. A2 uses ST's `vectorRank` as a fallback signal via RRF, preserving ST's internal semantic
-  ordering even without scores. A2 degrades more gracefully here.
-- **Keyword queries (BM25 matches exist):** Both paths rank primarily by BM25. A2 adds `vectorRank` as
-  a secondary tie-breaker for results with equal BM25 scores. The ×0.60 penalty is applied uniformly
-  to all results and does not change their relative order — it only affects absolute score values.
-- **Score threshold sensitivity:** The ×0.60 penalty lowers all A2 absolute scores. If `score_threshold`
-  is set above zero, A2 may filter out results that A1 would keep. With the default `score_threshold=0`
-  this is not an issue.
+The path is picked inside `StandardBackend.queryCollection` based on the runtime `pluginAvailable` flag; A1/A2 path selection itself is unchanged.
 
-**Recommendation:** A2 (Hybrid) is at least as good as A1 on standard backend, and better for semantic
-queries (uses ST's rank ordering as a fallback). There is no quality reason to prefer A1. The only
-reason to prefer A1 is simpler, more predictable scoring — useful if you are debugging threshold
-behaviour or want to isolate the BM25 signal. A2 / Hybrid becomes **meaningfully** better (not just
-marginally) only on Qdrant (path A3) where real `vectorScore` values are available.
+#### Plugin-enhanced path (the default)
+
+- **A1 (BM25 re-rank)**: re-ranks the plugin-returned candidates by BM25. `vectorScore` from the plugin is *available* but A1 ignores it by design — BM25 alone drives the ranking.
+- **A2 (client-side hybrid RRF)**: gets a real `vectorScore` per candidate and fuses it with BM25 via RRF (or weighted fusion). This is the same shape as A3 conceptually, just with the fusion happening in JS instead of Qdrant. A2 is meaningfully better than A1 on the plugin-enhanced path because the vector signal is real.
+
+#### Degraded path (no plugin)
+
+The historical "always-zero vectorScore" behavior. Both A1 and A2 still work, but they degrade differently:
+
+- **Effect on A1 (BM25 re-rank):** No impact. A1 ignores `vectorScore` entirely and re-ranks the candidate set using BM25 alone. ST's internal similarity still controls *which* candidates come back; A1 just ignores the ordering ST applied to them.
+- **Effect on A2 (client-side hybrid RRF):** A2 cannot use `vectorScore` for fusion (it's always 0), so it falls back to using ST's **rank ordering** as the vector signal instead — via the RRF formula `1 / (k + vectorRank)`. This means:
+  - A result that ST placed at rank 1 gets a small RRF boost even with no BM25 match.
+  - A result with a BM25 match but weak vector rank gets a small RRF penalty compared to A1.
+  - Results with no BM25 match AND weak vector rank score only `rrfRankFactor × 0.25` (very low).
+  - Text-only matches (BM25 > 0, vectorScore = 0) are penalized by a ×0.60 multiplier in hybrid-search.js.
+
+**Practical difference between A1 and A2 — degraded path only:**
+
+
+|                               | A1 (BM25 re-rank)    | A2 (client-side RRF)                                        |
+| ------------------------------- | ---------------------- | ------------------------------------------------------------- |
+| Uses ST's similarity ordering | ❌ — discarded      | ✅ — used as`vectorRank` in RRF                            |
+| Uses BM25 scores              | ✅ — primary signal | ✅ — secondary signal, penalized ×0.60 if no vector match |
+| Penalty on BM25 matches       | None                 | ×0.60 (text-only path)                                     |
+| Results with zero BM25 match  | Score = 0, dropped   | Score =`0.25 × rrfRankFactor` — may still appear          |
+| Predictability                | High                 | Lower — rank-based fusion is noisy without real scores     |
+
+**When does the A1/A2 difference matter on the degraded path?**
+
+- **Semantic queries (no keyword overlap):** A1 scores everything 0 — results fall back to arbitrary ordering. A2 uses ST's `vectorRank` as a fallback signal via RRF, preserving ST's internal semantic ordering even without scores. A2 degrades more gracefully here.
+- **Keyword queries (BM25 matches exist):** Both paths rank primarily by BM25. A2 adds `vectorRank` as a secondary tie-breaker for results with equal BM25 scores. The ×0.60 penalty is applied uniformly to all results and does not change their relative order — it only affects absolute score values.
+- **Score threshold sensitivity:** The ×0.60 penalty lowers all A2 absolute scores. If `score_threshold` is set above zero, A2 may filter out results that A1 would keep. With the default `score_threshold=0` this is not an issue.
+
+#### Recommendation (consolidated)
+
+| User's setup | Best path | Why |
+|---|---|---|
+| **Standard + plugin installed** (common) | A2 (Hybrid) | Real `vectorScore` + BM25 fusion. Meaningfully better than A1, not just marginally. |
+| **Standard + no plugin** (degraded) | A2 (Hybrid) is still slightly better | A2 uses ST's rank ordering as a fallback signal; A1 ignores it entirely. The plugin-vs-no-plugin gap is much larger than the A1-vs-A2 gap here. |
+| **Qdrant** | A3 (native sparse + server-side RRF) | The only hybrid path on Qdrant; full corpus IDF, sparse vector retrieval, no rank-based fallbacks. |
+
+A1 still has one use case on either standard path: simpler, more predictable scoring for debugging threshold behaviour or isolating the BM25 signal.
 
 ### ⚠️ "Corpus-wide IDF" is NOT "Corpus-wide search"
 
 The `bm25_use_corpus_idf` toggle is the source of the most common misconception. It is worth being explicit:
 
-| Question | Answer |
-|---|---|
-| Does ON make BM25 score all chunks in the collection? | **No.** BM25 still only scores the ANN top-K candidates the vector layer surfaced. |
-| What does ON actually change? | The **IDF weights** used for the per-query terms. With ON, IDF is computed from corpus-wide df values (e.g. `df(贖身)=5 / N=1394`). With OFF, df is recomputed per query against just the local candidate set (e.g. `df(贖身)=3 / N=40`) — which biases IDF toward zero whenever the candidates already share the term. |
-| How can a doc that doesn't appear in the ANN top-K still affect the score? | It can't be a result. It can only contribute to global df values, which feed into the per-term IDF weights of docs that *are* in the candidate set. |
-| What if I want true full-corpus retrieval (find docs that vector missed)? | Use **A3 (Qdrant)**. Only that path stores a sparse-vector index over every chunk and can match by term across the full collection. The standard backend has no inverted/sparse index. |
+
+| Question                                                                   | Answer                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Does ON make BM25 score all chunks in the collection?                      | **No.** BM25 still only scores the ANN top-K candidates the vector layer surfaced.                                                                                                                                                                                                                                      |
+| What does ON actually change?                                              | The**IDF weights** used for the per-query terms. With ON, IDF is computed from corpus-wide df values (e.g. `df(贖身)=5 / N=1394`). With OFF, df is recomputed per query against just the local candidate set (e.g. `df(贖身)=3 / N=40`) — which biases IDF toward zero whenever the candidates already share the term. |
+| How can a doc that doesn't appear in the ANN top-K still affect the score? | It can't be a result. It can only contribute to global df values, which feed into the per-term IDF weights of docs that*are* in the candidate set.                                                                                                                                                                      |
+| What if I want true full-corpus retrieval (find docs that vector missed)?  | Use**A3 (Qdrant)**. Only that path stores a sparse-vector index over every chunk and can match by term across the full collection. The standard backend has no inverted/sparse index.                                                                                                                                   |
 
 So `bm25_use_corpus_idf` should be read as: *"Use corpus df values when computing IDF weights for the candidates BM25 is already scoring."* The toggle improves **scoring quality** within the existing recall window; it does **not** widen the recall window.
 
@@ -256,14 +286,15 @@ So `bm25_use_corpus_idf` should be read as: *"Use corpus df values when computin
 
 Implemented in [core/corpus-stats.js](../core/corpus-stats.js). When the toggle is ON:
 
-| Aspect | Detail |
-|---|---|
-| Build trigger | Lazy — first call to `getCorpusStats(collectionId)` per session per collection. Subsequent calls hit a hot Map. |
-| Build cost (measured, 1394 chunks Traditional Chinese on Intl.Segmenter) | 674 ms total: fetch=407 ms, parse=57 ms, tokenize+df=210 ms. Logged as `[CorpusStats] Built for ...` with full breakdown. |
-| Sustained memory | ~400 KB per collection: `{ totalDocs, documentFrequencies: Map<term, df>, avgDocLength, builtAt }`. Chunk texts are **not** retained — only the derived statistics. |
-| Auto-invalidation | Fires on `insertVectorItems` / `deleteVectorItems` / `purgeVectorIndex` (core-vector-api.js) and `insertChunksWithVectors` (collection-export.js import path). Lazy rebuild on next query. |
-| Manual clear (force-rebuild for testing) | `(await import('/scripts/extensions/third-party/VectFox/core/corpus-stats.js')).clearCorpusStatsCache()` |
-| Failure mode | Best-effort. Module-load or fetch failure logs a warning and falls back to local-IDF BM25 for that query — never discards the underlying vector results. See [feedback memory: optional enhancements must degrade]. |
+
+| Aspect                                                                   | Detail                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build trigger                                                            | Lazy — first call to`getCorpusStats(collectionId)` per session per collection. Subsequent calls hit a hot Map.                                                                                                      |
+| Build cost (measured, 1394 chunks Traditional Chinese on Intl.Segmenter) | 674 ms total: fetch=407 ms, parse=57 ms, tokenize+df=210 ms. Logged as`[CorpusStats] Built for ...` with full breakdown.                                                                                             |
+| Sustained memory                                                         | ~400 KB per collection:`{ totalDocs, documentFrequencies: Map<term, df>, avgDocLength, builtAt }`. Chunk texts are **not** retained — only the derived statistics.                                                  |
+| Auto-invalidation                                                        | Fires on`insertVectorItems` / `deleteVectorItems` / `purgeVectorIndex` (core-vector-api.js) and `insertChunksWithVectors` (collection-export.js import path). Lazy rebuild on next query.                            |
+| Manual clear (force-rebuild for testing)                                 | `(await import('/scripts/extensions/third-party/VectFox/core/corpus-stats.js')).clearCorpusStatsCache()`                                                                                                             |
+| Failure mode                                                             | Best-effort. Module-load or fetch failure logs a warning and falls back to local-IDF BM25 for that query — never discards the underlying vector results. See [feedback memory: optional enhancements must degrade]. |
 
 #### Why default ON
 
@@ -283,27 +314,28 @@ EventBase overrides `keyword_scoring_method` with `eventbase_keyword_scoring_met
 
 ### Settings reference (consolidated)
 
-| Setting | Default | Affects | Notes |
-|---|---|---|---|
-| `keyword_scoring_method` (`bm25` \| `hybrid`) | `hybrid` | ChunkBase A1/A2 selector on Standard backend | Ignored on Qdrant (A3 wins). EventBase overrides this with `eventbase_keyword_scoring_method`. |
-| `eventbase_keyword_scoring_method` | `bm25` | EventBase A1/A2 selector on Standard backend | Internal key, not exposed in UI. Override via `extension_settings.vectfox` in console. |
-| `hybrid_native_prefer` | `true` | A3 vs A1/A2 on Qdrant | Hidden — not in UI. JSON-only. Flip to `false` to force client-side path on Qdrant for A/B testing. |
-| `bm25_k1`, `bm25_b` | 1.5 / 0.75 | A1 and A2 (client-side BM25 internals) | BM25+ TF saturation and length normalization. A3 uses Qdrant's internal defaults (these knobs don't reach the server). |
-| `bm25_use_corpus_idf` | **`true`** | A1 and A2 IDF source | See "Corpus-wide IDF ≠ Corpus-wide search" above. Lazily fetches and caches `{N, df}` map for the entire collection. ~700 ms cold build, ~400 KB sustained. Auto-invalidates on writes. |
-| `hybrid_keyword_level` (`minimal` / `balance` / `maximum`) | `balance` | A1 query keyword budget (30/50/70 tokens) | Negligible effect under A2 (full query tokenized) and A3 (sparse encoder tokenizes everything). |
-| `hybrid_fusion_method` (`rrf` / `weighted`) | `rrf` | A2 fusion algorithm | A1 always uses weighted linear. A3 always uses Qdrant-native RRF (this setting doesn't reach the server). |
-| `hybrid_vector_weight`, `hybrid_text_weight` | 0.5 / 0.5 | A2 weighted mode only | Used only when `hybrid_fusion_method = 'weighted'` on Standard backend. |
-| `hybrid_rrf_k` | 60 | A2 RRF mode only | Qdrant uses its own internal default for A3; this knob doesn't reach the server. |
-| `cjk_tokenizer_mode` (`intl` / `jieba` / `jieba_tw` / `tiny_segmenter`) | `intl` | A3 (locked per Qdrant collection at upsert via sentinel point) | Mismatch between current setting and the collection's locked tokenizer triggers a modal and refuses the query. On A1/A2 the tokenizer is also used but not locked — changing it just means inconsistent tokenization until re-vectorize. |
-| `deduplication_depth` | 0 (disabled) | All three paths | EventBase context-window dedup: suppress events whose source window falls within the last N messages. Same JS path post-retrieval. |
-| `eventbase_retrieval_top_k` | 10 | All three paths | Final number of events injected. Internal overfetch is `top_k × 2 × 2 = 40` for A1 (see §8 Retrieval Paths + keyword-boost.js:1304). |
-| `eventbase_retrieval_min_importance` | 1 | All three paths | Drops events below this importance threshold after retrieval. |
-| `eventbase_rerank_w_cosine` / `_w_importance` / `_w_persist` / `_w_recency` | 0.55 / 0.20 / 0.15 / 0.10 | All three paths (formula coefficients) | A3 with `eventbase_native_rerank=true` applies them server-side via Qdrant formula; A1/A2 apply them in JS in `eventbase-retrieval.js`. |
-| `eventbase_native_rerank` | `true` | A3 only | Pushes the 4-weight formula into the same Qdrant `/points/query` call. Requires Qdrant ≥ 1.13. Set `false` to fall back to JS post-processing. |
-| `eventbase_compare_rerank` | `false` | A3 only | When ON alongside `eventbase_native_rerank`, runs the JS formula path in parallel for every query and logs `overlap@K` + Spearman ρ. Pure observability, doesn't change the injected events. |
-| `eventbase_compare_rerank_verbose` | `false` | A3 only | When both compare settings are ON, emits per-event score rows. Very noisy — development only. |
-| `keyword_extraction_level`, `keyword_boost_base_weight` | — | Ingestion only | Not used by any retrieval path. Lives elsewhere; listed here so people stop expecting it to affect retrieval. |
-| `hybrid_search_enabled` | — | Removed | Setting deleted. Hybrid is always available; path chosen by backend + `keyword_scoring_method`. |
+
+| Setting                                                                     | Default                   | Affects                                                        | Notes                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keyword_scoring_method` (`bm25` \| `hybrid`)                               | `hybrid`                  | ChunkBase A1/A2 selector on Standard backend                   | Ignored on Qdrant (A3 wins). EventBase overrides this with`eventbase_keyword_scoring_method`.                                                                                                                                             |
+| `eventbase_keyword_scoring_method`                                          | `bm25`                    | EventBase A1/A2 selector on Standard backend                   | Internal key, not exposed in UI. Override via`extension_settings.vectfox` in console.                                                                                                                                                     |
+| `hybrid_native_prefer`                                                      | `true`                    | A3 vs A1/A2 on Qdrant                                          | Hidden — not in UI. JSON-only. Flip to`false` to force client-side path on Qdrant for A/B testing.                                                                                                                                       |
+| `bm25_k1`, `bm25_b`                                                         | 1.5 / 0.75                | A1 and A2 (client-side BM25 internals)                         | BM25+ TF saturation and length normalization. A3 uses Qdrant's internal defaults (these knobs don't reach the server).                                                                                                                    |
+| `bm25_use_corpus_idf`                                                       | **`true`**                | A1 and A2 IDF source                                           | See "Corpus-wide IDF ≠ Corpus-wide search" above. Lazily fetches and caches`{N, df}` map for the entire collection. ~700 ms cold build, ~400 KB sustained. Auto-invalidates on writes.                                                   |
+| `hybrid_keyword_level` (`minimal` / `balance` / `maximum`)                  | `balance`                 | A1 query keyword budget (30/50/70 tokens)                      | Negligible effect under A2 (full query tokenized) and A3 (sparse encoder tokenizes everything).                                                                                                                                           |
+| `hybrid_fusion_method` (`rrf` / `weighted`)                                 | `rrf`                     | A2 fusion algorithm                                            | A1 always uses weighted linear. A3 always uses Qdrant-native RRF (this setting doesn't reach the server).                                                                                                                                 |
+| `hybrid_vector_weight`, `hybrid_text_weight`                                | 0.5 / 0.5                 | A2 weighted mode only                                          | Used only when`hybrid_fusion_method = 'weighted'` on Standard backend.                                                                                                                                                                    |
+| `hybrid_rrf_k`                                                              | 60                        | A2 RRF mode only                                               | Qdrant uses its own internal default for A3; this knob doesn't reach the server.                                                                                                                                                          |
+| `cjk_tokenizer_mode` (`intl` / `jieba` / `jieba_tw` / `tiny_segmenter`)     | `intl`                    | A3 (locked per Qdrant collection at upsert via sentinel point) | Mismatch between current setting and the collection's locked tokenizer triggers a modal and refuses the query. On A1/A2 the tokenizer is also used but not locked — changing it just means inconsistent tokenization until re-vectorize. |
+| `deduplication_depth`                                                       | 0 (disabled)              | All three paths                                                | EventBase context-window dedup: suppress events whose source window falls within the last N messages. Same JS path post-retrieval.                                                                                                        |
+| `eventbase_retrieval_top_k`                                                 | 10                        | All three paths                                                | Final number of events injected. Internal overfetch is`top_k × 2 × 2 = 40` for A1 (see §8 Retrieval Paths + keyword-boost.js:1304).                                                                                                    |
+| `eventbase_retrieval_min_importance`                                        | 1                         | All three paths                                                | Drops events below this importance threshold after retrieval.                                                                                                                                                                             |
+| `eventbase_rerank_w_cosine` / `_w_importance` / `_w_persist` / `_w_recency` | 0.55 / 0.20 / 0.15 / 0.10 | All three paths (formula coefficients)                         | A3 with`eventbase_native_rerank=true` applies them server-side via Qdrant formula; A1/A2 apply them in JS in `eventbase-retrieval.js`.                                                                                                    |
+| `eventbase_native_rerank`                                                   | `true`                    | A3 only                                                        | Pushes the 4-weight formula into the same Qdrant`/points/query` call. Requires Qdrant ≥ 1.13. Set `false` to fall back to JS post-processing.                                                                                            |
+| `eventbase_compare_rerank`                                                  | `false`                   | A3 only                                                        | When ON alongside`eventbase_native_rerank`, runs the JS formula path in parallel for every query and logs `overlap@K` + Spearman ρ. Pure observability, doesn't change the injected events.                                              |
+| `eventbase_compare_rerank_verbose`                                          | `false`                   | A3 only                                                        | When both compare settings are ON, emits per-event score rows. Very noisy — development only.                                                                                                                                            |
+| `keyword_extraction_level`, `keyword_boost_base_weight`                     | —                        | Ingestion only                                                 | Not used by any retrieval path. Lives elsewhere; listed here so people stop expecting it to affect retrieval.                                                                                                                             |
+| `hybrid_search_enabled`                                                     | —                        | Removed                                                        | Setting deleted. Hybrid is always available; path chosen by backend +`keyword_scoring_method`.                                                                                                                                            |
 
 ### Native Formula Rerank (A3 + Qdrant ≥ 1.13)
 
@@ -340,6 +372,7 @@ high-importance/high-recency events that ranked outside the top-K in plain RRF
 still surface in the final result.
 
 **What stays client-side even in 6a:**
+
 - **Anchor boost** — multi-token phrase substring match (e.g. `贖身的儀式`)
   requires JS; Qdrant tokenizes terms individually and any-of matching would
   miss phrases.
@@ -354,20 +387,20 @@ request fails with a Qdrant error, check the server version and set
 
 ## 9) Mirrored Function — `extractQueryKeywords`
 
-| Item | Value |
-|---|---|
-| Origin | `similharity/index.js` lines 54–146 |
-| vectfox copy | `core/query-keyword-extractor.js` |
-| Exports | `extractQueryKeywords(text, maxKeywords)`, `isCJKToken(token)`, `RETRIEVAL_KEYWORD_LEVELS`, `DEFAULT_RETRIEVAL_KEYWORD_LEVEL` |
-| Stop-word source | Imports `DEFAULT_STOP_WORD_SET` from `./stop-words.js` (full multi-language list, English + CJK; mirrored from `similharity/stop-words.js`) |
+
+| Item             | Value                                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Origin           | `similharity/index.js` lines 54–146                                                                                                       |
+| vectfox copy     | `core/query-keyword-extractor.js`                                                                                                          |
+| Exports          | `extractQueryKeywords(text, maxKeywords)`, `isCJKToken(token)`, `RETRIEVAL_KEYWORD_LEVELS`, `DEFAULT_RETRIEVAL_KEYWORD_LEVEL`              |
+| Stop-word source | Imports`DEFAULT_STOP_WORD_SET` from `./stop-words.js` (full multi-language list, English + CJK; mirrored from `similharity/stop-words.js`) |
 
 **Keep-in-sync note:** if the extraction algorithm changes in `similharity/index.js` (e.g. anchor budget, bigram fallback, Latin regex), update `core/query-keyword-extractor.js` to match. The console log prefix was changed from `[Qdrant]` to `[vectfox]` — that difference is intentional.
-
-
 
 ---
 
 ## 10) javascript to get these variables in chrome console
+
 const ctx = SillyTavern.getContext();
 const chatUUID = ctx.chatMetadata?.integrity || ctx.chatId;
 const handleId = (ctx.name1 || 'user').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '').substring(0, 30) || 'user';
@@ -376,11 +409,11 @@ console.log({ chatUUID, handleId, charName });
 
 // Check current chat's integrity and which EventBase collection it WOULD map to
 (() => {
-  const md = SillyTavern.getContext().chatMetadata;
-  return {
-    integrity: md?.integrity || '(missing — using chatId fallback)',
-    chatFile: SillyTavern.getContext().chatId,
-  };
+const md = SillyTavern.getContext().chatMetadata;
+return {
+integrity: md?.integrity || '(missing — using chatId fallback)',
+chatFile: SillyTavern.getContext().chatId,
+};
 })()
 
 ---
@@ -393,24 +426,27 @@ Backend determines path; on Qdrant there is only one hybrid path (A3). On Standa
 - **EventBase** owns chat content only: Current Chat history and uploaded Archive Chat history (`.jsonl`). Uses `eventbase_keyword_scoring_method` (internal, not in UI, defaults `'bm25'`).
 
 Both paths call `queryCollection()` but EventBase callers (`eventbase-retrieval.js`, `eventbase-workflow.js`, `eventbase-store.js`) always inject an `ebSettings` shim:
+
 ```js
 const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
 ```
+
 This ensures ChunkBase's `keyword_scoring_method` never leaks into EventBase queries.
 
 ### Settings × routing case
 
-| Setting | Storage key | Applies to | **A1** — Standard + BM25 | **A2** — Standard + Hybrid | **A3** — Qdrant native sparse + RRF |
-|---|---|---|---|---|---|
-| Keyword Scoring Method | `keyword_scoring_method` | **ChunkBase only** | ✅ selects A1 path | ✅ selects A2 path | ❌ ignored — A3 is the only Qdrant path |
-| EventBase Scoring Method | `eventbase_keyword_scoring_method` | **EventBase only** | ✅ selects A1 path (Standard) | ✅ selects A2 path (Standard) | ❌ ignored on Qdrant |
-| BM25 k1 | `bm25_k1` | Standard only | ✅ used | ✅ used | ❌ Qdrant `modifier: idf` internal |
-| BM25 b | `bm25_b` | Standard only | ✅ used | ✅ used | ❌ Qdrant `modifier: idf` internal |
-| Query Keyword Budget | `hybrid_keyword_level` | A1 only | ✅ used | ❌ full query tokenized | ❌ sparse encoder tokenizes everything |
-| Fusion Method (RRF / Weighted) | `hybrid_fusion_method` | A2 only | ❌ not used (A1 always weighted) | ✅ used | ❌ Qdrant always RRF (server-side) |
-| RRF K | `hybrid_rrf_k` | A2 RRF mode only | ❌ not used | ✅ used | ❌ Qdrant uses its own default |
-| CJK Tokenizer Mode | `cjk_tokenizer_mode` | All paths | ✅ used for client-side BM25 tokenization (no locking) | ✅ used for client-side BM25 tokenization (no locking) | ✅ locked into collection at upsert via sentinel point; mismatch modal on query if changed |
-| Prefer Native Backend Hybrid | `hybrid_native_prefer` | Hidden settings escape hatch | n/a | n/a | Default `true`. Flip to `false` via settings.json to force Qdrant onto A2 for testing. No UI. |
+
+| Setting                        | Storage key                        | Applies to                   | **A1** — Standard + BM25                              | **A2** — Standard + Hybrid                            | **A3** — Qdrant native sparse + RRF                                                         |
+| -------------------------------- | ------------------------------------ | ------------------------------ | -------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Keyword Scoring Method         | `keyword_scoring_method`           | **ChunkBase only**           | ✅ selects A1 path                                     | ✅ selects A2 path                                     | ❌ ignored — A3 is the only Qdrant path                                                     |
+| EventBase Scoring Method       | `eventbase_keyword_scoring_method` | **EventBase only**           | ✅ selects A1 path (Standard)                          | ✅ selects A2 path (Standard)                          | ❌ ignored on Qdrant                                                                         |
+| BM25 k1                        | `bm25_k1`                          | Standard only                | ✅ used                                                | ✅ used                                                | ❌ Qdrant`modifier: idf` internal                                                            |
+| BM25 b                         | `bm25_b`                           | Standard only                | ✅ used                                                | ✅ used                                                | ❌ Qdrant`modifier: idf` internal                                                            |
+| Query Keyword Budget           | `hybrid_keyword_level`             | A1 only                      | ✅ used                                                | ❌ full query tokenized                                | ❌ sparse encoder tokenizes everything                                                       |
+| Fusion Method (RRF / Weighted) | `hybrid_fusion_method`             | A2 only                      | ❌ not used (A1 always weighted)                       | ✅ used                                                | ❌ Qdrant always RRF (server-side)                                                           |
+| RRF K                          | `hybrid_rrf_k`                     | A2 RRF mode only             | ❌ not used                                            | ✅ used                                                | ❌ Qdrant uses its own default                                                               |
+| CJK Tokenizer Mode             | `cjk_tokenizer_mode`               | All paths                    | ✅ used for client-side BM25 tokenization (no locking) | ✅ used for client-side BM25 tokenization (no locking) | ✅ locked into collection at upsert via sentinel point; mismatch modal on query if changed   |
+| Prefer Native Backend Hybrid   | `hybrid_native_prefer`             | Hidden settings escape hatch | n/a                                                    | n/a                                                    | Default`true`. Flip to `false` via settings.json to force Qdrant onto A2 for testing. No UI. |
 
 ### Key observations
 
@@ -418,16 +454,19 @@ This ensures ChunkBase's `keyword_scoring_method` never leaks into EventBase que
 2. **A3 uses globally-accurate IDF.** Qdrant's `modifier: "idf"` computes IDF over the true full corpus (every indexed document), not the ANN-bounded subset. This eliminates the BM25 IDF bias that A1 and A2 carry.
 3. **Path routing is content-type-scoped.** ChunkBase's `keyword_scoring_method` no longer affects EventBase. Changing to "Hybrid" in ChunkBase tab only switches lorebook queries.
 4. **Sparse vectors are tokenizer-locked.** The CJK tokenizer mode at upsert is baked into a sentinel metadata point on each Qdrant collection. Querying after a mode change shows a modal asking the user to revert or re-vectorize.
+5. **A1/A2 quality on Standard depends on the Similharity plugin.** With the plugin installed (the common case), Standard backend gets real `vectorScore` values back, so A2 fuses dense + BM25 like a "lite A3". Without the plugin, ST's native `/api/vector/query` strips scores → A2 falls back to rank-based fusion. The path selection doesn't change, but the fusion quality does. See §15 (plugin dependency policy) and §8 ("vectorScore depends on whether Similharity is installed") for the full split.
 
 ### GUI hide/show rules
 
-| Backend | Visible in Core | Visible in ChunkBase |
-|---|---|---|
-| **Qdrant** (A3 — only option) | Native-active notice + CJK Tokenizer Mode dropdown (Keyword Extraction subsection). **Fusion Method and RRF K are hidden** — Qdrant ignores them. | *(no hybrid controls)* |
-| **Standard + BM25** (A1) | Keyword Scoring Method, BM25 k1, BM25 b | Query Keyword Budget |
-| **Standard + Hybrid** (A2) | Keyword Scoring Method, BM25 k1, BM25 b, Fusion Method, RRF K | *(no hybrid controls)* |
+
+| Backend                        | Visible in Core                                                                                                                                   | Visible in ChunkBase   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **Qdrant** (A3 — only option) | Native-active notice + CJK Tokenizer Mode dropdown (Keyword Extraction subsection).**Fusion Method and RRF K are hidden** — Qdrant ignores them. | *(no hybrid controls)* |
+| **Standard + BM25** (A1)       | Keyword Scoring Method, BM25 k1, BM25 b                                                                                                           | Query Keyword Budget   |
+| **Standard + Hybrid** (A2)     | Keyword Scoring Method, BM25 k1, BM25 b, Fusion Method, RRF K                                                                                     | *(no hybrid controls)* |
 
 Notes:
+
 - "Prefer Native Backend Hybrid" checkbox was removed. The setting `hybrid_native_prefer` still exists in defaults (`true`) as an escape hatch for testing A2 against Qdrant without UI.
 - Fusion Method and RRF K Constant are hidden on Qdrant because Qdrant runs `fusion: "rrf"` server-side with its own internal k constant; exposing the controls would be misleading. They reappear when the user switches `vector_backend` to Standard (where A2 actually uses them).
 - The CJK Tokenizer Mode dropdown lives in the Keyword Extraction subsection (always visible). It's the **only** Hybrid Search & BM25 control that affects A3 — it drives the sparse-vector encoder.
@@ -437,13 +476,14 @@ Notes:
 
 A3 leverages **all four** of Qdrant's relevant server-side features:
 
-| Qdrant feature | A3 uses it? | How |
-|---|---|---|
-| Dense vector ANN | ✅ | Default unnamed vector slot |
-| **Sparse vectors** (`modifier: "idf"`) | ✅ | Named slot `text_sparse`, FNV-1a-hashed token indices, raw TF values; Qdrant computes IDF globally |
-| **Hybrid fusion** (`/points/query` with `prefetch`) | ✅ | Single call with `prefetch: [dense, sparse]` |
-| **Native RRF** (`fusion: "rrf"`) | ✅ | Server-side fusion; alternative `"dbsf"` available but unused |
-| Reranking pipelines | ✅ (EventBase) / ❌ (BananaBread) | EventBase formula rerank (cosine × RRF + importance + persist + recency) runs **server-side** via `query: { formula: { sum: [...] } }` wrapping the prefetch when `eventbase_native_rerank = true` (Qdrant ≥ 1.13). BananaBread cross-encoder reranking is a separate post-retrieval stage — not wired into the Qdrant query. |
+
+| Qdrant feature                                      | A3 uses it?     | How                                                                                                                                                                                                                  |
+| ----------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dense vector ANN                                    | ✅              | Default unnamed vector slot                                                                                                                                                                                          |
+| **Sparse vectors** (`modifier: "idf"`)              | ✅              | Named slot`text_sparse`, FNV-1a-hashed token indices, raw TF values; Qdrant computes IDF globally                                                                                                                    |
+| **Hybrid fusion** (`/points/query` with `prefetch`) | ✅              | Single call with`prefetch: [dense, sparse]`                                                                                                                                                                          |
+| **Native RRF** (`fusion: "rrf"`)                    | ✅              | Server-side fusion; alternative`"dbsf"` available but unused                                                                                                                                                         |
+| Reranking pipelines                                 | ✅ (EventBase)  | EventBase formula rerank (cosine × RRF + importance + persist + recency) runs**server-side** via `query: { formula: { sum: [...] } }` wrapping the prefetch when `eventbase_native_rerank = true` (Qdrant ≥ 1.13). |
 
 ### Cross-reference
 
@@ -492,12 +532,13 @@ Plan document: [plans/executed/agentic-retrieval-plan.md](../plans/executed/agen
 
 ### Files
 
-| File | Role |
-|---|---|
-| [core/agentic-prompt.js](../core/agentic-prompt.js) | System prompt + 2 few-shot examples (1 English, 1 CJK `贖身` case). Also builds the user-message portion (recent chat + current message + candidate summaries). |
-| [core/agentic-retrieval.js](../core/agentic-retrieval.js) | Public `retrieveEventsWithAgent(params)`. Runs pre-search, calls planner LLM, fans out queries, merges, re-feeds through canonical re-ranker. Includes `_resolveAgenticLLMConfig()` for inheritance from summarize_* fields. |
-| [core/eventbase-workflow.js](../core/eventbase-workflow.js) | Switches between `retrieveEvents` and `retrieveEventsWithAgent` based on `settings.agentic_retrieval_enabled`. |
-| [ui/ui-manager.js](../ui/ui-manager.js) | "AgentMode" tab (peer of Core/EventBase/etc.) with provider/model inheritance, sliders, debug toggle. |
+
+| File                                                        | Role                                                                                                                                                                                                                        |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [core/agentic-prompt.js](../core/agentic-prompt.js)         | System prompt + 2 few-shot examples (1 English, 1 CJK`贖身` case). Also builds the user-message portion (recent chat + current message + candidate summaries).                                                              |
+| [core/agentic-retrieval.js](../core/agentic-retrieval.js)   | Public`retrieveEventsWithAgent(params)`. Runs pre-search, calls planner LLM, fans out queries, merges, re-feeds through canonical re-ranker. Includes `_resolveAgenticLLMConfig()` for inheritance from summarize_* fields. |
+| [core/eventbase-workflow.js](../core/eventbase-workflow.js) | Switches between`retrieveEvents` and `retrieveEventsWithAgent` based on `settings.agentic_retrieval_enabled`.                                                                                                               |
+| [ui/ui-manager.js](../ui/ui-manager.js)                     | "AgentMode" tab (peer of Core/EventBase/etc.) with provider/model inheritance, sliders, debug toggle.                                                                                                                       |
 
 ### Flow
 
@@ -540,6 +581,7 @@ Inheritance is centralized in `_resolveAgenticLLMConfig(settings)` — read it o
 All lines prefixed `[vectfoxPlus-Agentic]` so they're greppable and distinct from `[EventBase]` / `[Qdrant]`.
 
 Per retrieval round emits, in order:
+
 1. `mode=ON trigger=user_message_len=<N>`
 2. `Pre-search returned <N> candidates (top score=<x.xx>)`
 3. `Past chat turns sent to planner: <depth>`
@@ -555,6 +597,7 @@ Per retrieval round emits, in order:
 13. `Total wall-clock for agent overhead: <ms>ms (LLM=<ms>ms, fanout=<ms>ms)`
 
 Timing buckets:
+
 - LLM call ms (measured around `_callPlanner`)
 - Qdrant fanout ms (measured around the `Promise.all` of `queryCollection` calls)
 - Total agent overhead ms (measured from agent-stage entry through stage 5 return)
@@ -562,16 +605,17 @@ Timing buckets:
 
 ### Failure modes — all fall back to pre-search
 
-| Failure | Outcome |
-|---|---|
-| `agentic_retrieval_enabled = false` | Skip stages 2-5; identical to today |
-| `vector_backend !== 'qdrant'` | Skip; log `mode=SKIPPED reason=requires_qdrant_backend` |
-| Missing model or API key | Skip; log `mode=SKIPPED reason=missing_model` / `missing_openrouter_api_key` |
-| Planner LLM throws / times out / returns invalid JSON | Log warn; return pre-search only |
-| Planner returns 0 valid queries (after `_validateAndTrimQueries`) | Log; return pre-search only |
-| One of N Qdrant queries fails | Per-promise `.catch(err) → []`; other queries still merge |
-| All Qdrant queries fail | `agenticHits = []`; pre-search events still feed stage 5 re-rank |
-| `liveCollectionIds` empty | Skip stages 4-5; return pre-search |
+
+| Failure                                                          | Outcome                                                                     |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `agentic_retrieval_enabled = false`                              | Skip stages 2-5; identical to today                                         |
+| `vector_backend !== 'qdrant'`                                    | Skip; log`mode=SKIPPED reason=requires_qdrant_backend`                      |
+| Missing model or API key                                         | Skip; log`mode=SKIPPED reason=missing_model` / `missing_openrouter_api_key` |
+| Planner LLM throws / times out / returns invalid JSON            | Log warn; return pre-search only                                            |
+| Planner returns 0 valid queries (after`_validateAndTrimQueries`) | Log; return pre-search only                                                 |
+| One of N Qdrant queries fails                                    | Per-promise`.catch(err) → []`; other queries still merge                   |
+| All Qdrant queries fail                                          | `agenticHits = []`; pre-search events still feed stage 5 re-rank            |
+| `liveCollectionIds` empty                                        | Skip stages 4-5; return pre-search                                          |
 
 **Invariant:** AgentMode MUST NEVER produce a worse result than today's flow. The drop-in shape of `retrieveEventsWithAgent` is designed so that on any failure the return value is exactly what `retrieveEvents` would have returned.
 
@@ -602,6 +646,7 @@ Use these fields in future benchmark / diagnostic tooling.
 Originally lived inline as a 400-line section here. It outgrew the surrounding doc and was split out 2026-05-23 so the rest of `dev_helper.md` stays scannable. Everything related to collection listing, lock state, registry-key construction, backend routing for queries, and the UI checkboxes that mirror lock state is in that file.
 
 If you are about to write code that:
+
 - registers or looks up a collection
 - reads or mutates a lock (chat or character)
 - queries or deletes vectors for a specific collection
@@ -618,21 +663,23 @@ The Similharity plugin (`/api/plugins/similharity/*`) was built for Qdrant. Its 
 
 ### Rule: plugin is Qdrant-native, optional-only on standard
 
-| Backend | Plugin role |
-|---|---|
-| **Qdrant** | Required. All inserts, queries, chunk listing, and management go through the plugin. |
-| **Standard (Vectra)** | Optional enhancement only. Standard backend must be fully functional without it. |
+
+| Backend               | Plugin role                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| **Qdrant**            | Required. All inserts, queries, chunk listing, and management go through the plugin. |
+| **Standard (Vectra)** | Optional enhancement only. Standard backend must be fully functional without it.     |
 
 ### Standard backend — what the plugin enhances (when installed)
 
-| Feature | Without plugin | With plugin |
-|---|---|---|
-| Insert / write | Native `/api/vector/insert` | Plugin `/chunks/insert` — adds metadata (keywords, importance, conditions) |
-| Query / read | Native `/api/vector/query` | Plugin `/chunks/query` — returns metadata alongside results |
-| Chunk listing (View Chunks) | Not possible | Plugin `/chunks/list` — full text + metadata |
-| Chunk editing (text/metadata) | Not possible | Plugin `/chunks/{hash}/text` + `/metadata` |
-| Stats | Hash count only | Plugin `/chunks/stats` — rich stats |
-| Collection discovery | Registry only | Plugin `/collections` — filesystem scan |
+
+| Feature                       | Without plugin             | With plugin                                                                |
+| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------- |
+| Insert / write                | Native`/api/vector/insert` | Plugin`/chunks/insert` — adds metadata (keywords, importance, conditions) |
+| Query / read                  | Native`/api/vector/query`  | Plugin`/chunks/query` — returns metadata alongside results                |
+| Chunk listing (View Chunks)   | Not possible               | Plugin`/chunks/list` — full text + metadata                               |
+| Chunk editing (text/metadata) | Not possible               | Plugin`/chunks/{hash}/text` + `/metadata`                                  |
+| Stats                         | Hash count only            | Plugin`/chunks/stats` — rich stats                                        |
+| Collection discovery          | Registry only              | Plugin`/collections` — filesystem scan                                    |
 
 ### The rule for new code
 
@@ -643,6 +690,70 @@ The Similharity plugin (`/api/plugins/similharity/*`) was built for Qdrant. Its 
 ### Why the separation matters
 
 Using the plugin for standard backend inserts created a hidden dependency: users without the plugin couldn't import collections. The native ST API supports pre-computed vector inserts via an `embeddings` map — there is no reason to route standard backend inserts through the plugin. The plugin's value on standard backend is read-side enhancement (metadata retrieval, chunk listing), not write-side.
+
+### Test-suite coverage matrix — which tests run in which configuration?
+
+The `tests/Eventbase-test.spec.js` suite runs against a live ST instance. Each test has a different relationship with the plugin and the qdrant backend. Tests that can't run on the current environment **soft-skip** (marked ⏭️ in the Playwright report via `test.skip(...)`) rather than failing — this is critical because the suite runs in **serial mode**, and a hard FAIL would halt every subsequent test. A no-plugin user running the full suite would otherwise be stuck at TEST 001 and never reach the standard-backend tests that DO work on their machine.
+
+Three environment requirements to consider:
+
+- **Plugin** — Similharity plugin installed and enabled on the ST instance (probed via `/api/plugins/similharity/probe`)
+- **Qdrant** — Qdrant reachable at the host/port configured in `extension_settings.vectfox.qdrant_url` / `qdrant_host`
+- **Standard** — Vectra storage (always available; built into ST)
+
+Matrix:
+
+
+| Test | Description | Plugin | Qdrant | Standard | Runs on no-plugin? |
+| --- | --- | --- | --- | --- | --- |
+| **001** | Qdrant lorebook: vectorize → lock → query isolation | Required | Required | — | ⏭️ skip |
+| **002** | Qdrant EventBase: insert + field check | Required | Required | — | ⏭️ skip |
+| **003** | E2E qdrant: locked lorebook + locked EventBase | Required | Required | — | ⏭️ skip |
+| **004** | DB Browser: listing + delete (qdrant) | Required | Required | — | ⏭️ skip |
+| **005** | Standard lorebook: vectorize → lock → query isolation | Optional (enhances) | — | Required | ✅ runs |
+| **006** | Standard EventBase: insert + parseEmbedText recovery | Optional (enhances) | — | Required | ✅ runs |
+| **007** | E2E standard: locked lorebook + locked EventBase | Optional (enhances) | — | Required | ✅ runs |
+| **008** | DB Browser standard + plugin: rich-mode listing | Required (by design) | — | Required | ⏭️ skip |
+| **009** | DB Browser standard, **no plugin**: graceful degradation | Forbidden (forces `pluginAvailable=false`) | — | Required | ✅ runs — purpose-built for no-plugin |
+| **010** | Cross-collection lock isolation (qdrant) | Required | Required | — | ⏭️ skip |
+| **011** | Cross-persona activation isolation (qdrant) | Required | Required | — | ⏭️ skip |
+| **012** | Cross-backend import: qdrant ↔ standard rename | Required (qdrant side) | Required | Required | ⏭️ skip |
+| **013** | Synthetic E2E qdrant: lorebook + EventBase round-trip | Required | Required | — | ⏭️ skip |
+
+**Reading the matrix:**
+- **"Required"** = the test cannot run without this component; it soft-skips.
+- **"Optional (enhances)"** = the test runs end-to-end on no-plugin standard backend. With plugin, scoring is richer (real `vectorScore` + metadata) but the BM25 text-search path still works without it — see §8 for the no-plugin scoring details.
+- **"Forbidden"** (TEST 009 only) = the test deliberately forces `pluginAvailable=false` on the shared backend instance to exercise the no-plugin code path. It runs even on machines that DO have the plugin (by simulating its absence).
+- **"—"** = the backend isn't touched by this test.
+
+**No-plugin run example:**
+```
+npm run test:e2e
+```
+On a machine without the Similharity plugin, you'll see:
+- TEST 001–004, 008, 010–013 → ⏭️ skipped (skip reason: "Similharity plugin not installed — qdrant requires it")
+- **TEST 005, 006, 007, 009 → ✅ run** — these are the standard-backend tests that work without the plugin
+
+That's the expected outcome for a fresh ST install without the plugin. **TEST 005/006/007 are critical no-plugin coverage** alongside TEST 009. They catch the entire user-facing flow that basic-install users exercise: vectorize content → lock to chat → query → see results.
+
+### Why this coverage matters — case study (2026-05-24)
+
+When a no-plugin user reported "I can't lock a collection — the checkbox doesn't stick," the root cause was a 3-line chain:
+
+1. `defaultCollectionMeta.scope = 'unknown'` (the string, not falsy)
+2. `getCollectionMeta` returns the default object when no stored meta exists (no-plugin discovery path doesn't pre-stamp scope)
+3. `storedMeta.scope || parsedMeta.scope` at [collection-loader.js:1007](../core/collection-loader.js#L1007) — `'unknown'` is truthy → OR short-circuits → correctly-parsed `'chat'` is ignored → `saveActivation` has no branch for `scope='unknown'` → silent no-op on the lock write.
+
+With-plugin users didn't hit this because the plugin's discovery path pre-stamps proper scope before `getCollectionMeta` ever returns the default. The bug was strictly no-plugin. It existed for an extended period without surfacing because no test exercised "no-plugin user clicks the lock checkbox."
+
+TEST 005 caught it the moment it started running on a no-plugin machine (the dry-run query returned 0 entries because the collection wasn't actually locked). This is exactly the value proposition of broad no-plugin coverage.
+
+Fix landed 2026-05-24: default changed to `null`, with a defensive `!== 'unknown'` check at the load site for legacy collections that already have `'unknown'` saved on disk.
+
+**Skip mechanism:**
+- Spec-level `test.skip(condition, reason)` in [tests/Eventbase-test.spec.js](../tests/Eventbase-test.spec.js) — uses helpers `skipIfQdrantUnavailable()` and `skipIfNoPlugin()`. Marks the test ⏭️ in the Playwright report.
+- In-eval defensive checks emit `[SKIP]` log lines that `assertPassed()` treats as soft-pass (no `[FAIL]`, no `[PASS]` required). Belt-and-suspenders for any case where the spec-level check doesn't fire.
+- Plugin probe is cached per-page so the suite doesn't hit `/api/plugins/similharity/probe` more than once.
 
 ---
 

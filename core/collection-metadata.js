@@ -23,7 +23,16 @@ import { parseRegistryKey, COLLECTION_PREFIXES } from './collection-ids.js';
 const defaultCollectionMeta = {
     enabled: true,
     autoSync: false,  // Per-collection auto-sync for chat vectorization
-    scope: 'unknown',
+    // `null` (not the string 'unknown'). Truthy-string defaults break the
+    // `storedMeta.scope || parsedMeta.scope` fall-through pattern used by
+    // the collection loader (line ~1007) — with `'unknown'` as the default,
+    // the OR short-circuits and the correctly-parsed scope from the ID
+    // structure is ignored, leaving collections un-lockable via the UI.
+    // Surfaced 2026-05-24 by a no-plugin user whose fallback-discovered
+    // EventBase collection couldn't be activated — the checkbox flipped
+    // visually but `saveActivation` had no branch for scope='unknown' and
+    // silently wrote nothing. See Doc/collection_helper.md.
+    scope: null,
     displayName: null,
     description: '',
     tags: [],
