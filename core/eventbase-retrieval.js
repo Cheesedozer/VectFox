@@ -374,12 +374,15 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     // 1. Dual vector query against each locked live EventBase collection.
     //    userQuery  → user's last message: high-precision, intent-focused
     //    searchText → full multi-message context: broad narrative coverage
-    //    When the two strings are identical (no user message extracted) we fall
-    //    back to a single query per collection to avoid paying double cost.
+    //    Empty/undefined inputs are dropped (B5: dryRun callers may pass only
+    //    one of the two; firing a query with empty text returns plugin 400).
+    //    Identical strings are deduped so we never pay double cost.
     //    Skipped entirely when no live collection is available.
     let rawCandidates = [];
-    const dualQuery = keywordQuery && keywordQuery !== searchText;
-    const queryTexts = dualQuery ? [keywordQuery, searchText] : [searchText];
+    const queryTexts = [keywordQuery, searchText]
+        .filter(q => q && String(q).trim())
+        .filter((q, i, arr) => arr.indexOf(q) === i);
+    const dualQuery = queryTexts.length > 1;
 
     // Per-(collection, queryText) live query. When useNativeRerank is on AND the
     // collection resolves to a Qdrant backend, dispatch to hybridQueryWithRerank

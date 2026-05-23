@@ -370,7 +370,13 @@ export class QdrantBackend extends VectorBackend {
         try {
             // Dynamic import to avoid circular dependency
             const { registerCollection } = await import('../core/collection-loader.js');
-            registerCollection(collectionId);
+            const { buildRegistryKey } = await import('../core/collection-ids.js');
+            // Use the canonical registry-key form ("backend:id") — §14 storage-key
+            // convention. Passing the bare collectionId here previously left a
+            // duplicate registry entry (B4) that the DB Browser then displayed as
+            // a phantom "VECTRA"-badged 0-chunk orphan, because no prefix defaults
+            // to the standard backend in the badge logic.
+            registerCollection(buildRegistryKey(collectionId, settings));
         } catch (e) {
             console.warn('VectFox: Failed to register collection after Qdrant insert:', e);
         }

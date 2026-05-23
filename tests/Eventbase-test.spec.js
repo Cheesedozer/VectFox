@@ -14,9 +14,11 @@
 npm run test:e2e
 npm run test:e2e:no-log.
 npm run test:e2e -- --grep "TEST 008"
+npm run test:e2e -- --grep "TEST 00[5-9]|TEST 01[01]"
 --grep "TEST 008|TEST 009" (regex, run multiple)
 --grep "TEST 008" --debug (Playwright inspector)
 --grep-invert "TEST 00[1-7]" (everything except 1-7)
+--grep "TEST 00[1-7]" (everything except 1-7)
 
 
 # Run a specific test
@@ -229,6 +231,7 @@ test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
         const { shouldCollectionActivate, deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -313,8 +316,18 @@ test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
             // Always clean up the test collection so it doesn't pollute the user's DB
             try {
                 await deleteContentCollection(collectionId);
+                // TEST-ONLY: nuke vectra-side-effect folder (B4 — qdrant insert
+                // path leaves an empty vectra placeholder during registry stamping).
+                try {
+                    const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                    await stdBackend._purgeCollectionFolderForTestCleanup(collectionId, vf);
+                } catch (e) { console.warn(`${TEST} [WARN] folder-cleanup helper failed: ${e.message}`); }
                 deleteCollectionMeta(registryKey);
                 unregisterCollection(registryKey);
+                // Also remove the BARE-ID duplicate registry entry (B4) that the
+                // qdrant insert path leaves behind. Without this the DB browser
+                // shows the collection as a "VECTRA"-tagged 0-chunk orphan.
+                unregisterCollection(collectionId);
                 console.log(`${TEST} Cleanup: test collection removed ✓`);
             } catch (cleanupErr) {
                 console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
@@ -337,6 +350,7 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
         const { deleteCollection } = await import(base + 'core/collection-loader.js');
         const { QdrantBackend } = await import(base + 'backends/qdrant.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
@@ -441,6 +455,11 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
         } finally {
             try {
                 await deleteCollection(collectionId, settings, registryKey);
+                // TEST-ONLY: nuke vectra-side-effect folder + bare registry entry (B4).
+                try {
+                    const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                    await stdBackend._purgeCollectionFolderForTestCleanup(collectionId, vf);
+                } catch (e) { console.warn(`${TEST} [WARN] folder-cleanup helper failed: ${e.message}`); }
                 console.log(`${TEST} Cleanup: test collection removed ✓`);
             } catch (cleanupErr) {
                 console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
@@ -528,6 +547,7 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
         const { deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { QdrantBackend } = await import(base + 'backends/qdrant.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -612,8 +632,15 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
         } finally {
             try {
                 await deleteContentCollection(collectionId);
+                // TEST-ONLY: nuke vectra-side-effect folder (B4).
+                try {
+                    const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                    await stdBackend._purgeCollectionFolderForTestCleanup(collectionId, vf);
+                } catch (e) { console.warn(`${TEST} [WARN] folder-cleanup helper failed: ${e.message}`); }
                 deleteCollectionMeta(registryKey);
                 unregisterCollection(registryKey);
+                // Also remove the BARE-ID duplicate registry entry (B4).
+                unregisterCollection(collectionId);
                 console.log(`${TEST} Cleanup: test collection removed ✓`);
             } catch (cleanupErr) {
                 console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
@@ -1322,6 +1349,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
         const { shouldCollectionActivate, deleteCollectionMeta, setLock } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -1462,8 +1490,19 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
                 try {
                     setLock(rk, { kind: 'chat', op: 'clear' }, { settings: vf });
                     await deleteContentCollection(cid);
+                    // TEST-ONLY: also nuke any vectra-side-effect folder. The plugin's
+                    // qdrant insert path creates an empty vectra folder as a side effect
+                    // of registry stamping (B4 — duplicate registry registration). The
+                    // helper is a no-op when no vectra folder exists, so safe to call
+                    // unconditionally as a cleanup hygiene step.
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(cid, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] folder-cleanup helper failed for ${label}: ${e.message}`); }
                     deleteCollectionMeta(rk);
                     unregisterCollection(rk);
+                    // Also remove the BARE-ID duplicate registry entry (B4).
+                    unregisterCollection(cid);
                     console.log(`${TEST} Cleanup ${label}: ${rk} removed ✓`);
                 } catch (cleanupErr) {
                     console.warn(`${TEST} [WARN] Cleanup ${label} failed: ${cleanupErr.message}`);
@@ -1517,6 +1556,7 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
         const { getCollectionMeta, setCollectionMeta, deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { getCollectionListing, unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
 
         const vf = extension_settings?.vectfox;
@@ -1626,8 +1666,16 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
             }
             try {
                 await deleteContentCollection(collectionId);
+                // TEST-ONLY: also nuke any vectra-side-effect folder (B4 — qdrant insert
+                // path creates empty vectra placeholder during registry stamping).
+                try {
+                    const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                    await stdBackend._purgeCollectionFolderForTestCleanup(collectionId, vf);
+                } catch (e) { console.warn(`${TEST} [WARN] folder-cleanup helper failed: ${e.message}`); }
                 deleteCollectionMeta(registryKey);
                 unregisterCollection(registryKey);
+                // Also remove the BARE-ID duplicate registry entry (B4).
+                unregisterCollection(collectionId);
                 console.log(`${TEST} Cleanup: test collection removed ✓`);
             } catch (cleanupErr) {
                 console.warn(`${TEST} [WARN] Cleanup failed: ${cleanupErr.message}`);
@@ -1759,6 +1807,8 @@ test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () =
                     } catch (e) { console.warn(`${TEST} [WARN] Phase 1 folder-cleanup helper failed: ${e.message}`); }
                     deleteCollectionMeta(`vectra:${p1ResultId}`);
                     unregisterCollection(`vectra:${p1ResultId}`);
+                    // Also remove the BARE-ID duplicate registry entry (B4).
+                    unregisterCollection(p1ResultId);
                     console.log(`${TEST} Phase 1 cleanup ✓`);
                 } catch (cleanupErr) {
                     console.warn(`${TEST} [WARN] Phase 1 cleanup failed: ${cleanupErr.message}`);
@@ -1811,8 +1861,16 @@ test('TEST 012 — Cross-backend import: qdrant ↔ standard rename', async () =
             if (p2ResultId) {
                 try {
                     await deleteContentCollection(p2ResultId);
+                    // TEST-ONLY: nuke vectra-side-effect folder (Phase 2 result is qdrant
+                    // but plugin's insert path leaves a vectra placeholder — B4).
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(p2ResultId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] Phase 2 folder-cleanup helper failed: ${e.message}`); }
                     deleteCollectionMeta(`qdrant:${p2ResultId}`);
                     unregisterCollection(`qdrant:${p2ResultId}`);
+                    // Also remove the BARE-ID duplicate registry entry (B4).
+                    unregisterCollection(p2ResultId);
                     console.log(`${TEST} Phase 2 cleanup ✓`);
                 } catch (cleanupErr) {
                     console.warn(`${TEST} [WARN] Phase 2 cleanup failed: ${cleanupErr.message}`);
