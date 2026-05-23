@@ -28,6 +28,7 @@ import { extension_settings, getContext } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { getChatUUID } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
+import { resolveEffectiveSettings } from '../core/content-vectorization.js';
 import { renderCollections } from './database-browser.js';
 import { buildArchiveEventCollectionId } from '../core/collection-ids.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../../popup.js';
@@ -2440,7 +2441,7 @@ async function startContinueVectorization() {
 
     // currentSettings only carries content-type defaults — merge global VECTFOX settings
     // so the user's summarize_model / API key (set in Core → LLM Summarization) is visible.
-    const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+    const mergedSettings = resolveEffectiveSettings(currentSettings);
     console.log('[VectFox] LLM config check (vectorize-content):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
@@ -2484,7 +2485,7 @@ async function startContinueVectorization() {
         // Merge global VECTFOX settings (vector_backend, source, model, etc.) into currentSettings,
         // which by itself is only the content-type defaults. Without this, the collection-ID builder
         // sees `settings.vector_backend` as undefined and drops the backend segment from the name.
-        const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+        const mergedSettings = resolveEffectiveSettings(currentSettings);
         const result = await vectorizeContent({
             contentType: currentContentType,
             source: source,
@@ -2708,7 +2709,7 @@ async function startVectorization() {
     // make LLM calls that share the summarize_* settings. Fail fast with a clear message
     // rather than letting it blow up mid-ingest. Merge global settings so the user's
     // summarize_model / API key set in Core → LLM Summarization is visible here.
-    const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+    const mergedSettings = resolveEffectiveSettings(currentSettings);
     console.log('[VectFox] LLM config check (start-vectorization):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
@@ -2777,7 +2778,7 @@ async function startVectorization() {
         const { vectorizeContent } = await import('../core/content-vectorization.js');
 
         // Merge global VECTFOX settings (vector_backend, source, model, etc.) into currentSettings.
-        const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+        const mergedSettings = resolveEffectiveSettings(currentSettings);
         const result = await vectorizeContent({
             contentType: currentContentType,
             source: source,

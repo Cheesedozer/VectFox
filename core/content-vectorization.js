@@ -33,6 +33,27 @@ import { getCurrentChatId } from '../../../../../script.js';
 import { getStringHash } from '../../../../utils.js';
 
 /**
+ * Merge per-call settings on top of the user's global VectFox settings.
+ * Single source of truth for "effective settings": callers pass only the keys
+ * they want to override (vector_backend, source, model, content-type defaults),
+ * and globals supply the rest (qdrant_url, custom_stopwords, summarize_*, etc.).
+ *
+ * Without this merge, code paths that read globals directly would silently
+ * ignore per-call overrides — leading to mismatches like "registry key says
+ * qdrant but data lives in vectra".
+ *
+ * @param {object} [callerSettings] - per-call overrides (may be undefined)
+ * @returns {object} merged settings — globals first, overrides win
+ */
+export function resolveEffectiveSettings(callerSettings) {
+    const merged = { ...(extension_settings.vectfox || {}), ...(callerSettings || {}) };
+    // TEMP probe (delete after diagnosing TEST 004): proves the fix is actually loaded
+    // in the browser, not a stale cached copy. Shows which backend wins the merge.
+    console.log('[VectFox PROBE] resolveEffectiveSettings → vector_backend=', merged.vector_backend);
+    return merged;
+}
+
+/**
  * Main entry point for content vectorization
  * @param {object} params - Vectorization parameters
  * @param {string} params.contentType - Content type ID
@@ -115,6 +136,9 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
 
         // Get full extension settings for keyword extraction (includes custom_stopwords)
         const VectFoxSettings = extension_settings.vectfox;
+
+        // Per-call overrides merged on top of globals (see resolveEffectiveSettings).
+        const effectiveSettings = resolveEffectiveSettings(settings);
         
         const enrichedChunks = enrichChunks(chunks, contentType, source, settings, preparedContent, VectFoxSettings);
         const hashedChunks = enrichedChunks.map(chunk => ({
@@ -127,7 +151,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         if (continueMode) {
             try {
                 progressTracker.updateProgress(3, 'Checking existing chunks...');
-                const savedHashes = await getSavedHashes(collectionId, VectFoxSettings);
+                const savedHashes = await getSavedHashes(collectionId, effectiveSettings);
                 const savedSet = new Set(savedHashes);
                 const before = hashedChunks.length;
                 finalChunks = hashedChunks.filter(c => !savedSet.has(c.hash));
@@ -219,7 +243,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             progressTracker.updateProgress(4, 'Processing chunks...');
 
             try {
-                await getBackend(VectFoxSettings);
+                await getBackend(effectiveSettings);
             } catch (e) {
                 console.warn('VectFox: Backend initialization failed before insert, will still attempt insert:', e.message);
                 try { progressTracker.addError(`Backend init failed: ${e.message}`); } catch (_) {}
@@ -227,7 +251,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             }
 
             try {
-                await insertVectorItems(collectionId, finalChunks, VectFoxSettings, (embedded, total) => {
+                await insertVectorItems(collectionId, finalChunks, effectiveSettings, (embedded, total) => {
                     throwIfAborted();
                     console.log(`[Content Vectorization] Processing progress callback: ${embedded}/${total}`);
                     progressTracker.updateEmbeddingProgress(embedded, total);

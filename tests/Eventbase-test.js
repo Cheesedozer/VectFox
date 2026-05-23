@@ -21,10 +21,12 @@
  *   007  E2E standard      — locked standard lorebook + locked standard EventBase → both return results
  *   008  DB Browser std    — same as 004 but specifically for standard (vectra:) collections
  * 
+ * npm install -D @playwright/test
  * npx playwright install
  * 
  * # Run all 8 tests
 npm run test:e2e
+npm run test:e2e:no-log.
 
 # Run a specific test
 npx playwright test --grep "TEST 001"

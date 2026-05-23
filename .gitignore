@@ -7,6 +7,7 @@ docs/*.md
 VECTOR_LIST.md
 
 node_modules/
+.playwright-auth.json
 docs/
 .claude/
 .github/
@@ -17,3 +18,7 @@ yarn-debug.log**
 yarn-error.log*
 .vscode/
 Doc/settings.json
+
+# Playwright test artifacts — regenerated on every run
+playwright-report/
+test-results/

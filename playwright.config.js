@@ -9,6 +9,11 @@ export default defineConfig({
         baseURL: process.env.SILLYTAVERN_URL || 'http://100.102.50.77:7598',
         headless: false,  // headed so you can see ST and intervene if needed
         viewport: { width: 1280, height: 900 },
+        // Bypass HTTP cache on every navigation so code changes to VectFox JS files
+        // are picked up on the next test run without manual hard-reload.
+        launchOptions: {
+            args: ['--disable-application-cache', '--disable-gpu-shader-disk-cache', '--disk-cache-size=1'],
+        },
     },
     workers: 1,           // serial — tests share ST state
     reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
