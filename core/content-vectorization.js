@@ -884,13 +884,17 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
             index: index,
             keywords: dedupedKeywords,
             metadata: {
+                // Chunk-level metadata first (chunkIndex/totalChunks/strategy/etc.)
+                // so the explicit fields below win on conflict. The per_entry strategy
+                // writes `entryName: undefined` for string inputs, which would otherwise
+                // clobber the real entryName resolved from preparedContent.entries.
+                ...(chunk.metadata || {}),
                 contentType,
                 sourceName: source.name || source.filename || 'Unknown',
                 entryName,
                 entryUid,
                 keywordLevel,
                 keywordBaseWeight,
-                ...(chunk.metadata || {}),
             },
         };
     });

@@ -562,10 +562,6 @@ test('TEST 004 — DB Browser: listing + delete (any backend)', async () => {
             if (!items.length) { console.error(`${TEST} [FAIL] listChunks returned 0 items`); return; }
             console.log(`${TEST} listChunks: ${items.length} items (total: ${listResult.total})`);
 
-            // TEMP: dump full shape of items[0] so we can see exactly where entryName landed
-            // (top-level vs nested in metadata, renamed, or stripped by the plugin).
-            console.log(`${TEST} items[0] full shape: ${JSON.stringify(items[0], null, 2).slice(0, 1500)}`);
-
             items.slice(0, 3).forEach((item, i) =>
                 console.log(`  [${i}] entryName="${item.metadata?.entryName ?? '(none)'}"  text="${(item.text||'').slice(0,60)}"`));
 
