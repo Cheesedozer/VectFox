@@ -46,7 +46,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { SECRET_KEYS, secret_state, writeSecret, readSecretState } from '../../../../secrets.js';
-import { saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettingsDebounced, saveSettings } from '../../../../../script.js';
 
 // Dedicated slot names — keep in sync with the writeSecret() calls in
 // ui-manager.js summarize sections. Constants here so a typo can't drift
@@ -435,17 +435,95 @@ export async function migrateLegacyApiKeys() {
         }
     }
 
-    // Persist the deletions to settings.json. Without this call, the changes
-    // remain in-memory only and the old values linger in settings.json on
-    // disk until some other code path triggers a save.
     if (mutated) {
+        const trackedKeys = [...MIGRATIONS.map(([f]) => f), 'openrouter_api_key'];
+
+        // Pre-save check — confirm extension_settings.vectfox really IS
+        // what we deleted from (no stale reference / Proxy weirdness).
+        const stillPresent = trackedKeys.filter(k => Object.prototype.hasOwnProperty.call(vf, k));
+        const sameRef = vf === extension_settings?.vectfox;
+        console.log(`[VectFox migrate] Pre-save check — vf === extension_settings.vectfox: ${sameRef} ; legacy fields still on vf: [${stillPresent.join(', ') || 'none'}] (expect: none)`);
+
+        // Also confirm via the canonical reference path (not via vf alias) —
+        // catches the case where vf was a stale reference and the canonical
+        // object has been re-bound to something fresh since.
+        const stillPresentCanonical = trackedKeys.filter(k =>
+            extension_settings?.vectfox &&
+            Object.prototype.hasOwnProperty.call(extension_settings.vectfox, k)
+        );
+        console.log(`[VectFox migrate] Pre-save check — legacy fields on extension_settings.vectfox (canonical): [${stillPresentCanonical.join(', ') || 'none'}] (expect: none)`);
+
+        // Triple-save to defeat the "Settings not ready, scheduling another
+        // save" race we sometimes hit when init runs before ST core is
+        // fully ready (see log line 14 in the 2026-05-25 trace). The first
+        // call may be no-op'd by ST's readiness guard; the deferred calls
+        // run at known-safe points after init has settled.
         saveSettingsDebounced();
-        console.log(`[VectFox migrate] saveSettingsDebounced() called — settings.json flush queued (typical debounce ~1s).`);
+        console.log(`[VectFox migrate] saveSettingsDebounced() call #1 (immediate)`);
+
+        setTimeout(() => {
+            saveSettingsDebounced();
+            console.log(`[VectFox migrate] saveSettingsDebounced() call #2 (deferred 2s)`);
+        }, 2000);
+
+        // Verification step + aggressive recovery — at the 5s mark we
+        // RE-CHECK and RE-MIGRATE if the fields have reappeared. This
+        // handles the "ST reloaded settings.json over our changes during
+        // init" scenario. We also try the non-debounced saveSettings()
+        // here in case the debounce window is what's preventing the
+        // actual write.
+        setTimeout(async () => {
+            const reCheckPresent = trackedKeys.filter(k =>
+                extension_settings?.vectfox &&
+                Object.prototype.hasOwnProperty.call(extension_settings.vectfox, k)
+            );
+
+            if (reCheckPresent.length === 0) {
+                console.log(`[VectFox migrate] Post-save VERIFICATION (5s after migration) — extension_settings.vectfox is clean: zero legacy fields present. ✓`);
+            } else {
+                console.warn(`[VectFox migrate] ⚠️ Post-save VERIFICATION (5s after migration) — these legacy fields REAPPEARED on extension_settings.vectfox: [${reCheckPresent.join(', ')}]. ST likely reloaded settings.json over our in-memory deletions. RE-DELETING and forcing a non-debounced save now.`);
+
+                const vfNow = extension_settings.vectfox;
+                for (const k of reCheckPresent) {
+                    const v = vfNow[k];
+                    const desc = (typeof v === 'string')
+                        ? (v.length === 0 ? 'empty string ""' : `string len=${v.length} (non-empty)`)
+                        : `non-string (type=${typeof v})`;
+                    console.warn(`[VectFox migrate]   ${k}: ${desc} — deleting again`);
+                    delete vfNow[k];
+                }
+
+                // After re-delete, try the non-debounced save. If saveSettings
+                // is async / returns a Promise, await it so we know whether
+                // it actually completed. If sync, just call it.
+                try {
+                    const result = saveSettings();
+                    if (result && typeof result.then === 'function') {
+                        await result;
+                        console.log(`[VectFox migrate] saveSettings() (non-debounced, await) completed`);
+                    } else {
+                        console.log(`[VectFox migrate] saveSettings() (non-debounced, sync) returned`);
+                    }
+                } catch (err) {
+                    console.warn(`[VectFox migrate] saveSettings() (non-debounced) threw:`, err?.message || err);
+                }
+
+                // Also queue the debounced one as belt-and-suspenders.
+                saveSettingsDebounced();
+            }
+
+            // Final state check after the recovery attempt above
+            const finalCheck = trackedKeys.filter(k =>
+                extension_settings?.vectfox &&
+                Object.prototype.hasOwnProperty.call(extension_settings.vectfox, k)
+            );
+            console.log(`[VectFox migrate] FINAL state — legacy fields on extension_settings.vectfox after recovery: [${finalCheck.join(', ') || 'none'}]. If this says 'none' but settings.json STILL has them after another 5s, ST's save isn't writing extension_settings to disk — different problem.`);
+        }, 5000);
     } else {
         console.log(`[VectFox migrate] mutated=false, no save needed (no fields were present or all already deleted)`);
     }
 
-    console.log(`[VectFox migrate] DONE — ${moved.length} secret(s) written: [${moved.join(', ') || 'none'}]; ${deleted.length} field(s) deleted from extension_settings.vectfox: [${deleted.join(', ') || 'none'}]`);
+    console.log(`[VectFox migrate] DONE (sync portion) — ${moved.length} secret(s) written: [${moved.join(', ') || 'none'}]; ${deleted.length} field(s) deleted from extension_settings.vectfox: [${deleted.join(', ') || 'none'}]. Watch for VERIFICATION line in ~5s.`);
 
     return { migrated: moved.length, slots: moved };
 }
