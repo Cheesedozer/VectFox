@@ -46,6 +46,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { SECRET_KEYS, secret_state, writeSecret, readSecretState } from '../../../../secrets.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
 
 // Dedicated slot names — keep in sync with the writeSecret() calls in
 // ui-manager.js summarize sections. Constants here so a typo can't drift
@@ -321,12 +322,25 @@ export async function migrateLegacyApiKeys() {
     ];
 
     const moved = [];
+    // Track whether we mutated extension_settings.vectfox so we know to
+    // call saveSettingsDebounced(). Just clearing in memory isn't enough:
+    // without an explicit save, the old plaintext value would linger in
+    // settings.json on disk until something else triggered a write.
+    let mutated = false;
+
     for (const [legacyField, slot] of MIGRATIONS) {
         const val = vf[legacyField];
         if (typeof val !== 'string' || val.trim().length === 0) continue;
         try {
             await writeSecret(slot, val.trim());
-            vf[legacyField] = '';
+            // delete (not = '') so the field is removed from settings.json
+            // entirely rather than persisting as an empty string. The
+            // defaults block in index.js will recreate the empty-string
+            // default in memory on next init, but the on-disk file stays
+            // clean post-migration. User-visible: no more "key": "..."
+            // residue in settings.json after this fix.
+            delete vf[legacyField];
+            mutated = true;
             moved.push(slot);
         } catch (err) {
             console.warn(`[VectFox] Failed to migrate ${slot}:`, err?.message || err);
@@ -348,13 +362,23 @@ export async function migrateLegacyApiKeys() {
                 console.warn(`[VectFox] Failed to migrate openrouter_api_key → SECRET_KEYS.OPENROUTER:`, err?.message || err);
             }
         }
-        vf.openrouter_api_key = '';
+        delete vf.openrouter_api_key;
+        mutated = true;
     }
 
     if (moved.length > 0) {
         // Refresh in-memory state so subsequent reads see the new values
         try { await readSecretState(); } catch {}
         console.log(`[VectFox] Migrated ${moved.length} plaintext API key(s) from settings.json to ST secret_state: ${moved.join(', ')}. Plaintext copies cleared from settings.json.`);
+    }
+
+    // Persist the deletions to settings.json. Without this call, the old
+    // plaintext values remain on disk until some other code path triggers
+    // a save — which might be never if the user doesn't touch settings UI.
+    // saveSettingsDebounced is idempotent and cheap to call when mutated=false too,
+    // but the guard makes the no-op case explicit.
+    if (mutated) {
+        saveSettingsDebounced();
     }
 
     return { migrated: moved.length, slots: moved };
