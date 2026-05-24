@@ -759,8 +759,17 @@ export function isChatFullyVectorized(messages, settings, chatUUID) {
  * Returns one of:
  *   { state: 'no-chat' }                                              — no chat is open
  *   { state: 'no-collection' }                                        — chat has no eventbase collection yet
- *   { state: 'partial',          collectionId, registryKey }          — collection exists, last window not extracted
- *   { state: 'fully-vectorized', collectionId, registryKey }          — collection exists, last window already extracted
+ *   { state: 'vectorization-ahead', collectionId, registryKey,
+ *     chatMessageCount, markerValue }                                  — collection exists, but its auto-sync marker
+ *                                                                       is past the current chat tail (user bound a
+ *                                                                       collection vectorized on a longer chat, or
+ *                                                                       deleted messages after vectorizing). NOTHING
+ *                                                                       should sync — we wait for chat to catch up.
+ *   { state: 'partial',          collectionId, registryKey,
+ *     chatMessageCount, markerValue? }                                 — collection exists, last window not extracted;
+ *                                                                       counts let the UI show the backfill gap
+ *   { state: 'fully-vectorized', collectionId, registryKey,
+ *     chatMessageCount, markerValue? }                                 — collection exists, last window already extracted
  *
  * @param {object} settings - extension_settings.vectfox
  * @returns {object}
@@ -790,11 +799,35 @@ export function getChatAutoSyncStatus(settings) {
     const messages = Array.isArray(ctx?.chat)
         ? ctx.chat.filter(m => m.mes && m.mes.trim().length > 0)
         : [];
+    const chatMessageCount = messages.length;
+
+    // Read the auto-sync marker (per-chat message-index threshold). When this
+    // is past the chat tail, the marker filter in runEventBaseIngestion will
+    // reject every window — extraction is effectively frozen until the chat
+    // catches up. Surface that as a distinct UI state so the user understands
+    // why "auto-sync enabled" produces no work (they probably bound a chat
+    // vectorization that ran on a longer version of this chat).
+    //
+    // The marker may be undefined when auto-sync was never enabled — in that
+    // case we don't have enough info to detect the ahead-of-chat condition,
+    // so fall through to the existing partial / fully-vectorized branch.
+    const markerValue = extension_settings?.vectfox?.eventbase_autosync_start_marker?.[uuid];
+    if (typeof markerValue === 'number' && markerValue > chatMessageCount) {
+        return {
+            state: 'vectorization-ahead',
+            collectionId: match.collectionId,
+            registryKey: match.registryKey,
+            chatMessageCount,
+            markerValue,
+        };
+    }
 
     const fullyVectorized = isChatFullyVectorized(messages, settings, uuid);
     return {
         state: fullyVectorized ? 'fully-vectorized' : 'partial',
         collectionId: match.collectionId,
         registryKey: match.registryKey,
+        chatMessageCount,
+        markerValue: typeof markerValue === 'number' ? markerValue : undefined,
     };
 }

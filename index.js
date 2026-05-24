@@ -6,7 +6,7 @@
  * All logic is in separate modules - see project guidelines
  *
  * @author Kritblade
- * @version 3.3.0
+ * @version 3.3.1
  * ============================================================================
  */
 

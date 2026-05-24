@@ -1,0 +1,487 @@
+
+<!doctype html><html lang="en"><head>
+  <meta charset="utf-8">
+  <title>VectFox 3.3.0 — External Code Review</title>
+  <meta property="og:title" content="VectFox 3.3.0 — External Code Review">
+  <meta name="twitter:title" content="VectFox 3.3.0 — External Code Review">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://css.jotbird.com/default.css">
+  <link rel="stylesheet" href="https://assets.jotbird.com/katex.min.css">
+  <style>
+:where(h1, h2, h3, h4, h5, h6) .header-anchor {
+  margin-left: 0.3em;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  color: var(--jb-muted, currentColor);
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+:where(h1, h2, h3, h4, h5, h6):hover .header-anchor,
+.header-anchor:focus-visible {
+  opacity: 1;
+}
+.header-anchor {
+  font-size: 0.9em;
+  user-select: none;
+}
+.header-anchor__icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+  stroke-width: 1.4;
+}
+</style>
+
+<link rel="icon" href="https://assets.jotbird.com/favicon-32x32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="https://assets.jotbird.com/favicon-16x16.png" sizes="16x16" type="image/png">
+<link rel="icon" href="https://assets.jotbird.com/favicon.ico" type="image/x-icon">
+
+<style>
+:where(h1,h2,h3,h4,h5,h6) .header-anchor{margin-left:.3em;text-decoration:none;opacity:0;transition:opacity .15s ease-in-out;color:var(--jb-muted,currentColor);display:inline-flex;align-items:center;vertical-align:middle}
+:where(h1,h2,h3,h4,h5,h6):hover .header-anchor,.header-anchor:focus-visible{opacity:1}
+.header-anchor{font-size:.9em;user-select:none}
+</style>
+
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="description" content="This document is an independent code review of KritBlade/VectFox at commit cbec956 (the main branch HEAD at time of review) and the companion…">
+<meta property="og:title" content="VectFox 3.3.0 — External Code Review">
+<meta property="og:description" content="This document is an independent code review of KritBlade/VectFox at commit cbec956 (the main branch HEAD at time of review) and the companion…">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://share.jotbird.com/bright-spirited-javelina">
+<meta property="og:image" content="https://share.jotbird.com/og/bright-spirited-javelina.png">
+<meta property="og:image:secure_url" content="https://share.jotbird.com/og/bright-spirited-javelina.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="VectFox 3.3.0 — External Code Review">
+<meta property="og:site_name" content="JotBird">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VectFox 3.3.0 — External Code Review">
+<meta name="twitter:description" content="This document is an independent code review of KritBlade/VectFox at commit cbec956 (the main branch HEAD at time of review) and the companion…">
+<meta name="twitter:image" content="https://share.jotbird.com/og/bright-spirited-javelina.png">
+<meta name="twitter:image:alt" content="VectFox 3.3.0 — External Code Review">
+<meta name="jotbird-updated-at" content="2026-05-24T08:32:51.144Z">
+<link rel="alternate" type="text/markdown" href="https://share.jotbird.com/bright-spirited-javelina.md">
+
+</head><body>
+
+  <main class="publish">
+    <h1 id="vectfox-3.3.0-external-code-review">VectFox 3.3.0 — External Code Review <a class="header-anchor" aria-hidden="true" href="#vectfox-3.3.0-external-code-review" rel="nofollow noopener">¶</a></h1>
+<p>This document is an independent code review of KritBlade/VectFox at commit <code>cbec956</code> (the <code>main</code> branch HEAD at time of review) and the companion <code>Similharity-Plugin</code> branch at version <code>3.3.1</code>. It is offered as constructive feedback. The review covers security, stability, and code-quality findings, with file:line references and suggested fixes for each. The reviewer has no affiliation with the project.*</p>
+<hr>
+<h2 id="summary">Summary <a class="header-anchor" aria-hidden="true" href="#summary" rel="nofollow noopener">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Severity</th>
+<th>Count</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Critical</td>
+<td>3</td>
+<td>Reachable from normal usage, security-relevant or causes silent data loss</td>
+</tr>
+<tr>
+<td>High</td>
+<td>5</td>
+<td>Real-world exploit chain present or substantial stability risk</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>5</td>
+<td>Concerning defaults, latent bugs, or operational friction</td>
+</tr>
+<tr>
+<td>Low / quality</td>
+<td>9</td>
+<td>Cleanups, smaller bugs, polish</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p>The codebase is ambitious — roughly 49,000 lines of JavaScript across ~120 files, plus a 3,760-line Node-side server plugin. The architecture (EventBase + dedicated vector DB + agentic planner) is well thought out, the inline documentation is generally good, and the JS hygiene avoids classic sinks (no <code>eval</code>, <code>new Function</code>, <code>document.write</code>, or <code>setTimeout(string)</code>). The biggest issues cluster around two areas: HTML-string construction in the UI layer, and the trust boundary around imported / user-supplied data.</p>
+<hr>
+<h1 id="critical">Critical <a class="header-anchor" aria-hidden="true" href="#critical" rel="nofollow noopener">¶</a></h1>
+<h3 id="c-1.-latent-referenceerror-in-qdrantbackend.querymultiplecollections">C-1. Latent <code>ReferenceError</code> in <code>QdrantBackend.queryMultipleCollections</code> <a class="header-anchor" aria-hidden="true" href="#c-1.-latent-referenceerror-in-qdrantbackend.querymultiplecollections" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-backendsqdrant.js-lines-474545">File: <code>backends/qdrant.js</code>, lines 474–545 <a class="header-anchor" aria-hidden="true" href="#file:-backendsqdrant.js-lines-474545" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-silent-retrieval-failure-on-a-reachable-code-path">Impact: Silent retrieval failure on a reachable code path <a class="header-anchor" aria-hidden="true" href="#impact:-silent-retrieval-failure-on-a-reachable-code-path" rel="nofollow noopener">¶</a></h4>
+<p>The method's signature declares five parameters:</p>
+<pre><code class="language-js">async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings) {
+</code></pre>
+<p>…but the loop body references an undeclared identifier <code>queryVector</code>:</p>
+<pre><code class="language-js">// Use queryVector if provided, otherwise searchText
+if (queryVector) {                       // ← ReferenceError
+    body.queryVector = queryVector;
+} else if (searchText?.trim()) {
+    body.searchText = searchText;
+}
+</code></pre>
+<p>The matching method on <code>StandardBackend</code> (<code>backends/standard.js:516</code>) correctly declares the sixth parameter:</p>
+<pre><code class="language-js">async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings, queryVector = null) {
+</code></pre>
+<p>…and the upstream caller at <code>core/core-vector-api.js:1066</code> passes a sixth argument. Qdrant's method silently ignores it because JS doesn't auto-bind extra positional args to a name.
+The ReferenceError fires inside a per-collection <code>try</code>/<code>catch</code>, so the function returns <code>{ hashes: [], metadata: [], error: 'queryVector is not defined' }</code> for every collection it tried to query. No toast, no thrown error, no user-visible failure mode — just zero results.
+Reproduction (Node strict-mode ESM):</p>
+<pre><code class="language-js">class T {
+  async qmc(collectionIds, searchText, topK, threshold, settings) {
+    for (const id of collectionIds) {
+      const body = {};
+      if (queryVector) { body.queryVector = queryVector; }
+      else if (searchText?.trim()) { body.searchText = searchText; }
+    }
+  }
+}
+new T().qmc(['c1'], '', 5, 0, {}).catch(e =&gt; console.log('CAUGHT:', e.message));
+// CAUGHT: queryVector is not defined
+</code></pre>
+<p>Why most users don't hit it: <code>supportsHybridSearch()</code> returns <code>true</code> for Qdrant, and <code>core-vector-api.js:1036</code> routes Qdrant users to <code>hybridSearch()</code> instead. The buggy path is dead code unless <code>settings.hybrid_native_prefer === false</code>, the backend loses native hybrid support, or a future refactor routes through this branch. It's still a latent bug shipping in <code>main</code>.
+Suggested fix: add the sixth parameter to the Qdrant method signature, or delete the <code>if (queryVector)</code> branch. Optionally, audit the <code>catch</code> blocks throughout the file — silent error swallow (returning empty results with <code>error:</code> on the result object) makes diagnostics very hard.</p>
+<hr>
+<h3 id="c-2.-reflected-xss-via-incomplete-escapehtml-in-attribute-contexts">C-2. Reflected XSS via incomplete <code>escapeHtml</code> in attribute contexts <a class="header-anchor" aria-hidden="true" href="#c-2.-reflected-xss-via-incomplete-escapehtml-in-attribute-contexts" rel="nofollow noopener">¶</a></h3>
+<h4 id="files:-uidatabase-browser.js:1212-uicontent-vectorizer.js:2833-uisearch-debug.js:1182-uitext-cleaning-manager.js:206">Files: <code>ui/database-browser.js:1212</code>, <code>ui/content-vectorizer.js:2833</code>, <code>ui/search-debug.js:1182</code>, <code>ui/text-cleaning-manager.js:206</code> <a class="header-anchor" aria-hidden="true" href="#files:-uidatabase-browser.js:1212-uicontent-vectorizer.js:2833-uisearch-debug.js:1182-uitext-cleaning-manager.js:206" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-full-dom-xss-in-sillytaverns-origin">Impact: Full DOM XSS in SillyTavern's origin <a class="header-anchor" aria-hidden="true" href="#impact:-full-dom-xss-in-sillytaverns-origin" rel="nofollow noopener">¶</a></h4>
+<p>Four files each define their own <code>escapeHtml</code>, all using the same broken implementation:</p>
+<pre><code class="language-js">function escapeHtml(text) {
+  if (!text) return &quot;&quot;;
+  const div = document.createElement(&quot;div&quot;);
+  div.textContent = text;
+  return div.innerHTML;
+}
+</code></pre>
+<p>The <code>textContent → innerHTML</code> round-trip only escapes <code>&lt;</code>, <code>&gt;</code>, and <code>&amp;</code>. It does not escape <code>&quot;</code> or <code>'</code>. Verified in jsdom:</p>
+<pre><code>IN : attr-break &quot; onclick=alert(1) x=&quot;
+OUT: attr-break &quot; onclick=alert(1) x=&quot;     ← unchanged
+</code></pre>
+<p>The function is then used inside HTML attribute values in multiple places:
+File	Line	Context
+<code>database-browser.js</code>	2981	<code>data-keyword=&quot;${escapeHtml(kw.text)}&quot;</code>
+<code>search-debug.js</code>	228	<code>title=&quot;${escapeHtml(q.query.substring(0, 100))}&quot;</code>
+<code>text-cleaning-manager.js</code>	86, 192, 193, 194	<code>title=...</code>, <code>value=...</code> on imported pattern fields
+<code>chunk-visualizer.js</code>	646, 714	<code>value=&quot;${escapeHtml(data.name A </code>&quot;<code>in any of those values closes the attribute and allows arbitrary attribute injection (e.g.</code>onmouseover=...<code>). The correct implementation already exists elsewhere in the same codebase — </code>ui/size-inspector.js:325<code>uses the proper regex-replace pattern and has a separate</code>escapeAttr`. Propagate that one.
+Suggested fix: consolidate to a single shared helper:</p>
+<pre><code class="language-js">function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&amp;&lt;&gt;&quot;']/g, c =&gt; ({
+    '&amp;':'&amp;amp;','&lt;':'&amp;lt;','&gt;':'&amp;gt;','&quot;':'&amp;quot;',&quot;'&quot;:'&amp;#39;'
+  }[c]));
+}
+</code></pre>
+<p>Even better: stop building HTML by string concatenation in these files. The volume of dynamic markup makes DOM-API construction (<code>createElement</code> + <code>textContent</code> + <code>setAttribute</code>) safer by default.</p>
+<hr>
+<h3 id="c-3.-stored-xss-via-unescaped-collection-lorebook-names">C-3. Stored XSS via unescaped collection / lorebook names <a class="header-anchor" aria-hidden="true" href="#c-3.-stored-xss-via-unescaped-collection-lorebook-names" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-uidatabase-browser.js:1041-uiui-manager.js:1704">File: <code>ui/database-browser.js:1041</code>, <code>ui/ui-manager.js:1704</code> <a class="header-anchor" aria-hidden="true" href="#file:-uidatabase-browser.js:1041-uiui-manager.js:1704" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-stored-xss-via-imported-character-cards-lorebooks-or-png-collection-exports">Impact: Stored XSS via imported character cards, lorebooks, or PNG collection exports <a class="header-anchor" aria-hidden="true" href="#impact:-stored-xss-via-imported-character-cards-lorebooks-or-png-collection-exports" rel="nofollow noopener">¶</a></h4>
+<p><code>ui/database-browser.js:1041</code> renders the collection title with no escaping at all:</p>
+<pre><code class="language-js">return `
+    &lt;div class=&quot;vectfox-collection-card&quot; data-collection-key=&quot;${uniqueKey}&quot; data-status=&quot;${collection.enabled ? &quot;active&quot; : &quot;paused&quot;}&quot;&gt;
+        &lt;div class=&quot;vectfox-collection-header&quot;&gt;
+            &lt;span class=&quot;vectfox-collection-title&quot;&gt;
+                ${typeIcon} ${collection.name}       ← raw, body context
+</code></pre>
+<p><code>ui/ui-manager.js:1704</code> is the same pattern for lorebooks:</p>
+<pre><code class="language-js">const nameList = names.map(n =&gt; `&lt;span style=&quot;font-style:italic;&quot;&gt;${n}&lt;/span&gt;`).join(', ');
+</code></pre>
+<p><code>collection.name</code> is computed by <code>core/collection-loader.js:398-440</code> from, in priority order:
+User-set <code>displayName</code> (rename dialog) — self-inflicted only
+<code>context.name2</code> — the current character's name in SillyTavern
+<code>character.name</code> — from imported character cards
+Lorebook / world info names — from imported world info
+Character cards and lorebooks are routinely shared on third-party platforms (<a href="http://chub.ai" rel="nofollow noopener">chub.ai</a>, JanitorAI, etc.). A character card with the name <code>&lt;img src=x onerror=alert(document.cookie)&gt;</code> would render verbatim inside the VectFox collection card the moment the user opens the database browser. This becomes the realistic delivery vehicle for XSS targeting SillyTavern users.
+The same payload also flows through <code>core/collection-export.js:643 importCollection()</code>, which accepts an <code>exportData.collection.name</code> field from a PNG-embedded JSON export with no content validation (see also H-3, H-4).
+Suggested fix: escape every templated insertion of <code>collection.name</code>, <code>sourceName</code>, <code>displayName</code>, <code>match.collectionId</code>, <code>chatId</code>, and similar identifier fields. A grep for <code>${[^}]*\.(name|id|title|displayName)</code> will surface most sites quickly. Pair with the fix from C-2.</p>
+<hr>
+<h1 id="high">High <a class="header-anchor" aria-hidden="true" href="#high" rel="nofollow noopener">¶</a></h1>
+<h3 id="h-1.-api-keys-stored-in-plaintext-settings.json">H-1. API keys stored in plaintext <code>settings.json</code> <a class="header-anchor" aria-hidden="true" href="#h-1.-api-keys-stored-in-plaintext-settings.json" rel="nofollow noopener">¶</a></h3>
+<h5 id="file:-index.js-lines-54-71-76-80-133-136-173-175-248-250">File: <code>index.js</code> lines 54, 71, 76, 80, 133, 136, 173, 175, 248, 250 <a class="header-anchor" aria-hidden="true" href="#file:-index.js-lines-54-71-76-80-133-136-173-175-248-250" rel="nofollow noopener">¶</a></h5>
+<h5 id="impact:-credential-leakage-via-routine-file-sharing-screenshots-git">Impact: Credential leakage via routine file sharing / screenshots / git <a class="header-anchor" aria-hidden="true" href="#impact:-credential-leakage-via-routine-file-sharing-screenshots-git" rel="nofollow noopener">¶</a></h5>
+<p>Ten distinct API-key fields are persisted to <code>extension_settings.vectfox</code> (which lives unencrypted in SillyTavern's <code>settings.json</code>):</p>
+<pre><code class="language-js">qdrant_api_key: '',                       // Qdrant Cloud
+openrouter_api_key: '',                   // primary OpenRouter
+vllm_api_key: '',                         // primary vLLM
+bananabread_api_key: '',                  // bananabread
+summarize_openrouter_api_key: '',         // summarizer OpenRouter
+summarize_vllm_api_key: '',               // summarizer vLLM
+eventbase_openrouter_api_key: '',         // EventBase OpenRouter
+eventbase_vllm_api_key: '',               // EventBase vLLM
+agentic_retrieval_openrouter_api_key: '', // AgentMode OpenRouter
+agentic_retrieval_vllm_api_key: '',       // AgentMode vLLM
+</code></pre>
+<p>The inline comments acknowledge it: &quot;Stored here since custom keys aren't returned by ST's <code>readSecretState()</code>.&quot; That's true for the read path — ST's <code>secret_state</code> returns a presence boolean, not the value — but storing the actual key in <code>extension_settings</code> is a workaround that exposes the credential to anyone who reads <code>settings.json</code>. The file is unencrypted, frequently included in support-thread screenshots, and synced to git for some users.
+Adjacent issue in <code>core/eventbase-extractor.js:43-58</code>:</p>
+<pre><code class="language-js">function _getOpenRouterApiKey(settings) {
+    if (settings?.summarize_openrouter_api_key) {
+        return settings.summarize_openrouter_api_key.trim();
+    }
+    const stored = secret_state[SECRET_KEYS.OPENROUTER];
+    if (typeof stored === 'string') return stored.trim();
+    if (Array.isArray(stored) &amp;&amp; stored.length &gt; 0) { ... }
+    ...
+}
+</code></pre>
+<p>The <code>secret_state[K]</code> access returns a boolean, so the <code>typeof stored === 'string'</code> and <code>Array.isArray(stored)</code> branches never hit. The &quot;fall back to ST secrets&quot; comment is misleading — there is no working fallback. Keys must be entered in VectFox's own UI, which means they must live in <code>extension_settings</code>.
+Adjacent leak in <code>index.js:130</code>:</p>
+<pre><code class="language-js">console.log('VectFox: Sending Qdrant config to Similharity plugin:', JSON.stringify(config));
+</code></pre>
+<h3 id="for-qdrant-cloud-users-with-an-api-key-set-the-key-is-written-to-the-browser-console.-any-other-extension-or-copy-pasted-screenshot-captures-it.">For Qdrant Cloud users with an API key set, the key is written to the browser console. Any other extension or copy-pasted screenshot captures it. <a class="header-anchor" aria-hidden="true" href="#for-qdrant-cloud-users-with-an-api-key-set-the-key-is-written-to-the-browser-console.-any-other-extension-or-copy-pasted-screenshot-captures-it." rel="nofollow noopener">¶</a></h3>
+<p>Suggested fix:
+Move all credentials to ST's secrets API via <code>writeSecret(SECRET_KEYS.X, value)</code>.
+For custom-key providers that ST doesn't track, ask SillyTavern upstream to expand <code>SECRET_KEYS</code>, or store an opaque token whose value resolves server-side.
+For the &quot;the Choose button needs the key in memory&quot; case in <code>openrouter_api_key</code>, hold the key in an in-memory variable for the duration of the session only, don't persist it to settings.
+Redact <code>apiKey</code> from the line 130 log.</p>
+<hr>
+<h3 id="h-2.-unvalidated-regex-pattern-import-redos">H-2. Unvalidated regex pattern import → ReDoS <a class="header-anchor" aria-hidden="true" href="#h-2.-unvalidated-regex-pattern-import-redos" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-coretext-cleaning.js:415485">File: <code>core/text-cleaning.js:415–485</code> <a class="header-anchor" aria-hidden="true" href="#file:-coretext-cleaning.js:415485" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-browser-main-thread-hang-from-imported-templates">Impact: Browser main-thread hang from imported templates <a class="header-anchor" aria-hidden="true" href="#impact:-browser-main-thread-hang-from-imported-templates" rel="nofollow noopener">¶</a></h4>
+<p><code>importPatterns(json)</code> accepts a JSON template and pushes pattern strings + flags straight into <code>settings.customPatterns</code>. The only validation is <code>if (!pattern.pattern) continue;</code>. Those patterns are later compiled with <code>new RegExp(pattern, flags || 'g')</code> at <code>text-cleaning.js:265</code> and applied to every chat message during pre-vectorization cleaning.
+A malicious template containing a catastrophic-backtracking regex like <code>(a+)+b</code> or <code>(\w+)*\w@</code> hangs the browser thread on any chat content that triggers it. There's no UI affordance to identify which pattern is the culprit — recovery requires hand-editing <code>settings.json</code>.
+Combined with the PNG-export workflow (H-4), this becomes a one-click DoS attack: import a &quot;starter pack of text-cleaning rules&quot; PNG → first chat message hangs the browser.
+Suggested fix:
+Add pattern length limits (e.g. ≤200 chars).
+Reject patterns containing common ReDoS motifs (nested quantifiers <code>(.+)+</code>, alternation with overlapping branches).
+Compile patterns in a Web Worker with a timeout; kill the worker if it doesn't return within N ms.
+At minimum, show a &quot;this template adds N regex patterns from an untrusted source&quot; confirmation modal before applying.</p>
+<hr>
+<h3 id="h-3.-png-import-has-no-schemacontent-validation">H-3. PNG import has no schema/content validation <a class="header-anchor" aria-hidden="true" href="#h-3.-png-import-has-no-schemacontent-validation" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-corepng-export.js:554-extractdatafrompng-corecollection-export.js:643-importcollection">File: <code>core/png-export.js:554 extractDataFromPNG()</code> → <code>core/collection-export.js:643 importCollection()</code> <a class="header-anchor" aria-hidden="true" href="#file:-corepng-export.js:554-extractdatafrompng-corecollection-export.js:643-importcollection" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-delivery-vehicle-for-c-3-stored-xss-and-h-2-redos-and-h-5-vector-data-corruption">Impact: Delivery vehicle for C-3 (stored XSS) and H-2 (ReDoS) and H-5 (vector data corruption) <a class="header-anchor" aria-hidden="true" href="#impact:-delivery-vehicle-for-c-3-stored-xss-and-h-2-redos-and-h-5-vector-data-corruption" rel="nofollow noopener">¶</a></h4>
+<p><code>extractDataFromPNG()</code> reads <code>tEXt</code>/<code>zTXt</code> chunks, decodes them, and hands the parsed JSON to <code>importCollection()</code>. <code>validateImportData()</code> (line 466) only checks structural fields:
+<code>version</code> present
+<code>collection.id</code> present
+<code>chunks</code> is an array
+It does not check:
+Length / character set of <code>collection.name</code>, <code>collection.id</code>, <code>displayName</code>
+Content of <code>chunks[].metadata</code> (which lands in Qdrant payloads and resurfaces in search results)
+Vector dimensions, ranges, or that values are finite
+Total payload size
+A crafted PNG export can plant XSS in <code>collection.name</code> (C-3), regex DoS patterns if the export includes cleaning settings (H-2), and corrupted vector data (H-5) — all in a single file. This is the same threat model as malicious character cards. The SillyTavern community routinely shares character cards; PNG-exported &quot;memory collections&quot; will travel the same way.
+Suggested fix:
+Constrain <code>collection.name</code> and similar string fields to a safe character set (e.g. printable Unicode without <code>&lt;&gt;&quot;'</code>).
+Cap field lengths.
+Validate <code>vector</code> arrays: length matches active model dimension, every entry is <code>Number.isFinite()</code>, magnitude within reasonable bounds.
+Cap total chunks and total payload bytes.
+Treat imports as data, never as configuration — don't auto-apply imported text-cleaning patterns or activation rules without explicit user confirmation.**</p>
+<hr>
+<h3 id="h-4.-ssrf-surface-in-similharity-server-plugin">H-4. SSRF surface in Similharity server plugin <a class="header-anchor" aria-hidden="true" href="#h-4.-ssrf-surface-in-similharity-server-plugin" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-similharity-pluginindex.js:727-810-849-908-942-1573-1696-1738-1767-qdrant-backend.js:152">File: <code>Similharity-Plugin/index.js:727, 810, 849, 908, 942, 1573, 1696, 1738, 1767</code>; <code>qdrant-backend.js:152</code> <a class="header-anchor" aria-hidden="true" href="#file:-similharity-pluginindex.js:727-810-849-908-942-1573-1696-1738-1767-qdrant-backend.js:152" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-server-side-request-forgery-from-the-sillytavern-host">Impact: Server-side request forgery from the SillyTavern host <a class="header-anchor" aria-hidden="true" href="#impact:-server-side-request-forgery-from-the-sillytavern-host" rel="nofollow noopener">¶</a></h4>
+<p>Multiple plugin routes accept a user-supplied URL in the request body and <code>fetch()</code> it server-side:</p>
+<pre><code class="language-js">url = new URL(apiUrl);          // validates syntax only
+url.pathname = '/embedding';
+const response = await fetch(url.toString(), { ... });
+</code></pre>
+<p>There's no allowlist of schemes, no host validation, no SSRF mitigation. Endpoints affected include:
+<code>POST /api/plugins/similharity/backend/init/qdrant</code> — accepts <code>qdrant.url</code> for cloud mode
+<code>POST /api/plugins/similharity/chunks/insert</code> and similar — accept <code>apiUrl</code> for embedding providers
+<code>POST /api/plugins/similharity/rerank</code> — accepts <code>apiUrl</code>
+For a localhost-only SillyTavern install this is a low-impact concern. For SillyTavern instances exposed to a LAN, behind a reverse proxy, in a container with cloud-metadata endpoints (e.g. <code>169.254.169.254</code>), or accessible to a hostile browser tab on the same machine, this is a real SSRF primitive — the plugin will issue requests against any host reachable from the SillyTavern server.
+The auth boundary is whatever SillyTavern's middleware enforces (typically CSRF tokens scoped to the session). The plugin doesn't add any second layer.
+Suggested fix:
+Allowlist URL schemes (<code>http:</code>, <code>https:</code> only — never <code>file:</code>, <code>ftp:</code>, <code>gopher:</code>).
+Reject hosts that resolve to private ranges (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>, <code>169.254.0.0/16</code>, <code>127.0.0.0/8</code>) unless explicitly opted-in via plugin config.
+Add a server-side config option (<code>allowedEmbeddingHosts</code>) so the admin can scope what the plugin is willing to talk to.</p>
+<hr>
+<h3 id="h-5.-vector-data-validation-is-too-permissive-on-import">H-5. Vector data validation is too permissive on import <a class="header-anchor" aria-hidden="true" href="#h-5.-vector-data-validation-is-too-permissive-on-import" rel="nofollow noopener">¶</a></h3>
+<h4 id="file:-corecollection-export.js:670-915">File: <code>core/collection-export.js:670, 915</code> <a class="header-anchor" aria-hidden="true" href="#file:-corecollection-export.js:670-915" rel="nofollow noopener">¶</a></h4>
+<h4 id="impact:-silent-retrieval-corruption-possible-oom">Impact: Silent retrieval corruption, possible OOM <a class="header-anchor" aria-hidden="true" href="#impact:-silent-retrieval-corruption-possible-oom" rel="nofollow noopener">¶</a></h4>
+<pre><code class="language-js">const chunksWithVectors = validChunks.filter(c =&gt; c.vector &amp;&amp; Array.isArray(c.vector));
+</code></pre>
+<p>That is the entire vector validation. Missing checks:
+Vector length matches the active embedding model's dimension. Mismatched vectors silently make every cosine similarity calculation wrong.
+Values are finite numbers. <code>NaN</code> and <code>Infinity</code> propagate through every dot product downstream, breaking ranking with no clear error.
+Magnitudes are within reasonable cosine-normalized range (<code>[-1.5, 1.5]</code> typical for normalized embeddings).
+Total memory cost. A 50 MB JSON with 100k 4096-dim vectors gets fully parsed and inserted before any backpressure kicks in.
+<code>NaN</code> vectors in particular are nasty to debug — every comparison returns <code>false</code>, retrieval silently returns zero results for affected chunks, and the user has no clue why one specific collection stopped working.
+Suggested fix:</p>
+<pre><code class="language-js">function isValidVector(v, expectedDim) {
+  if (!Array.isArray(v)) return false;
+  if (expectedDim &amp;&amp; v.length !== expectedDim) return false;
+  for (let i = 0; i &lt; v.length; i++) {
+    if (typeof v[i] !== 'number' || !Number.isFinite(v[i])) return false;
+    if (Math.abs(v[i]) &gt; 100) return false;  // sanity bound
+  }
+  return true;
+}
+</code></pre>
+<p>Cap total chunk count and total payload bytes; reject the import with a clear error message above the cap.</p>
+<hr>
+<h3 id="medium">Medium <a class="header-anchor" aria-hidden="true" href="#medium" rel="nofollow noopener">¶</a></h3>
+<p>M-1. <code>auto_update: true</code> default + force-reload <code>onUpdate</code>
+File: <code>manifest.json</code>, <code>index.js:575–578</code>
+Impact: Silent supply-chain risk</p>
+<pre><code class="language-json">&quot;auto_update&quot;: true,
+&quot;hooks&quot;: { &quot;update&quot;: &quot;onUpdate&quot; }
+</code></pre>
+<pre><code class="language-js">export async function onUpdate() {
+    console.log('VectFox: Update detected — reloading page to clear module cache');
+    location.reload();
+}
+</code></pre>
+<p>Combined with the extension's ability to issue arbitrary <code>fetch()</code> calls (including direct OpenRouter calls with the user's API key in the <code>Authorization</code> header), default-on auto-update is aggressive. Users have no opportunity to read a diff before code lands in their browser.
+Suggested fix: flip the default to <code>auto_update: false</code>, adopt a tagged-release workflow (<code>git tag v3.3.1 &amp;&amp; git push --tags</code>), and document the update flow in the README. Users who want bleeding-edge can opt in.</p>
+<hr>
+<p>M-2. Hidden <code>superadmin</code> flag
+File: <code>index.js:258–266</code>
+Impact: Privilege escalation primitive in shared deployments</p>
+<pre><code class="language-js">// SUPERADMIN MODE — no GUI toggle. Set to true by hand-editing settings.json
+// (the `vectfox` block under SillyTavern's extension_settings) to enable.
+// When true, the Database Browser bypasses ALL persona / handle ID filtering
+// and shows EVERY collection on the server regardless of creatorHandle. Locking
+// a foreign collection then works normally. Intended for dev / debugging /
+// multi-persona admin scenarios. Do not expose in the UI — this is a tripwire,
+// not a feature.
+superadmin: false,
+</code></pre>
+<p>For a single-user SillyTavern install, this is functionally harmless. For multi-tenant deployments (shared Docker, homelabs, family installs), this flag is a privilege-escalation primitive: anyone with read/write access to <code>settings.json</code> can flip it and bypass persona/handle filtering. &quot;No GUI&quot; doesn't help — filesystem access is the threat that persona-filtering is supposed to mitigate.
+Suggested fix: either remove it, or move it to a server-side config (env var, plugin config file) so it can't be flipped from the user-editable settings blob. Document it in the README either way.</p>
+<hr>
+<p>M-3. Version mismatch out of the box
+File: <code>index.js:521</code> vs. <code>manifest.json</code>
+Impact: First-run &quot;version mismatch&quot; warning toast for every user</p>
+<pre><code class="language-js">const SIMILHARITY_EXPECTED_VERSION = '3.3.1';
+</code></pre>
+<p>Manifest:</p>
+<pre><code class="language-json">&quot;version&quot;: &quot;3.3.0&quot;
+</code></pre>
+<p>The server plugin is <code>3.3.1</code>. The expected version check expects <code>3.3.1</code>. The front-end manifest says <code>3.3.0</code>. On a clean install of both repos, the version check fires and the user gets a <code>toastr.warning</code> that doesn't reflect a real incompatibility.
+Suggested fix: add a single source of truth (e.g. a <code>version.txt</code> or a CI step that bumps both files atomically), or relax the check to a major-version match while you settle on a release process.</p>
+<hr>
+<p>M-4. Test suite has failures on <code>main</code>
+File: <code>tests/backends.test.js</code> (multiple test failures)
+Impact: Confidence in changes / regression detection
+<code>npm test</code> on a fresh clone:</p>
+<pre><code>Test Files  4 failed | 8 passed (12)
+Tests       20 failed | 443 passed (463)
+</code></pre>
+<p>Failure pattern across <code>tests/backends.test.js</code>:</p>
+<pre><code>Error: [vitest] No &quot;getModelFromSettings&quot; export is defined on the
+&quot;../core/providers.js&quot; mock. Did you forget to return it from &quot;vi.mock&quot;?
+</code></pre>
+<p>The mocks in <code>backends.test.js</code> don't expose <code>getModelFromSettings</code>, but <code>backends/qdrant.js:338,805</code> and <code>backends/standard.js:403</code> all import it. This looks like the helper was added to the real provider module without updating the test mocks. The Qdrant insert, hybridQuery, and cross-backend consistency tests all error out with the same shape — they exercise exactly the backend that the &quot;A3 path&quot; pitch depends on.
+Suggested fix: make the test mock match the real module exports, ideally by using <code>vi.mock(import('../core/providers.js'), async (importOriginal) =&gt; ({ ...await importOriginal(), getModelFromSettings: vi.fn() }))</code> as the error message suggests. A green test suite is a precondition for trusting the rest of the work.</p>
+<hr>
+<p>M-5. Hardcoded <code>response_format: json_object</code> excludes some providers
+File: <code>core/agentic-retrieval.js:314</code>
+Impact: AgentMode silently fails on providers that don't support OpenAI's JSON-object response format</p>
+<pre><code class="language-js">const body = {
+    model: llmCfg.model,
+    messages: [ ... ],
+    max_tokens: 2000,
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+};
+</code></pre>
+<p>Many OpenRouter-routed models don't support <code>response_format</code> and either reject the request with HTTP 400 or strip the parameter and return regular text. The fallback path that strips markdown code fences (line 360) exists but only runs if the request succeeded — for providers that 400 on unknown params, the call never gets that far.
+The README recommends models that happen to support it (<code>grok-4.1-fast</code>, <code>gpt-4o-mini</code>), so most users won't notice. Anyone trying a cheaper or local model will.
+Suggested fix: make <code>response_format</code> opt-in per provider, or implement a fallback that retries without it on HTTP 400 / <code>unsupported_parameter</code> errors.</p>
+<hr>
+<h3 id="low-quality">Low / quality <a class="header-anchor" aria-hidden="true" href="#low-quality" rel="nofollow noopener">¶</a></h3>
+<p>L-1. Four duplicate <code>escapeHtml</code> definitions
+Beyond the bug in C-2, the duplication itself is a smell: <code>database-browser.js</code>, <code>content-vectorizer.js</code>, <code>search-debug.js</code>, and <code>text-cleaning-manager.js</code> each define a private copy. <code>size-inspector.js</code> has the correct implementation as a fifth copy. Consolidating to one shared <code>utils/html-escape.js</code> would have prevented the bug in C-2 from ever existing.
+L-2. Empty <code>dependencies</code> in the server plugin's <code>package.json</code>
+<code>Similharity-Plugin/package.json</code>:</p>
+<pre><code class="language-json">{ &quot;dependencies&quot;: {} }
+</code></pre>
+<p>But <code>index.js</code> imports <code>vectra</code> and <code>sanitize-filename</code>. The README instructs the user to <code>npm install</code> in the plugin folder — which does nothing, because deps are empty. The plugin silently piggybacks on SillyTavern's parent <code>node_modules</code> via Node's hoisting. This works today but locks the plugin to whatever SillyTavern happens to ship; a future SillyTavern major bump that drops or updates one of these packages breaks the plugin without warning.
+Suggested fix: declare actual deps with version ranges in the plugin's <code>package.json</code>. Either ship them with the plugin (preferred — clear dependency graph) or document that the plugin requires specific SillyTavern versions.
+L-3. <code>.gitignore</code> lists <code>package-lock.json</code> but the file is committed
+<code>.gitignore</code>:</p>
+<pre><code>package-lock.json
+</code></pre>
+<p>Yet <code>package-lock.json</code> (98 KB) is present in the repo. Either the gitignore line is stale and should be removed, or the file was accidentally committed and should be removed. Inconsistent state.
+L-4. Pervasive try/catch silent-swallow pattern
+Many call sites catch errors, <code>console.warn</code> them, and return empty results without surfacing to the UI:
+<code>backends/qdrant.js:539-541</code> — collection query catch returns <code>{hashes: [], metadata: [], error: msg}</code>
+<code>core/core-vector-api.js:1050-1054</code> — hybrid search catch returns <code>{hashes: [], metadata: []}</code> without the error message
+<code>core/agentic-retrieval.js:198-201</code> — planner query catch returns <code>{queryText, hits: []}</code>
+This is great for resilience and terrible for diagnostics. The C-1 ReferenceError stays invisible precisely because of this pattern. Consider a &quot;diagnostic mode&quot; toggle that re-throws caught errors so users can capture the real stack trace when something looks wrong.
+L-5. Built-in regex edge case in <code>strip_hidden_divs</code>
+<code>core/text-cleaning.js:51</code>:</p>
+<pre><code class="language-js">pattern: '&lt;div[^&gt;]*style=&quot;[^&quot;]*display:\\s*none[^&quot;]*&quot;[^&gt;]*&gt;[\\s\\S]*?(?:&lt;/div&gt;|$)',
+</code></pre>
+<p>The <code>(?:&lt;/div&gt;|$)</code> alternation is non-greedy enough that an unbalanced <code>&lt;div style=&quot;display:none&quot;&gt;</code> will strip everything from the opening tag to the end of the input. Edge case, but chat content is the corpus — it will happen eventually.
+Suggested fix: drop the <code>|$</code> branch and accept that unbalanced tags don't match. Or use a real HTML parser for these transformations.
+L-6. Missing OpenRouter <code>HTTP-Referer</code> / <code>X-Title</code> headers
+<code>core/agentic-retrieval.js:319-323</code>
+<code>core/eventbase-extractor.js:339-347</code>
+OpenRouter uses these headers for analytics and free-tier identification. Without them, free-tier requests can get rate-limited or rejected, and the developer dashboard shows opaque traffic. Adding them is cheap citizenship and improves debuggability:</p>
+<pre><code class="language-js">headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+    'HTTP-Referer': 'https://github.com/KritBlade/VectFox',
+    'X-Title': 'VectFox',
+}
+</code></pre>
+<p>L-7. Stray developer-scratch file in the test directory
+<code>tests/checkChatID.txt</code> contains a console snippet:</p>
+<pre><code class="language-js">const ctx = globalThis.SillyTavern?.getContext?.();
+const uuid = ctx?.chatMetadata?.integrity || null;
+console.log(&quot;=== IDs ===&quot;);
+...
+</code></pre>
+<p>Not a security issue, just debris. Either move to a <code>scratch/</code> folder or delete.
+L-8. Recent commit message hygiene
+The recent commit log includes typos (<code>inpector</code>, double-space in <code>more  fix</code>) and a sequence of consecutive &quot;fix X&quot; / &quot;more fix X&quot; commits in the same area:</p>
+<pre><code>d3feca3 more  fix on delete button
+44bc427 fix selected delete button
+4f59764 fix checkbox in bulk select
+e5cc08e fix bulk select
+1ee299c more fix on standard db size inpector
+2d8fdb2 more fix on standard db
+cffeca5 fix standard db not viewable
+</code></pre>
+<p>For an extension that asks users to enable auto-update, commit history is the closest thing to a changelog. Consider squash-merging fix-iteration sequences into single commits with clear messages.
+L-9. Inferred fallback path in <code>_getOpenRouterApiKey</code> is dead code
+Mentioned in H-1, repeated here for completeness: <code>core/eventbase-extractor.js:43-58</code> has three fallback branches that read <code>secret_state[K]</code> as a string / array / object-with-<code>.value</code>. SillyTavern's <code>secret_state</code> returns booleans, so none of these branches can execute. Either implement a real server-side secret-fetch path or remove the unreachable code and update the comment.</p>
+<hr>
+<h3 id="what-works-well">What works well <a class="header-anchor" aria-hidden="true" href="#what-works-well" rel="nofollow noopener">¶</a></h3>
+<h4 id="for-balance-the-codebase-has-real-strengths-worth-preserving:">For balance, the codebase has real strengths worth preserving: <a class="header-anchor" aria-hidden="true" href="#for-balance-the-codebase-has-real-strengths-worth-preserving:" rel="nofollow noopener">¶</a></h4>
+<p>No use of <code>eval</code>, <code>new Function</code>, <code>document.write</code>, or <code>setTimeout(string)</code>. The vulnerabilities are all in template-literal HTML construction, not in dangerous-API misuse. This makes the fixes mechanical rather than architectural.
+Defense in depth on filesystem paths. The server plugin uses <code>sanitize-filename</code> consistently when joining user-supplied values into paths (<code>Similharity-Plugin/index.js:1645</code>). Path traversal is properly mitigated.
+Good inline documentation. Module-level JSDoc blocks generally explain the why, not just the what. The plans/ directory documenting design decisions is unusual for an extension this size and useful.
+Architecturally sensible split. EventBase as a structured-event pipeline alongside a chunk pipeline is well-motivated; the A1/A2/A3 path comparison in the README is clear-eyed about tradeoffs.
+Test coverage exists. 443 passing tests on a fresh clone is a non-trivial investment, even with the 20 failures noted in M-4.
+Sensible AbortSignal usage. Async operations (<code>AbortSignal.timeout(N)</code>, <code>AbortSignal.any([userAbort, timeout])</code>) are wired through correctly, which is more than most extensions of this size manage.
+The tokenizer-lock modal. The CJK-tokenizer mismatch detection (<code>core/tokenizer-lock.js</code>) handles a genuinely hard correctness problem (a sparse-vector index that's tokenizer-mode-dependent) with a user-friendly migration path.</p>
+<hr>
+<h3 id="suggested-fix-order">Suggested fix order <a class="header-anchor" aria-hidden="true" href="#suggested-fix-order" rel="nofollow noopener">¶</a></h3>
+<p>Triage by reachability and blast radius:
+Order	Fix	Why first</p>
+<ol>
+<li>C-2, C-3, L-1 (consolidated escape fix)	One-day fix, unblocks all XSS chains, prevents the bug from regenerating</li>
+<li>H-1 (move API keys to ST secrets)	Prerequisite for trusting the extension with paid keys; gate other work behind this</li>
+<li>H-3, H-5 (PNG / vector validation)	Closes the realistic delivery vehicle for C-3 and H-2</li>
+<li>H-2 (regex import validation)	Pairs with H-3; both fixes share the &quot;treat imports as untrusted&quot; mindset</li>
+<li>M-4 (fix failing tests)	Prerequisite for trusting all subsequent changes</li>
+<li>C-1 (<code>queryVector</code> ReferenceError)	Low reachability today but easy fix; do it while you're in <code>backends/qdrant.js</code> for #1</li>
+<li>M-1 (<code>auto_update: false</code> default + tagged releases)	Reduces user trust burden; opt-in updates after first release</li>
+<li>H-4 (server-plugin SSRF allowlist)	Required before recommending the plugin for non-localhost deployments</li>
+<li>M-2, M-3, M-5 + the L-series	Background cleanup</li>
+</ol>
+<hr>
+<h1 id="closing">Closing <a class="header-anchor" aria-hidden="true" href="#closing" rel="nofollow noopener">¶</a></h1>
+<p>The architecture is genuinely interesting and the EventBase model is a real step up from rolling-summary memory extensions. The issues above are mostly cleanup, not redesign — none of them require rethinking the project, and the heaviest ones (the XSS chain, the API-key storage, the regex/PNG import surface) can be addressed in a single focused security pass.
+The biggest meta-suggestion is to treat anything that enters via PNG import, JSON import, character cards, or world info as fully untrusted data — escape on every read into HTML, validate on every import, and never auto-apply imported configuration. That single discipline closes most of the realistic attack surface in one pass.</p>
+
+  </main>
+
+  <div class="jb-watermark">
+    <img src="https://assets.jotbird.com/logo-black-white(2).svg" alt="JotBird Logo">
+    <div class="jb-watermark-text">
+      Published with <a href="https://www.jotbird.com" target="_blank" rel="noopener noreferrer">JotBird</a>
+    </div>
+  </div>
+
+
+  <footer class="jotbird-updated" style="margin:14px auto 0; max-width: 760px; padding: 0 18px 18px; text-align:center; color: rgba(100,116,139,0.55); font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji','Segoe UI Emoji';">
+    <span>Last updated: <time datetime="2026-05-24T08:32:51.144Z">May 24, 2026 at 2:32 AM MDT</time></span>
+  </footer>
+  
+
+<link rel="stylesheet" href="https://css.jotbird.com/github.min.css">
+<script src="https://css.jotbird.com/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body></html>

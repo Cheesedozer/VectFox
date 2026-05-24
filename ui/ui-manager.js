@@ -1751,12 +1751,41 @@ export async function refreshAutoSyncCheckbox(settings) {
     $checkbox.prop('checked', Boolean(isEnabled && isLocked));
     $hint.hide();
 
+    // Helper to format the "chat: N msgs · vectorization: M msgs" tail.
+    // Both numbers come from getChatAutoSyncStatus; the marker reflects
+    // "how far the EventBase has been extracted to" (max source_window_end + 1
+    // when collection has events, or chat length at enable time when empty).
+    const counts = (typeof status.chatMessageCount === 'number')
+        ? `<div style="margin-top:4px;font-size:0.85em;opacity:0.8;">chat: ${status.chatMessageCount} msgs` +
+          (typeof status.markerValue === 'number' ? ` · vectorization: ${status.markerValue} msgs` : '') +
+          `</div>`
+        : '';
+
     if (!isEnabled || !isLocked) {
-        $status.html(`${LED.white} Auto-sync inactive`);
+        $status.html(`${LED.white} Auto-sync inactive${counts}`);
+    } else if (status.state === 'vectorization-ahead') {
+        // Distinct state — vectorization marker is past the current chat tail.
+        // Common cause: user bound a chat vectorization that ran on a longer
+        // version of this chat (or deleted messages after vectorizing). NO
+        // auto-sync work will happen until the chat catches up to the marker.
+        // Show the gap so the user can tell they probably picked the wrong
+        // vectorization to bind to this chat.
+        const gap = status.markerValue - status.chatMessageCount;
+        $status.html(
+            `${LED.yellow} Vectorization is ahead of current chat — no auto-sync needed. ` +
+            `<div style="margin-top:4px;font-size:0.85em;opacity:0.9;">` +
+            `chat: ${status.chatMessageCount} msgs · vectorization: ${status.markerValue} msgs ` +
+            `(${gap} msg${gap === 1 ? '' : 's'} ahead)` +
+            `</div>` +
+            `<div style="margin-top:4px;font-size:0.82em;opacity:0.75;">` +
+            `If this looks wrong, you may have bound a chat vectorization from a different / longer chat. ` +
+            `Auto-sync will resume once the chat catches up to ${status.markerValue} messages.` +
+            `</div>`
+        );
     } else if (status.state === 'fully-vectorized') {
-        $status.html(`${LED.green} Ready — fully synced`);
+        $status.html(`${LED.green} Ready — fully synced${counts}`);
     } else {
-        $status.html(`${LED.yellow} Locked — will sync to latest history on next auto-sync trigger`);
+        $status.html(`${LED.yellow} Locked — will sync to latest history on next auto-sync trigger${counts}`);
     }
 }
 

@@ -82,9 +82,13 @@ export class VectorBackend {
      * @param {number} topK
      * @param {number} threshold
      * @param {object} settings
+     * @param {number[]|null} [queryVector] Optional pre-computed embedding;
+     *   when provided, implementations should query by vector instead of
+     *   re-embedding searchText. Callers (core-vector-api.js:1071) pass this
+     *   on the vector-first retrieval path; null on the text-first path.
      * @returns {Promise<object[]>}
      */
-    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings) {
+    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings, queryVector = null) {
         throw new Error('Backend must implement queryMultipleCollections()');
     }
 

@@ -478,7 +478,22 @@ export class QdrantBackend extends VectorBackend {
         return { hashes, metadata };
     }
 
-    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings) {
+    /**
+     * Multi-collection query.
+     *
+     * `queryVector = null` matches StandardBackend.queryMultipleCollections's
+     * signature. Without this parameter, the `if (queryVector)` reference
+     * below threw a ReferenceError (caught by the per-collection try/catch
+     * and silently swallowed as empty results) — see plans/review-fix.md C-1
+     * for the 2026-05 audit that surfaced this. The bug was qdrant-only;
+     * standard backend always had the param.
+     *
+     * Caller at core/core-vector-api.js:1071 passes queryVector as the 6th
+     * positional arg when the upstream path generated an embedding —
+     * without the parameter, the embedding was effectively ignored and
+     * every collection returned 0 results.
+     */
+    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings, queryVector = null) {
         const results = {};
 
         for (const collectionId of collectionIds) {

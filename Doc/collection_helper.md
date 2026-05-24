@@ -435,13 +435,16 @@ State evaluator: **`getChatAutoSyncStatus(settings)`** in `core/eventbase-workfl
 ```
 { state: 'no-chat' }
 { state: 'no-collection' }
-{ state: 'partial',          collectionId, registryKey }
-{ state: 'fully-vectorized', collectionId, registryKey }
+{ state: 'vectorization-ahead', collectionId, registryKey, chatMessageCount, markerValue }
+{ state: 'partial',          collectionId, registryKey, chatMessageCount, markerValue? }
+{ state: 'fully-vectorized', collectionId, registryKey, chatMessageCount, markerValue? }
 ```
 
 Match logic: walks the registry, picks the first eventbase entry whose ID matches the current chat's UUID via `buildChatSearchPatterns` + `matchesPatterns` (substring on UUID). This handles legacy ID formats and character renames — the UUID is the stable identifier.
 
 "Fully vectorized" is determined by `isChatFullyVectorized(messages, settings, chatUUID)`, which checks whether the last possible window for the current message count is already in `eventbase_extracted_windows[uuid]`. No DB query, just an O(1) Set lookup.
+
+**`vectorization-ahead` state** — distinct branch (added 2026-05-24) covering the case where the per-chat auto-sync marker (`extension_settings.vectfox.eventbase_autosync_start_marker[uuid]`) is past the current chat's message count. Usual cause: user bound a chat vectorization that was extracted from a longer version of the same chat (or deleted messages after vectorizing). The marker filter inside `runEventBaseIngestion` rejects every window in that case — extraction is frozen until the chat catches up to the marker. The UI surfaces this as a distinct, informative state instead of the misleading "Locked — will sync on next trigger" message that previously fired and never produced any work. **Intentional non-fix**: no marker clamp / re-stamp / clear. The chat-shrinkage case is rare and user-induced; auto-correcting silently would hide a likely user error (binding the wrong vectorization). UI clarity beats silent recovery.
 
 **`refreshAutoSyncCheckbox(settings)`** fires on:
 - AutoSync tab click
@@ -456,9 +459,12 @@ Resolution table:
 |---|---|---|---|---|---|
 | `no-chat` | — | — | ❎ | 🟡 | "No chat loaded" |
 | `no-collection` | — | — | ❎ | 🟡 | "Not initialized — vectorize chat first" |
-| has-collection | false OR no lock | — | ❎ | ⚪ | "Auto-sync inactive" |
-| `partial` | true | locked | ✅ | 🟡 | "Locked — will sync to latest history on next auto-sync trigger" |
-| `fully-vectorized` | true | locked | ✅ | 🟢 | "Ready — fully synced" |
+| has-collection | false OR no lock | — | ❎ | ⚪ | "Auto-sync inactive" + counts |
+| `vectorization-ahead` | true | locked | ✅ | 🟡 | "Vectorization is ahead of current chat — no auto-sync needed." + counts + gap + remediation hint |
+| `partial` | true | locked | ✅ | 🟡 | "Locked — will sync to latest history on next auto-sync trigger" + counts |
+| `fully-vectorized` | true | locked | ✅ | 🟢 | "Ready — fully synced" + counts |
+
+The "counts" suffix shows `chat: N msgs · vectorization: M msgs` when both numbers are available — surfaces the backfill gap in `partial`, confirms parity in `fully-vectorized`, makes the ahead-of-chat condition visually obvious in `vectorization-ahead`.
 
 **Change handler** (user clicks):
 
