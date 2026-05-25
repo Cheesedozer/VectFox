@@ -250,8 +250,32 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
     return summary;
 }
 
+/**
+ * Build the `/v1/chat/completions` endpoint URL from a user-supplied vLLM base URL.
+ *
+ * Tolerates whether the user pasted `http://localhost:8000` (no /v1 suffix) or
+ * `https://openrouter.ai/api/v1` (with /v1 suffix) — strips the trailing `/v1`
+ * if present, then re-appends `/v1/chat/completions` so we always hit the same
+ * canonical OpenAI-compatible path. Mirrors the suffix-normalization pattern
+ * core-vector-api.js already uses for the embeddings URL.
+ *
+ * Exported so eventbase-extractor.js and agentic-retrieval.js share the same
+ * normalization — the vLLM-style base URL flows through three call sites and
+ * inline regex drift was the bug that surfaced this helper.
+ *
+ * @param {string} baseUrl raw user input from settings.summarize_vllm_url etc.
+ * @returns {string} fully-qualified chat-completions URL
+ */
+export function buildVllmChatCompletionsUrl(baseUrl) {
+    return String(baseUrl || '')
+        .trim()
+        .replace(/\/+$/, '')        // trailing slashes
+        .replace(/\/v1$/, '')       // trailing /v1 (e.g. openrouter.ai/api/v1)
+        + '/v1/chat/completions';
+}
+
 async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS, timeoutMs = DEFAULT_TIMEOUT_MS) {
-    const baseUrl = (settings?.summarize_vllm_url || '').replace(/\/$/, '');
+    const baseUrl = (settings?.summarize_vllm_url || '').trim();
     if (!baseUrl) {
         throw new SummarizationFatalError(
             'vLLM summarization URL not configured.',
@@ -264,7 +288,7 @@ async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS
     const apiKey = getVllmApiKey(settings);
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const response = await fetch(buildVllmChatCompletionsUrl(baseUrl), {
         method: 'POST',
         headers,
         body: JSON.stringify(_buildBody(prompt, model, maxTokens)),

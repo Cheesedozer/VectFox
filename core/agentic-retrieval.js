@@ -24,6 +24,7 @@ import { retrieveEvents } from './eventbase-retrieval.js';
 import { queryCollection } from './core-vector-api.js';
 import { buildPlannerUserMessage, getAgenticPlannerPrompt } from './prompts-i18n.js';
 import { getOpenRouterApiKey, getVllmApiKey } from './api-keys.js';
+import { buildVllmChatCompletionsUrl } from './summarizer.js';
 import { getRequestHeaders } from '../../../../../script.js';
 
 // ============================================================================
@@ -334,7 +335,7 @@ async function _callPlanner({ systemPrompt, userMessage, llmCfg, timeoutMs }) {
         headers = getRequestHeaders();
         requestBody = { chat_completion_source: 'openrouter', ...body };
     } else if (llmCfg.provider === 'vllm') {
-        endpoint = `${llmCfg.vllmUrl.replace(/\/$/, '')}/v1/chat/completions`;
+        endpoint = buildVllmChatCompletionsUrl(llmCfg.vllmUrl);
         headers = { 'Content-Type': 'application/json' };
         if (llmCfg.apiKey) headers['Authorization'] = `Bearer ${llmCfg.apiKey}`;
         requestBody = body;

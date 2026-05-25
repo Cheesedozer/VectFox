@@ -12,6 +12,7 @@
  */
 
 import { getOpenRouterApiKey, getVllmApiKey } from './api-keys.js';
+import { buildVllmChatCompletionsUrl } from './summarizer.js';
 import { getRequestHeaders } from '../../../../../script.js';
 import {
     EVENT_TYPES,
@@ -361,7 +362,7 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
 }
 
 async function _callVLLM(prompt, settings, windowIndex) {
-    const baseUrl = (settings.summarize_vllm_url || '').replace(/\/$/, '');
+    const baseUrl = (settings.summarize_vllm_url || '').trim();
     if (!baseUrl) {
         throw new EventBaseFatalError(
             'EventBase: vLLM URL not configured. Set the vLLM URL in Core → LLM Summarization settings.',
@@ -385,7 +386,7 @@ async function _callVLLM(prompt, settings, windowIndex) {
     const apiKey = getVllmApiKey(settings);
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const response = await fetch(buildVllmChatCompletionsUrl(baseUrl), {
         method: 'POST',
         headers,
         body: JSON.stringify(_buildBody(prompt, model, maxTokens, temperature)),
