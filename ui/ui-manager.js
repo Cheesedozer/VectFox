@@ -2224,7 +2224,22 @@ function bindSettingsEvents(settings, callbacks) {
                 });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
-                models = (data?.data || []).map(m => ({ id: m.id, label: m.id }));
+                // ST's /status endpoint passes the upstream response through
+                // for `chat_completion_source: 'custom'`. Different endpoints
+                // return different shapes: OpenAI standard is `{ data: [...] }`,
+                // Cohere uses `{ models: [...] }`, some bare endpoints return
+                // an array directly. Try each in turn before giving up.
+                const arr = Array.isArray(data) ? data
+                          : Array.isArray(data?.data) ? data.data
+                          : Array.isArray(data?.models) ? data.models
+                          : null;
+                if (!arr) {
+                    console.warn('[VectFox] Model list response shape unrecognized:', data);
+                    throw new Error(`Unrecognized model-list response shape (top-level keys: ${Object.keys(data || {}).join(',') || 'none'})`);
+                }
+                models = arr
+                    .filter(m => m && (m.id || m.name))
+                    .map(m => ({ id: m.id || m.name, label: m.id || m.name }));
             } else {
                 toastr.warning(`Choose is not supported for provider "${provider}".`);
                 return;
