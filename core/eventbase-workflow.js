@@ -243,10 +243,23 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         const batch = windows.slice(windowIdx, windowIdx + CONCURRENCY);
         windowIdx += batch.length;
 
+        // Concurrency diagnostics — proves whether N parallel LLM calls actually
+        // fire together vs. queueing somewhere. Per-window dispatch/finish
+        // timestamps let you see if window K starts at t=0 alongside K+1..K+N-1
+        // (true parallel) or only after K-1 returns (serial). Also separates
+        // the LLM-extract phase from the serialized Qdrant-insert phase so you
+        // can see which one dominates wall time.
+        const batchStartedAt = performance.now();
+        const batchFirstIdx = windowIdx - batch.length;
+        const batchLastIdx = windowIdx - 1;
+        console.log(`[EventBase concurrency] Dispatching batch: windows ${batchFirstIdx}-${batchLastIdx} (size=${batch.length}, CONCURRENCY=${CONCURRENCY}) at t=${batchStartedAt.toFixed(1)}ms`);
+
         // Process batch in parallel
         const batchResults = await Promise.allSettled(
             batch.map(async (win, batchOffset) => {
                 const wIdx = windowIdx - batch.length + batchOffset;
+                const winStartedAt = performance.now();
+                console.log(`[EventBase concurrency] Window ${wIdx}: dispatched at +${(winStartedAt - batchStartedAt).toFixed(1)}ms`);
 
                 if (abortSignal?.aborted) return { skipped: true };
 
@@ -272,6 +285,7 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
 
                 // LLM extraction
                 let rawEvents;
+                const extractStart = performance.now();
                 try {
                     rawEvents = await extractEvents({
                         messages: win.msgs,
@@ -280,6 +294,8 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
                         settings,
                         windowIndex: wIdx,
                     });
+                    const extractMs = performance.now() - extractStart;
+                    console.log(`[EventBase concurrency] Window ${wIdx}: LLM extract done in ${extractMs.toFixed(0)}ms (finished at +${(performance.now() - batchStartedAt).toFixed(1)}ms from batch start)`);
                 } catch (err) {
                     // User/request cancellation is expected and should not be logged as a failure.
                     if (err?.name === 'AbortError' || abortSignal?.aborted) {
@@ -311,19 +327,31 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
             }),
         );
 
+        const extractPhaseEndedAt = performance.now();
+        console.log(`[EventBase concurrency] Batch extract phase complete: ${(extractPhaseEndedAt - batchStartedAt).toFixed(0)}ms wall (${batch.length} window(s))`);
+
         // Insert sequentially — Cloudflare/nginx HTTP/2 fan-out can merge concurrent
         // POST bodies into a single mangled request when many windows finish together.
         // LLM extraction above stays parallel; only the vectra writes are serialized.
+        let insertCount = 0;
+        let insertTotalMs = 0;
         for (const r of batchResults) {
             if (r.status !== 'fulfilled' || r.value?.skipped) continue;
             const { events: winEvents, sourceHashes: winHashes } = r.value;
             if (!winHashes) continue; // extraction failed — do not mark
             if (abortSignal?.aborted) break;
             if (winEvents?.length > 0) {
+                const insertStart = performance.now();
                 await insertEvents(winEvents, settings, abortSignal, collectionId);
+                insertTotalMs += performance.now() - insertStart;
+                insertCount++;
             }
             markWindowExtracted(winHashes, uuid);
         }
+        const batchEndedAt = performance.now();
+        const insertPhaseMs = batchEndedAt - extractPhaseEndedAt;
+        const extractPhaseMs = extractPhaseEndedAt - batchStartedAt;
+        console.log(`[EventBase concurrency] Batch DONE: total=${(batchEndedAt - batchStartedAt).toFixed(0)}ms (extract=${extractPhaseMs.toFixed(0)}ms parallel, insert=${insertPhaseMs.toFixed(0)}ms serialized across ${insertCount} write(s), avg ${insertCount ? (insertTotalMs / insertCount).toFixed(0) : 0}ms/insert)`);
 
         // Tally results, watch for fatal errors
         for (const result of batchResults) {
