@@ -2224,11 +2224,19 @@ function bindSettingsEvents(settings, callbacks) {
                 });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
-                // ST's /status endpoint passes the upstream response through
-                // for `chat_completion_source: 'custom'`. Different endpoints
-                // return different shapes: OpenAI standard is `{ data: [...] }`,
-                // Cohere uses `{ models: [...] }`, some bare endpoints return
-                // an array directly. Try each in turn before giving up.
+                // ST's /status returns `{ error: true, data: <upstreamBody> }`
+                // when the upstream endpoint rejects the request (auth, bad
+                // URL, etc.). Surface the upstream detail so the user can act
+                // on it — generic "fetch failed" hides which side broke.
+                if (data?.error === true) {
+                    const detail = data.data
+                        ? (typeof data.data === 'string' ? data.data : JSON.stringify(data.data))
+                        : '(no detail returned)';
+                    console.warn('[VectFox] Upstream rejected model-list request:', data.data);
+                    throw new Error(`Upstream rejected: ${detail.slice(0, 300)}. Check that the API key in SECRET_KEYS.CUSTOM matches the vLLM Base URL endpoint.`);
+                }
+                // OpenAI standard: `{ data: [...] }`, Cohere: `{ models: [...] }`,
+                // some bare endpoints return an array directly.
                 const arr = Array.isArray(data) ? data
                           : Array.isArray(data?.data) ? data.data
                           : Array.isArray(data?.models) ? data.models
