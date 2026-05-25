@@ -1447,7 +1447,7 @@ async function populateSourceSelect(type) {
                 if (context?.characterId) {
                     const currentChar = characters.find(c => c.avatar === context.characterId);
                     if (currentChar) {
-                        select.append(`<option value="${currentChar.avatar}" selected>📌 ${currentChar.name} (current)</option>`);
+                        select.append(`<option value="${StringUtils.escapeHtml(currentChar.avatar)}" selected>📌 ${StringUtils.escapeHtml(currentChar.name)} (current)</option>`);
                     }
                 }
 
@@ -1455,7 +1455,7 @@ async function populateSourceSelect(type) {
                 characters.forEach(char => {
                     // Skip if already added as current
                     if (char.avatar === context?.characterId) return;
-                    select.append(`<option value="${char.avatar}">${char.name}</option>`);
+                    select.append(`<option value="${StringUtils.escapeHtml(char.avatar)}">${StringUtils.escapeHtml(char.name)}</option>`);
                 });
             } else {
                 select.append('<option value="" disabled>No characters found</option>');

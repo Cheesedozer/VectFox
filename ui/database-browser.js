@@ -971,14 +971,15 @@ function renderCollectionCard(collection, isActiveById = null) {
   // Source badge - shows embedding source (transformers, palm, openai, etc.)
   const sourceBadge =
     collection.source && collection.source !== "unknown"
-      ? `<span class="vectfox-badge vectfox-badge-source" title="Embedding source">${collection.source}</span>`
+      ? `<span class="vectfox-badge vectfox-badge-source" title="Embedding source">${StringUtils.escapeHtml(collection.source)}</span>`
       : "";
 
   // Model info - show current model and count if multiple
   const hasMultipleModels = collection.models && collection.models.length > 1;
   const currentModelName = collection.model || "(default)";
+  const safeCurrentModelName = StringUtils.escapeHtml(currentModelName);
   const modelBadge = hasMultipleModels
-    ? `<span class="vectfox-badge vectfox-badge-model" title="Current model: ${currentModelName} (${collection.models.length} available)">📐 ${currentModelName}</span>`
+    ? `<span class="vectfox-badge vectfox-badge-model" title="Current model: ${safeCurrentModelName} (${collection.models.length} available)">📐 ${safeCurrentModelName}</span>`
     : "";
 
   // Lock badge — show only when locked to the CURRENT chat. Locks to other chats
@@ -1016,11 +1017,24 @@ function renderCollectionCard(collection, isActiveById = null) {
   // Use registryKey for unique identification (source:id format)
   const uniqueKey = collection.registryKey || collection.id;
 
+  // Pre-escape every string field that ends up in HTML or attribute context.
+  // Source data can include lorebook entry names / character card names that
+  // came from third-party sharing sites (chub.ai, JanitorAI) and may contain
+  // HTML payloads. C-3: defense-in-depth — even `collection.id` (auto-
+  // generated `vf_*`) and the backend/source enums get escaped so a future
+  // malformed registry entry can't introduce attribute-context XSS.
+  const safeKey       = StringUtils.escapeHtml(uniqueKey);
+  const safeId        = StringUtils.escapeHtml(collection.id);
+  const safeName      = StringUtils.escapeHtml(collection.name);
+  const safeBackend   = StringUtils.escapeHtml(collection.backend);
+  const safeSource    = StringUtils.escapeHtml(collection.source || "transformers");
+  const safeModel     = StringUtils.escapeHtml(collection.model || "");
+
   return `
-        <div class="vectfox-collection-card" data-collection-key="${uniqueKey}" data-status="${collection.enabled ? "active" : "paused"}">
+        <div class="vectfox-collection-card" data-collection-key="${safeKey}" data-status="${collection.enabled ? "active" : "paused"}">
             <div class="vectfox-collection-header">
                 <span class="vectfox-collection-title">
-                    ${typeIcon} ${collection.name}
+                    ${typeIcon} ${safeName}
                 </span>
                 <div class="vectfox-collection-badges">
                     ${scopeBadge}
@@ -1034,23 +1048,23 @@ function renderCollectionCard(collection, isActiveById = null) {
 
             <div class="vectfox-collection-meta">
                 <span>${collection.chunkCount} chunks</span>
-                <span>ID: ${collection.id}</span>
+                <span>ID: ${safeId}</span>
             </div>
 
             <div class="vectfox-collection-actions">
                 <button class="vectfox-btn-sm vectfox-action-toggle"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         data-enabled="${collection.enabled}">
                     ${collection.enabled ? icons.pause(16) + " Pause" : icons.play(16) + " Enable"}
                 </button>
                 <button class="vectfox-btn-sm vectfox-action-rename"
-                        data-collection-key="${uniqueKey}"
-                        data-current-name="${collection.name.replace(/"/g, "&quot;")}"
+                        data-collection-key="${safeKey}"
+                        data-current-name="${safeName}"
                         title="Rename this collection">
                     ${icons.pencil(16)} Rename
                 </button>
                 <button class="vectfox-btn-sm vectfox-action-activation ${activationSummary.mode !== "auto" ? "vectfox-has-settings" : ""}"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         title="Configure activation, triggers, and conditions">
                     ${icons.settings(16)} Settings
                 </button>
@@ -1058,7 +1072,7 @@ function renderCollectionCard(collection, isActiveById = null) {
                   hasMultipleModels
                     ? `
                 <button class="vectfox-btn-sm vectfox-action-switch-model"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         title="Switch embedding model (${collection.models.length} available)">
                     <i class="fa-solid fa-code-branch"></i> Model
                 </button>
@@ -1066,9 +1080,9 @@ function renderCollectionCard(collection, isActiveById = null) {
                     : ""
                 }
                 <button class="vectfox-btn-sm vectfox-action-visualize"
-                        data-collection-key="${uniqueKey}"
-                        data-backend="${collection.backend}"
-                        data-source="${collection.source || "transformers"}"
+                        data-collection-key="${safeKey}"
+                        data-backend="${safeBackend}"
+                        data-source="${safeSource}"
                         title="View and edit chunks in this collection">
                     ${icons.eye(16)} View Chunks
                 </button>
@@ -1079,27 +1093,27 @@ function renderCollectionCard(collection, isActiveById = null) {
                     </button>
                     <div class="vectfox-export-options">
                         <button class="vectfox-btn-sm vectfox-btn-json vectfox-action-export"
-                                data-collection-key="${uniqueKey}"
-                                data-collection-id="${collection.id}"
-                                data-backend="${collection.backend}"
-                                data-source="${collection.source || "transformers"}"
-                                data-model="${collection.model || ""}"
+                                data-collection-key="${safeKey}"
+                                data-collection-id="${safeId}"
+                                data-backend="${safeBackend}"
+                                data-source="${safeSource}"
+                                data-model="${safeModel}"
                                 title="Export as JSON (includes vectors)">
                             ${icons.fileExport(16)} JSON
                         </button>
                         <button class="vectfox-btn-sm vectfox-btn-png vectfox-action-export-png"
-                                data-collection-key="${uniqueKey}"
-                                data-collection-id="${collection.id}"
-                                data-backend="${collection.backend}"
-                                data-source="${collection.source || "transformers"}"
-                                data-model="${collection.model || ""}"
+                                data-collection-key="${safeKey}"
+                                data-collection-id="${safeId}"
+                                data-backend="${safeBackend}"
+                                data-source="${safeSource}"
+                                data-model="${safeModel}"
                                 title="Export as PNG (shareable image)">
                             ${icons.image(16)} PNG
                         </button>
                     </div>
                 </div>
                 <button class="vectfox-btn-sm vectfox-btn-danger vectfox-action-delete"
-                        data-collection-key="${uniqueKey}">
+                        data-collection-key="${safeKey}">
                     ${icons.trash(16)} Delete
                 </button>
             </div>
@@ -3244,7 +3258,7 @@ function renderSearchResults(results, query, originalResults = null) {
       }
 
       html += `
-                <div class="vectfox-search-result" data-collection="${collectionId}" data-hash="${collectionResults.hashes[i]}">
+                <div class="vectfox-search-result" data-collection="${StringUtils.escapeHtml(collectionId)}" data-hash="${collectionResults.hashes[i]}">
                     ${scoreDisplay}
                     <div class="vectfox-search-result-content">
                         <div class="vectfox-search-result-text">${StringUtils.escapeHtml(preview)}</div>
@@ -3253,9 +3267,9 @@ function renderSearchResults(results, query, originalResults = null) {
                 </div>
 
                 <button class="vectfox-btn-sm vectfox-action-visualize"
-                        data-collection-key="${uniqueKey}"
-                        data-backend="${collection.backend}"
-                        data-source="${collection.source || "transformers"}"
+                        data-collection-key="${StringUtils.escapeHtml(uniqueKey)}"
+                        data-backend="${StringUtils.escapeHtml(collection.backend)}"
+                        data-source="${StringUtils.escapeHtml(collection.source || "transformers")}"
                         title="View and edit chunks in this collection">
                     ${icons.eye(16)} View Chunks
                 </button>
@@ -3309,11 +3323,12 @@ function renderBulkList() {
   for (const collection of collections) {
     const uniqueKey = collection.registryKey || collection.id;
     const isSelected = browserState.bulkSelected.has(uniqueKey);
+    const safeKey = StringUtils.escapeHtml(uniqueKey);
 
     html += `
-            <div class="vectfox-bulk-item ${isSelected ? "selected" : ""}" data-key="${uniqueKey}">
+            <div class="vectfox-bulk-item ${isSelected ? "selected" : ""}" data-key="${safeKey}">
                 <label class="vectfox-bulk-checkbox">
-                    <input type="checkbox" ${isSelected ? "checked" : ""} data-key="${uniqueKey}">
+                    <input type="checkbox" ${isSelected ? "checked" : ""} data-key="${safeKey}">
                 </label>
                 <div class="vectfox-bulk-item-info">
                     <span class="vectfox-bulk-item-name">${StringUtils.escapeHtml(collection.name || collection.id)}</span>

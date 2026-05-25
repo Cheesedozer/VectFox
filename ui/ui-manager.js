@@ -20,6 +20,7 @@ import {
     getOllamaApiKey,
 } from '../core/api-keys.js';
 import { getWebLlmProvider as getSharedWebLlmProvider } from '../providers/webllm.js';
+import StringUtils from '../utils/string-utils.js';
 import { openVisualizer } from './chunk-visualizer.js';
 import { openDatabaseBrowser } from './database-browser.js';
 import { openContentVectorizer } from './content-vectorizer.js';
@@ -1707,7 +1708,7 @@ export async function refreshWIStatus() {
     }
 
     const names = activeIds.map(id => getCollectionMeta(id)?.sourceName || id);
-    const nameList = names.map(n => `<span style="font-style:italic;">${n}</span>`).join(', ');
+    const nameList = names.map(n => `<span style="font-style:italic;">${StringUtils.escapeHtml(n)}</span>`).join(', ');
     $status.html(
         `<i class="fa-solid fa-circle-check" style="color: var(--success-color, #27ae60);"></i> ` +
         `Active for this chat: ${nameList}`
