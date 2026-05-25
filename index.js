@@ -69,12 +69,21 @@ const defaultSettings = {
     openai_model: 'text-embedding-ada-002',
     electronhub_model: 'text-embedding-3-small',
     openrouter_model: 'openai/text-embedding-3-large',
-    openrouter_api_key: '', // Legacy plaintext slot — DRAINED by migrateLegacyApiKeys() into ST's well-known SECRET_KEYS.OPENROUTER slot. Per 2026-05-25 architecture pivot: ONE OpenRouter key shared across embedding/summarize/agentic (no separate keys). Custom secret_state slots don't round-trip; reuse ST's shared slot. Reader: core/api-keys.js::getOpenRouterApiKey
+    // OpenRouter key: stored in SECRET_KEYS.OPENROUTER (ST's shared slot, not in
+    // defaults). Reader: core/api-keys.js::getOpenRouterApiKey. The legacy
+    // plaintext slot used to live here as `openrouter_api_key: ''` but kept
+    // re-appearing in settings.json — every UI handler does
+    // Object.assign(extension_settings.vectfox, settings) which would re-add
+    // any default-declared empty field after migrateLegacyApiKeys() deleted it.
     cohere_model: 'embed-english-v3.0',
     ollama_model: 'mxbai-embed-large',
     ollama_keep: false,
     vllm_model: '',
-    vllm_api_key: '', // Legacy plaintext slot. Post-2026-05-24 H-1 phase 2: new saves go to ST secret_state slot 'vllm_api_key' (embedding side; SEPARATE from 'summarize_vllm_api_key' for summarization). migrateLegacyApiKeys() moves existing plaintext on first load and clears this field. Reader: core/api-keys.js::getVllmApiKey. The previous "custom keys aren't returned by readSecretState()" comment was a defensive assumption; verify on your install via DevTools `Object.keys(secret_state)` if you suspect the migration isn't round-tripping.
+    // vLLM key: lives in `settings.vllm_api_key` (plaintext) only when the
+    // user actually has a value — written by migrateLegacyApiKeys() during
+    // consolidation, or by UI handlers via writeApiKey-style helpers. Not in
+    // defaults for the same Object.assign-loop reason as openrouter above.
+    // Reader: core/api-keys.js::getVllmApiKey handles missing field gracefully.
     webllm_model: '',
     google_model: 'text-embedding-005',
     bananabread_rerank: false,
@@ -131,10 +140,13 @@ const defaultSettings = {
 
     // Summarization before vectorization
     summarize_provider: 'openrouter', // 'openrouter', 'vllm'
-    summarize_openrouter_api_key: '',  // Legacy plaintext slot — DRAINED by migrateLegacyApiKeys() into SECRET_KEYS.OPENROUTER. Per 2026-05-25 pivot: ONE shared OpenRouter key. Reader: core/api-keys.js::getOpenRouterApiKey
+    // summarize_openrouter_api_key and summarize_vllm_api_key are NOT in
+    // defaults — they're legacy fields drained by migrateLegacyApiKeys() into
+    // SECRET_KEYS.OPENROUTER / settings.vllm_api_key respectively. Keeping them
+    // here would cause the same Object.assign re-introduction loop documented
+    // above on the embedding-side keys. Readers: core/api-keys.js helpers.
     summarize_model: '',              // Model ID for summarization (e.g. 'google/gemini-flash-1.5-8b')
     summarize_vllm_url: '',           // vLLM base URL for summarization (e.g. 'http://localhost:8000')
-    summarize_vllm_api_key: '',       // Legacy plaintext slot — DRAINED by migrateLegacyApiKeys() into the canonical settings.vllm_api_key. Per 2026-05-25 pivot: ONE shared vLLM key. Reader: core/api-keys.js::getVllmApiKey
     summarize_prompt: '',             // Custom prompt template (empty = use built-in default)
 
     // Hybrid Search fusion settings.
@@ -247,9 +259,11 @@ const defaultSettings = {
     agentic_retrieval_enabled: false,                  // Master toggle (default OFF)
     agentic_retrieval_provider: '',                    // '' → inherit summarize_provider
     agentic_retrieval_model: '',                       // '' → inherit summarize_model
-    agentic_retrieval_openrouter_api_key: '',          // Legacy plaintext slot — DRAINED by migrateLegacyApiKeys() into SECRET_KEYS.OPENROUTER. Per 2026-05-25 pivot: ONE shared OpenRouter key everywhere. Reader: core/api-keys.js::getOpenRouterApiKey
+    // agentic_retrieval_openrouter_api_key and agentic_retrieval_vllm_api_key
+    // are NOT in defaults — same Object.assign re-introduction reason as the
+    // other legacy *_api_key slots above. Migration drains them into the
+    // canonical SECRET_KEYS.OPENROUTER / settings.vllm_api_key slots.
     agentic_retrieval_vllm_url: '',                    // '' → inherit summarize_vllm_url
-    agentic_retrieval_vllm_api_key: '',                // Legacy plaintext slot — DRAINED by migrateLegacyApiKeys() into the canonical settings.vllm_api_key. Per 2026-05-25 pivot: ONE shared vLLM key. Reader: core/api-keys.js::getVllmApiKey
     agentic_retrieval_chat_depth: 3,                   // # of past chat turns sent to planner (slider 1-10)
     agentic_retrieval_candidates_to_show: 12,          // Pre-search slice shown to planner (slider 5-20)
     agentic_retrieval_max_queries: 4,                  // Hard ceiling on planner output (slider 1-4)
