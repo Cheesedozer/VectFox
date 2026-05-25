@@ -116,7 +116,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { SECRET_KEYS, secret_state, writeSecret, readSecretState } from '../../../../secrets.js';
-import { saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettings } from '../../../../../script.js';
 
 // ─── Internal helpers ───────────────────────────────────────────────────
 
@@ -518,10 +518,12 @@ export async function migrateLegacyApiKeys() {
     }
 
     if (mutated) {
-        // saveSettingsDebounced flushes our deletions/consolidations to
-        // settings.json. Without this, the in-memory changes don't reach
-        // disk until something else triggers a save.
-        saveSettingsDebounced();
+        // Synchronous save (NOT debounced) — see index.js eventbase migration
+        // comment for the full rationale. Short version: if user reloads
+        // before the debounce flushes, settings.json keeps the stale legacy
+        // fields even though extension_settings.vectfox is clean in memory.
+        // Confirmed scenario 2026-05-26.
+        await saveSettings();
     }
 
     if (moves.length > 0) {

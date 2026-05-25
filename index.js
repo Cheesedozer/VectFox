@@ -484,12 +484,15 @@ jQuery(async () => {
         _ebMutated = true;
     }
     if (_ebMutated) {
-        // Persist the deletions even if migrateLegacyApiKeys below has nothing
-        // to do — without this, the legacy keys would re-appear on the next
-        // unrelated save because the in-memory object stays clean but settings.json
-        // still has the stale entries.
-        const { saveSettingsDebounced } = await import('../../../../script.js');
-        saveSettingsDebounced();
+        // Persist deletions synchronously (NOT debounced). Migrations are
+        // one-shot at init and the user may reload before a debounced save
+        // would flush — leaving settings.json with stale legacy fields even
+        // though extension_settings.vectfox is clean in memory. Confirmed
+        // 2026-05-26 against a user whose summarize_openrouter_api_key /
+        // summarize_vllm_api_key persisted on disk across multiple reloads
+        // because the debounced save never fired before page close.
+        const { saveSettings } = await import('../../../../script.js');
+        await saveSettings();
     }
 
     // H-1 one-shot migration (2026-05-24): move plaintext *_api_key values
