@@ -252,14 +252,18 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         const batchStartedAt = performance.now();
         const batchFirstIdx = windowIdx - batch.length;
         const batchLastIdx = windowIdx - 1;
-        console.log(`[EventBase concurrency] Dispatching batch: windows ${batchFirstIdx}-${batchLastIdx} (size=${batch.length}, CONCURRENCY=${CONCURRENCY}) at t=${batchStartedAt.toFixed(1)}ms`);
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Dispatching batch: windows ${batchFirstIdx}-${batchLastIdx} (size=${batch.length}, CONCURRENCY=${CONCURRENCY}) at t=${batchStartedAt.toFixed(1)}ms`);
+        }
 
         // Process batch in parallel
         const batchResults = await Promise.allSettled(
             batch.map(async (win, batchOffset) => {
                 const wIdx = windowIdx - batch.length + batchOffset;
                 const winStartedAt = performance.now();
-                console.log(`[EventBase concurrency] Window ${wIdx}: dispatched at +${(winStartedAt - batchStartedAt).toFixed(1)}ms`);
+                if (debugLog) {
+                    console.log(`[EventBase concurrency] Window ${wIdx}: dispatched at +${(winStartedAt - batchStartedAt).toFixed(1)}ms`);
+                }
 
                 if (abortSignal?.aborted) return { skipped: true };
 
@@ -295,7 +299,9 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
                         windowIndex: wIdx,
                     });
                     const extractMs = performance.now() - extractStart;
-                    console.log(`[EventBase concurrency] Window ${wIdx}: LLM extract done in ${extractMs.toFixed(0)}ms (finished at +${(performance.now() - batchStartedAt).toFixed(1)}ms from batch start)`);
+                    if (debugLog) {
+                        console.log(`[EventBase concurrency] Window ${wIdx}: LLM extract done in ${extractMs.toFixed(0)}ms (finished at +${(performance.now() - batchStartedAt).toFixed(1)}ms from batch start)`);
+                    }
                 } catch (err) {
                     // User/request cancellation is expected and should not be logged as a failure.
                     if (err?.name === 'AbortError' || abortSignal?.aborted) {
@@ -328,7 +334,9 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         );
 
         const extractPhaseEndedAt = performance.now();
-        console.log(`[EventBase concurrency] Batch extract phase complete: ${(extractPhaseEndedAt - batchStartedAt).toFixed(0)}ms wall (${batch.length} window(s))`);
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Batch extract phase complete: ${(extractPhaseEndedAt - batchStartedAt).toFixed(0)}ms wall (${batch.length} window(s))`);
+        }
 
         // Coalesce all events from this batch's windows into ONE insertEvents
         // call. The Similharity plugin (similharity/index.js::insertVectors)
@@ -377,7 +385,9 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         const batchEndedAt = performance.now();
         const insertPhaseMs = batchEndedAt - extractPhaseEndedAt;
         const extractPhaseMs = extractPhaseEndedAt - batchStartedAt;
-        console.log(`[EventBase concurrency] Batch DONE: total=${(batchEndedAt - batchStartedAt).toFixed(0)}ms (extract=${extractPhaseMs.toFixed(0)}ms parallel, insert=${insertPhaseMs.toFixed(0)}ms — 1 batched POST with ${allEvents.length} event(s))`);
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Batch DONE: total=${(batchEndedAt - batchStartedAt).toFixed(0)}ms (extract=${extractPhaseMs.toFixed(0)}ms parallel, insert=${insertPhaseMs.toFixed(0)}ms — 1 batched POST with ${allEvents.length} event(s))`);
+        }
 
         // Tally results, watch for fatal errors
         for (const result of batchResults) {
