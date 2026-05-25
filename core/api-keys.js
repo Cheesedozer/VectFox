@@ -408,30 +408,62 @@ export async function migrateLegacyApiKeys() {
     // secret_state filters non-enum slots, so the UI presence indicator goes
     // through the plugin's /qdrant/key-status endpoint instead (see
     // fetchQdrantApiKeyPresence above).
+    //
+    // ⚠️ Capability probe BEFORE migration: if the user is on a pre-2026-05-26
+    // Similharity plugin, the /qdrant/key-status endpoint doesn't exist yet.
+    // Migrating in that state would write to secret_state but leave the
+    // plugin unable to read it back — silently breaking Qdrant Cloud auth
+    // while deleting the user's only working key from settings.json. The
+    // probe gates BOTH the write and the delete: if the plugin doesn't yet
+    // support secret_state lookup, we no-op and retry on next reload. The
+    // migration is idempotent — once the plugin updates, the next ST start
+    // probes successfully and the drain runs cleanly.
     const QDRANT_SLOT = 'api_key_qdrant';
-    const rawQdrantPlaintext = vf?.qdrant_api_key;
-    if (typeof rawQdrantPlaintext === 'string' && rawQdrantPlaintext.trim().length > 0) {
-        const qdrantValue = rawQdrantPlaintext.trim();
-        // No don't-clobber check here: custom slot is undefined in client-side
-        // secret_state, so we can't presence-check from JS. Plugin-side this
-        // overwrites any prior value, which is acceptable for the first
-        // migration pass (slot is brand new for VectFox users).
-        try {
-            await writeSecret(QDRANT_SLOT, qdrantValue);
-            moves.push(`Qdrant → wrote to secret_state.${QDRANT_SLOT} (len=${qdrantValue.length})`);
-        } catch (err) {
-            console.warn('[VectFox migrate] writeSecret(api_key_qdrant) failed:', err?.message || err);
-            moves.push(`Qdrant → writeSecret(${QDRANT_SLOT}) FAILED — Qdrant Cloud auth may break, re-enter via VectFox UI`);
+    let pluginSupportsQdrantSecretSlot = false;
+    try {
+        const probe = await fetch('/api/plugins/similharity/qdrant/key-status', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        pluginSupportsQdrantSecretSlot = probe.ok;
+        if (!probe.ok) {
+            console.warn(`[VectFox migrate] Plugin /qdrant/key-status probe returned ${probe.status} — Similharity plugin is pre-2026-05-26. Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Update the Similharity plugin (cd plugins/similharity && git pull && restart ST) to enable secret_state storage.`);
         }
+    } catch (err) {
+        console.warn(`[VectFox migrate] Plugin /qdrant/key-status probe failed (plugin unreachable or pre-2026-05-26). Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Reason:`, err?.message || err);
     }
-    // Always remove the plaintext field whether or not we had a value —
-    // matches the OpenRouter/vLLM migration pattern. settings.json should
-    // never contain qdrant_api_key after first reload post-upgrade.
-    if (Object.prototype.hasOwnProperty.call(vf, 'qdrant_api_key')) {
-        delete vf.qdrant_api_key;
-        mutated = true;
-        if (!rawQdrantPlaintext) {
-            moves.push(`Qdrant → removed empty plaintext qdrant_api_key from settings.json`);
+
+    if (pluginSupportsQdrantSecretSlot) {
+        const rawQdrantPlaintext = vf?.qdrant_api_key;
+        const hasPlaintextField = Object.prototype.hasOwnProperty.call(vf, 'qdrant_api_key');
+        const hasPlaintextValue = typeof rawQdrantPlaintext === 'string' && rawQdrantPlaintext.trim().length > 0;
+        let writeSucceeded = !hasPlaintextValue; // nothing to write = trivially succeeded
+
+        if (hasPlaintextValue) {
+            // No don't-clobber check: custom slot is undefined in client-side
+            // secret_state, so we can't presence-check from JS. Plugin-side
+            // this overwrites any prior value — acceptable for the first
+            // migration pass (slot is brand new for VectFox users).
+            try {
+                await writeSecret(QDRANT_SLOT, rawQdrantPlaintext.trim());
+                moves.push(`Qdrant → wrote to secret_state.${QDRANT_SLOT} (len=${rawQdrantPlaintext.trim().length})`);
+                writeSucceeded = true;
+            } catch (err) {
+                console.warn('[VectFox migrate] writeSecret(api_key_qdrant) failed:', err?.message || err);
+                moves.push(`Qdrant → writeSecret(${QDRANT_SLOT}) FAILED — plaintext key PRESERVED in settings.json for safety, retry next reload`);
+                // writeSucceeded stays false → plaintext stays in settings.json
+            }
+        }
+
+        // Delete the plaintext field ONLY after a confirmed-successful write
+        // (or when there was no value to migrate). Never delete in a half-
+        // migrated state — the user's only working key would be lost.
+        if (writeSucceeded && hasPlaintextField) {
+            delete vf.qdrant_api_key;
+            mutated = true;
+            if (!hasPlaintextValue) {
+                moves.push(`Qdrant → removed empty plaintext qdrant_api_key from settings.json`);
+            }
         }
     }
 
