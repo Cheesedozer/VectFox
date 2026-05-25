@@ -482,6 +482,24 @@ jQuery(async () => {
         // Non-fatal — readers fall back to legacy plaintext slots if migration didn't complete.
     }
 
+    // CRITICAL: re-sync the local `settings` from the now-cleaned
+    // extension_settings.vectfox. The spread at line 412 captured the PRE-
+    // migration state including any legacy *_api_key empty strings the user
+    // had on disk. Every UI handler does Object.assign(extension_settings.vectfox,
+    // settings) — without this re-sync, the first UI interaction copies the
+    // legacy fields back into extension_settings.vectfox and they get saved
+    // again, defeating the migration. Tracked symptom: settings.json kept the
+    // empty summarize_openrouter_api_key / summarize_vllm_api_key fields even
+    // after migration logged success on every reload.
+    settings = {
+        ...defaultSettings,
+        ...extension_settings.vectfox,
+        collections: {
+            ...defaultSettings.collections,
+            ...extension_settings.vectfox.collections,
+        },
+    };
+
     // Migrate empty rag_xml_tag to default value
     if (!settings.rag_xml_tag) {
         settings.rag_xml_tag = 'VectFoxMemory';
