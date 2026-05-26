@@ -355,8 +355,21 @@ export function cleanupCollectionRegistry() {
 
 /**
  * Cleans up test collections from registry (visualizer/production tests)
- * Call this to remove ghost test entries that weren't properly cleaned up
- * @returns {number} Number of test entries removed
+ * Call this to remove ghost test entries that weren't properly cleaned up.
+ *
+ * Also sweeps the reverse lock-index `chat_lock_index` for orphan entries
+ * matching the same test patterns. The registry filter alone misses
+ * orphans because `setCollectionLock` writes to BOTH the forward
+ * `meta.lockedToChatIds` AND the reverse `chat_lock_index[chatId] = […]`,
+ * but unregister/cleanup paths historically only touch the forward side.
+ * Result: ghost test collections accumulate dead reverse-index entries
+ * across runs that `getChatLockedCollections(chatId)` then reports back.
+ * Mirror of the same sweep the Playwright suite's beforeAll does for
+ * `playwright_test`-prefixed entries — same bug class, different test
+ * naming prefix.
+ *
+ * @returns {number} Number of registry entries removed (does NOT include
+ *                   reverse-index orphans — those are logged separately).
  */
 export function cleanupTestCollections() {
     const registry = getCollectionRegistry();
@@ -366,24 +379,59 @@ export function cleanupTestCollections() {
         'vectfox_test_',
     ];
 
-    const cleaned = registry.filter(id => {
+    const isTestEntry = (id) => {
         if (!id) return false;
-        // Check if this is a test collection
         for (const pattern of testPatterns) {
-            if (id.includes(pattern)) {
-                console.log(`VectFox: Removing test collection from registry: ${id}`);
-                return false;
-            }
+            if (id.includes(pattern)) return true;
         }
-        return true;
+        return false;
+    };
+
+    const cleaned = registry.filter(id => {
+        if (isTestEntry(id)) {
+            console.log(`VectFox: Removing test collection from registry: ${id}`);
+            return false;
+        }
+        return id != null;
     });
 
     const removed = registry.length - cleaned.length;
+    let didMutate = false;
     if (removed > 0) {
         extension_settings.vectfox.vectfox_collection_registry = cleaned;
         console.log(`VectFox: Cleaned ${removed} test collection entries from registry`);
-        saveSettingsDebounced(); // Persist to disk!
+        didMutate = true;
     }
+
+    // Reverse-index orphan sweep — same patterns, applied to chat_lock_index.
+    // `setCollectionLock` writes the registryKey-form here (e.g.
+    // `vectra:vectfox_test_…`); `includes(pattern)` still matches because the
+    // test marker is a substring of either bare or prefixed form.
+    let indexOrphans = 0;
+    let indexChatsScanned = 0;
+    const idx = extension_settings?.vectfox?.chat_lock_index;
+    if (idx && typeof idx === 'object') {
+        for (const chatId of Object.keys(idx)) {
+            const arr = idx[chatId];
+            if (!Array.isArray(arr) || arr.length === 0) continue;
+            indexChatsScanned++;
+            const kept = arr.filter(rk => !isTestEntry(rk));
+            if (kept.length !== arr.length) {
+                indexOrphans += (arr.length - kept.length);
+                if (kept.length === 0) {
+                    delete idx[chatId];
+                } else {
+                    idx[chatId] = kept;
+                }
+            }
+        }
+        if (indexOrphans > 0) {
+            console.log(`VectFox: Pruned ${indexOrphans} stale test entries from chat_lock_index across ${indexChatsScanned} chat(s)`);
+            didMutate = true;
+        }
+    }
+
+    if (didMutate) saveSettingsDebounced(); // Persist to disk!
     return removed;
 }
 
@@ -446,10 +494,18 @@ function getCollectionDisplayName(collectionId, metadata) {
 }
 
 /**
- * Checks if VECTFOX server plugin is available
+ * Checks if the Similharity plugin is available.
+ * This is the canonical implementation — shared with ui/database-browser.js via export.
+ *
+ * !! SYNC WARNING !!
+ * backends/standard.js has an INDEPENDENT copy of this check (this.pluginAvailable
+ * set in initialize()) because it cannot import from here without a circular
+ * dependency. If you change the health endpoint, response parsing, or caching
+ * logic here, you MUST make the same change in StandardBackend.initialize().
+ *
  * @returns {Promise<boolean>} True if plugin is available
  */
-async function checkPluginAvailable() {
+export async function checkPluginAvailable() {
     if (pluginAvailable !== null) {
         return pluginAvailable;
     }
@@ -993,10 +1049,13 @@ export async function loadAllCollections(settings, autoDiscover = true) {
                 console.log(`VectFox: Migrated ${collectionId} from scope='global' to scope='character'`);
             }
 
-            // Use stored contentType if available, otherwise fall back to parsed
+            // `storedMeta.scope` is already auto-resolved by getCollectionMeta
+            // (always returns 'chat' or 'character', never null or 'unknown').
+            // No defensive read needed here — the canonical resolution lives
+            // in getEffectiveScope. See Doc/collection_helper.md.
             const metadata = {
                 type: storedMeta.contentType || parsedMeta.type,
-                scope: storedMeta.scope || parsedMeta.scope,
+                scope: storedMeta.scope,
                 rawId: parsedMeta.rawId,
             };
             if (debugLog) console.log(`VectFox:   Type: ${metadata.type}, Scope: ${metadata.scope}${storedMeta.contentType ? ' (from stored meta)' : ' (parsed from ID)'}`);

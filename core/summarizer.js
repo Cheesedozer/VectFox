@@ -15,8 +15,9 @@
  * ============================================================================
  */
 
-import { SECRET_KEYS, secret_state } from '../../../../secrets.js';
+import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { getDefaultSummarizePrompt } from './prompts-i18n.js';
+import { getRequestHeaders } from '../../../../../script.js';
 
 /**
  * Fatal summarization error that should abort vectorization instead of silently
@@ -95,7 +96,10 @@ export function getSummarizationConfigFingerprint(settings = {}) {
 
     if (provider === 'vllm') {
         const url = (settings?.summarize_vllm_url || '').trim();
-        const key = (settings?.summarize_vllm_api_key || '').trim();
+        // Key now lives in SECRET_KEYS.CUSTOM (masked client-side). Fingerprint
+        // uses the masked-value length + boundary chars — still deterministic for
+        // detecting key-rotation, never logs the secret.
+        const key = getCustomApiKey(settings);
         const keySig = key ? `${key.length}:${key.slice(0, 2)}:${key.slice(-2)}` : 'missing';
         return `vllm|${url}|${keySig}`;
     }
@@ -196,37 +200,21 @@ function _extractReply(data) {
     return data?.choices?.[0]?.message?.content?.trim() || null;
 }
 
-function _getOpenRouterApiKey(settings) {
-    // Prefer key stored directly in VectFox settings (most reliable)
-    if (settings?.summarize_openrouter_api_key) {
-        return settings.summarize_openrouter_api_key.trim();
-    }
-
-    // Fall back to ST secrets store
-    const stored = secret_state[SECRET_KEYS.OPENROUTER];
-
-    if (typeof stored === 'string') {
-        return stored.trim();
-    }
-
-    if (Array.isArray(stored) && stored.length > 0) {
-        const activeSecret = stored.find(secret => secret?.active) || stored[0];
-        if (typeof activeSecret?.value === 'string') {
-            return activeSecret.value.trim();
-        }
-    }
-
-    if (stored && typeof stored === 'object' && typeof stored.value === 'string') {
-        return stored.value.trim();
-    }
-
-    return '';
-}
+// _getOpenRouterApiKey was inlined here pre-H-1; now an alias for the
+// canonical single-key helper. ONE OpenRouter key shared across
+// embedding/summarize/agentic — see core/api-keys.js docstring for the
+// architecture pivot rationale (custom secret_state slots don't round-trip).
+const _getOpenRouterApiKey = getOpenRouterApiKey;
 
 async function _callOpenRouter(prompt, model, settings, originalLength, maxTokens = DEFAULT_MAX_TOKENS, timeoutMs = DEFAULT_TIMEOUT_MS) {
+    // Presence-only check: getOpenRouterApiKey() returns the MASKED value from
+    // secret_state (e.g. "*******abcd"), not the real key — ST's getSecretState
+    // masks all non-EXPORTABLE_KEYS. We can't send a masked value as a Bearer
+    // token, so we route through ST's own /api/backends/chat-completions/generate
+    // proxy, which reads the real key server-side via readSecret(SECRET_KEYS.OPENROUTER)
+    // and forwards to OpenRouter. Same pattern the embedding flow already uses
+    // via /api/vector/insert.
     const apiKey = _getOpenRouterApiKey(settings);
-    // don't remove 
-    // console.log(`[VectFox Summarizer] OpenRouter key present: ${!!apiKey}`);
     if (!apiKey) {
         throw new SummarizationFatalError(
             'OpenRouter API key not found. Add it in Summarize Before Store settings.',
@@ -235,13 +223,13 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
         );
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(_buildBody(prompt, model, maxTokens)),
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            chat_completion_source: 'openrouter',
+            ..._buildBody(prompt, model, maxTokens),
+        }),
         signal: AbortSignal.timeout(timeoutMs),
     });
 
@@ -265,24 +253,66 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
     return summary;
 }
 
+/**
+ * Build the `/v1/chat/completions` endpoint URL from a user-supplied vLLM base URL.
+ *
+ * Tolerates whether the user pasted `http://localhost:8000` (no /v1 suffix) or
+ * `https://openrouter.ai/api/v1` (with /v1 suffix) — strips the trailing `/v1`
+ * if present, then re-appends `/v1/chat/completions` so we always hit the same
+ * canonical OpenAI-compatible path. Mirrors the suffix-normalization pattern
+ * core-vector-api.js already uses for the embeddings URL.
+ *
+ * Exported so eventbase-extractor.js and agentic-retrieval.js share the same
+ * normalization — the vLLM-style base URL flows through three call sites and
+ * inline regex drift was the bug that surfaced this helper.
+ *
+ * @param {string} baseUrl raw user input from settings.summarize_vllm_url etc.
+ * @returns {string} fully-qualified chat-completions URL
+ */
+export function buildVllmChatCompletionsUrl(baseUrl) {
+    return String(baseUrl || '')
+        .trim()
+        .replace(/\/+$/, '')        // trailing slashes
+        .replace(/\/v1$/, '')       // trailing /v1 (e.g. openrouter.ai/api/v1)
+        + '/v1/chat/completions';
+}
+
 async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS, timeoutMs = DEFAULT_TIMEOUT_MS) {
-    const baseUrl = (settings?.summarize_vllm_url || '').replace(/\/$/, '');
+    // Routes through ST's chat-completions proxy with `chat_completion_source:
+    // 'custom'` — ST's server reads the real key from SECRET_KEYS.CUSTOM and
+    // forwards to settings.summarize_vllm_url. Same pattern as _callOpenRouter
+    // above. The function name is kept for compat with the provider-dispatch
+    // switch; the wire is no longer a direct fetch to vLLM.
+    const baseUrl = (settings?.summarize_vllm_url || '').trim();
     if (!baseUrl) {
         throw new SummarizationFatalError(
-            'vLLM summarization URL not configured.',
+            'vLLM URL not configured.',
             'vllm',
             'missing_url'
         );
     }
 
-    const headers = { 'Content-Type': 'application/json' };
-    const apiKey = settings?.summarize_vllm_api_key;
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    // Presence-only check on the masked key (same caveat as _callOpenRouter:
+    // _readSecretValue returns the masked form). Real key lives server-side.
+    const apiKey = getCustomApiKey(settings);
+    if (!apiKey) {
+        throw new SummarizationFatalError(
+            'vLLM / Custom OpenAI-compatible API key not configured. Enter it in Summarize Before Store settings.',
+            'vllm',
+            'missing_api_key'
+        );
+    }
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const body = {
+        ..._buildBody(prompt, model, maxTokens),
+        chat_completion_source: 'custom',
+        custom_url: baseUrl,
+    };
+
+    const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(_buildBody(prompt, model, maxTokens)),
+        headers: getRequestHeaders(),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
     });
 
@@ -290,7 +320,7 @@ async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS
         const errText = await response.text().catch(() => response.statusText);
         if (response.status === 401 || response.status === 403) {
             throw new SummarizationFatalError(
-                `vLLM authentication failed (${response.status}). Check your API key.`,
+                `vLLM authentication failed (${response.status}). Check your API key in Summarize Before Store settings.`,
                 'vllm',
                 'invalid_api_key'
             );
@@ -302,7 +332,5 @@ async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS
     const summary = _extractReply(data);
     if (!summary) throw new Error('vLLM returned empty summary');
 
-    // don't remove 
-    //console.log(`[VectFox Summarizer] vLLM: ${prompt.length} chars prompt → ${summary.length} chars summary`);
     return summary;
 }

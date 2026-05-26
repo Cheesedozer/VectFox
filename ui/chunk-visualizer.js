@@ -25,6 +25,7 @@ import {
 import { getStringHash } from '../../../../utils.js';
 import { getContext } from '../../../../extensions.js';
 import { eventSource, getRequestHeaders } from '../../../../../script.js';
+import StringUtils from '../utils/string-utils.js';
 
 // ============================================================================
 // STATE
@@ -319,10 +320,8 @@ async function _loadAndRenderCollectionMetaFooter(collectionId, settings) {
 
     if (Object.keys(interesting).length === 0) return;
 
-    const escapeHtml = (s) => String(s ?? '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const lines = Object.entries(interesting)
-        .map(([k, v]) => `<span style="margin-right:1.2em;"><b>${escapeHtml(k)}</b>: ${escapeHtml(v)}</span>`)
+        .map(([k, v]) => `<span style="margin-right:1.2em;"><b>${StringUtils.escapeHtml(k)}</b>: ${StringUtils.escapeHtml(v)}</span>`)
         .join('');
 
     $('#VectFox_collection_meta_footer')
@@ -429,7 +428,7 @@ function createModal() {
                 <div class="vectfox-visualizer-header">
                     <div class="vectfox-visualizer-title">
                         <span class="vectfox-visualizer-title-icon">${icon}</span>
-                        <span>${escapeHtml(collectionName)}</span>
+                        <span>${StringUtils.escapeHtml(collectionName)}</span>
                     </div>
                     <div class="vectfox-visualizer-header-actions">
                         <button class="vectfox-visualizer-save" id="VectFox_visualizer_save" title="Save changes">
@@ -569,7 +568,7 @@ function renderChunkItem(chunk, listIndex) {
             <div class="vectfox-chunk-item-content">
                 <div class="vectfox-chunk-item-header">
                     <span class="vectfox-chunk-item-index">${displayNumber}.</span>
-                    <span class="vectfox-chunk-item-name">${escapeHtml(displayName)}</span>
+                    <span class="vectfox-chunk-item-name">${StringUtils.escapeHtml(displayName)}</span>
                 </div>
                 <div class="vectfox-chunk-item-stats">
                     <div class="vectfox-chunk-item-badges info-badges">${infoBadges.join('')}</div>
@@ -643,7 +642,7 @@ function renderDetailPanel() {
             <div class="vectfox-detail-name-section">
                 <input type="text" class="vectfox-chunk-name-input" id="VectFox_chunk_name"
                        placeholder="Name this chunk..."
-                       value="${escapeHtml(data.name || '')}">
+                       value="${StringUtils.escapeHtml(data.name || '')}">
             </div>
             <button class="vectfox-detail-delete${bulkSelectMode ? ' vectfox-btn-dimmed' : ''}" id="VectFox_delete_chunk" ${bulkSelectMode ? 'disabled' : ''}>
                 <i class="fa-solid fa-trash"></i> Delete
@@ -671,7 +670,7 @@ function renderDetailPanel() {
         <div class="vectfox-detail-content">
             <!-- Text Block - Inline Editable -->
             <div class="vectfox-detail-text-block">
-                <div class="vectfox-detail-text" id="VectFox_chunk_text" contenteditable="true">${escapeHtml(data.text)}</div>
+                <div class="vectfox-detail-text" id="VectFox_chunk_text" contenteditable="true">${StringUtils.escapeHtml(data.text)}</div>
                 <div class="vectfox-detail-text-meta">
                     <span>${wordCount} words • ~${tokenEstimate} tokens</span>
                     <button class="vectfox-detail-save-btn vectfox-hidden" id="VectFox_save_text">
@@ -707,11 +706,11 @@ function renderDetailPanel() {
                 <div class="vectfox-detail-context">
                     <textarea class="vectfox-chunk-context-input" id="VectFox_chunk_context"
                               placeholder="e.g., A secret {{char}} keeps hidden from {{user}}"
-                              rows="2">${escapeHtml(data.context || '')}</textarea>
+                              rows="2">${StringUtils.escapeHtml(data.context || '')}</textarea>
                     <div class="vectfox-context-xmltag-row">
                         <label>XML tag:</label>
                         <input type="text" class="vectfox-chunk-xmltag-input" id="VectFox_chunk_xmltag"
-                               placeholder="e.g., secret" value="${escapeHtml(data.xmlTag || '')}">
+                               placeholder="e.g., secret" value="${StringUtils.escapeHtml(data.xmlTag || '')}">
                     </div>
                     <div class="vectfox-context-injection-row">
                         <label>Injection position:</label>
@@ -748,7 +747,7 @@ function renderDetailPanel() {
                         <div class="vectfox-keywords-list">
                             ${data.keywords.map((k, idx) => `
                                 <span class="vectfox-keyword-tag" data-index="${idx}">
-                                    <span class="vectfox-keyword-tag-text">${escapeHtml(k.text || 'unnamed')}</span>
+                                    <span class="vectfox-keyword-tag-text">${StringUtils.escapeHtml(k.text || 'unnamed')}</span>
                                     <span class="vectfox-keyword-tag-weight">${k.weight}x</span>
                                     <i class="fa-solid fa-xmark vectfox-keyword-remove" data-index="${idx}"></i>
                                 </span>
@@ -779,7 +778,7 @@ function renderDetailPanel() {
                         ${(data.conditions?.rules || []).map((rule, i) => `
                             <div class="vectfox-condition-item" data-index="${i}">
                                 <span class="vectfox-condition-item-num">${i + 1}.</span>
-                                <span class="vectfox-condition-item-text">${escapeHtml(formatConditionRule(rule))}</span>
+                                <span class="vectfox-condition-item-text">${StringUtils.escapeHtml(formatConditionRule(rule))}</span>
                                 <i class="fa-solid fa-xmark vectfox-condition-item-remove"></i>
                             </div>
                         `).join('')}
@@ -828,7 +827,7 @@ function renderDetailPanel() {
                             return `
                             <div class="vectfox-summary-item" data-index="${i}">
                                 <div class="vectfox-summary-item-content">
-                                    <span class="vectfox-summary-item-text">${escapeHtml(summary)}</span>
+                                    <span class="vectfox-summary-item-text">${StringUtils.escapeHtml(summary)}</span>
                                     <span class="vectfox-summary-item-hash" title="Summary vector hash">#${summaryHash}</span>
                                 </div>
                                 <i class="fa-solid fa-xmark vectfox-summary-item-remove"></i>
@@ -1261,7 +1260,7 @@ function openTextEditor(chunk) {
                     <h4>Edit Chunk Text</h4>
                 </div>
                 <div class="vectfox-text-editor-body">
-                    <textarea class="vectfox-text-editor-textarea" id="VectFox_text_editor_textarea">${escapeHtml(chunk.data.text)}</textarea>
+                    <textarea class="vectfox-text-editor-textarea" id="VectFox_text_editor_textarea">${StringUtils.escapeHtml(chunk.data.text)}</textarea>
                 </div>
                 <div class="vectfox-text-editor-footer">
                     <button class="vectfox-text-editor-btn vectfox-text-editor-cancel" id="VectFox_text_cancel">Cancel</button>
@@ -1448,7 +1447,7 @@ function openLinkEditor(chunk) {
                             ${availableChunks.map(c => {
                                 const preview = c.data.text.substring(0, 40).replace(/\s+/g, ' ') + '...';
                                 const name = c.data.name || preview;
-                                return `<option value="${c.hash}">[Msg #${c.index}] ${escapeHtml(name)}</option>`;
+                                return `<option value="${c.hash}">[Msg #${c.index}] ${StringUtils.escapeHtml(name)}</option>`;
                             }).join('')}
                         </select>
                     </div>
@@ -1572,16 +1571,6 @@ function bulkSetEnabled(enabled) {
     toastr.success(`${enabled ? 'Enabled' : 'Disabled'} ${targets.length} chunk${targets.length !== 1 ? 's' : ''}`, 'VectFox');
 }
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
 
 function debounce(func, wait) {
     let timeout;

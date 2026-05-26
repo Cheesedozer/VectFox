@@ -79,6 +79,35 @@ export async function getCorpusStats(collectionId, settings) {
 }
 
 async function _buildStats(collectionId, settings) {
+    // Plugin gate — /chunks/list is a plugin-only endpoint. On standard-backend
+    // setups without the plugin (Doc/dev_helper.md §15 case 1), calling it
+    // produces a 404 that lights up the DevTools network panel red even though
+    // the corpus-IDF feature legitimately falls back to local-IDF BM25.
+    //
+    // Checking pluginAvailable upfront lets us skip the request entirely on
+    // no-plugin machines and return null cleanly — the caller's
+    // `if (!corpusStats)` path is the same fallback it would have taken on
+    // 404 anyway, minus the noise.
+    //
+    // Uses the session-cached probe from collection-loader.js so we don't
+    // re-hit /health on every corpus-stats build. Dynamic import to avoid a
+    // static cycle (collection-loader → core-vector-api → corpus-stats).
+    try {
+        const { checkPluginAvailable } = await import('./collection-loader.js');
+        if (!(await checkPluginAvailable())) {
+            // Returning null is the documented "no corpus-IDF available" signal.
+            // No throw → no "[CorpusStats] Build failed" WARN (that message was
+            // misleading on no-plugin setups, where there's no failure — just a
+            // user-chosen configuration that doesn't support corpus-IDF).
+            return null;
+        }
+    } catch (err) {
+        // If the plugin-availability check itself fails (shouldn't happen),
+        // fall through to the fetch path — preserves prior behavior so we
+        // don't accidentally lose corpus-IDF on a probe glitch.
+        console.warn(`[CorpusStats] Plugin-availability check failed for ${collectionId}, attempting /chunks/list anyway: ${err?.message || err}`);
+    }
+
     // Per-stage timing so a slow build tells us WHICH stage is the choke point:
     //   1. HTTP fetch  → server-side work + network (large collections = lots of bytes)
     //   2. JSON parse  → usually negligible, can spike on huge arrays

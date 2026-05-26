@@ -13,7 +13,7 @@
 import { getContentType, getContentTypeDefaults, hasFeature } from './content-types.js';
 import { chunkText } from './chunking.js';
 import { insertVectorItems, purgeVectorIndex, getSavedHashes } from './core-vector-api.js';
-import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock } from './collection-metadata.js';
+import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock, saveChunkMetadata } from './collection-metadata.js';
 import { registerCollection } from './collection-loader.js';
 import { getBackend } from '../backends/backend-manager.js';
 // Import from collection-ids.js - single source of truth for collection ID operations
@@ -23,14 +23,32 @@ import {
     buildDocumentCollectionId,
     COLLECTION_PREFIXES,
     buildRegistryKey,
+    getBackendFromCollectionId,
 } from './collection-ids.js';
 import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extractBM25Keywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT } from './keyword-boost.js';
-import { cleanText, cleanMessages } from './text-cleaning.js';
+import { cleanText, cleanContentOrNull } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { getCurrentChatId } from '../../../../../script.js';
 import { getStringHash } from '../../../../utils.js';
+
+/**
+ * Merge per-call settings on top of the user's global VectFox settings.
+ * Single source of truth for "effective settings": callers pass only the keys
+ * they want to override (vector_backend, source, model, content-type defaults),
+ * and globals supply the rest (qdrant_url, custom_stopwords, summarize_*, etc.).
+ *
+ * Without this merge, code paths that read globals directly would silently
+ * ignore per-call overrides — leading to mismatches like "registry key says
+ * qdrant but data lives in vectra".
+ *
+ * @param {object} [callerSettings] - per-call overrides (may be undefined)
+ * @returns {object} merged settings — globals first, overrides win
+ */
+export function resolveEffectiveSettings(callerSettings) {
+    return { ...(extension_settings.vectfox || {}), ...(callerSettings || {}) };
+}
 
 /**
  * Main entry point for content vectorization
@@ -115,6 +133,9 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
 
         // Get full extension settings for keyword extraction (includes custom_stopwords)
         const VectFoxSettings = extension_settings.vectfox;
+
+        // Per-call overrides merged on top of globals (see resolveEffectiveSettings).
+        const effectiveSettings = resolveEffectiveSettings(settings);
         
         const enrichedChunks = enrichChunks(chunks, contentType, source, settings, preparedContent, VectFoxSettings);
         const hashedChunks = enrichedChunks.map(chunk => ({
@@ -127,7 +148,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         if (continueMode) {
             try {
                 progressTracker.updateProgress(3, 'Checking existing chunks...');
-                const savedHashes = await getSavedHashes(collectionId, VectFoxSettings);
+                const savedHashes = await getSavedHashes(collectionId, effectiveSettings);
                 const savedSet = new Set(savedHashes);
                 const before = hashedChunks.length;
                 finalChunks = hashedChunks.filter(c => !savedSet.has(c.hash));
@@ -219,7 +240,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             progressTracker.updateProgress(4, 'Processing chunks...');
 
             try {
-                await getBackend(VectFoxSettings);
+                await getBackend(effectiveSettings);
             } catch (e) {
                 console.warn('VectFox: Backend initialization failed before insert, will still attempt insert:', e.message);
                 try { progressTracker.addError(`Backend init failed: ${e.message}`); } catch (_) {}
@@ -227,7 +248,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             }
 
             try {
-                await insertVectorItems(collectionId, finalChunks, VectFoxSettings, (embedded, total) => {
+                await insertVectorItems(collectionId, finalChunks, effectiveSettings, (embedded, total) => {
                     throwIfAborted();
                     console.log(`[Content Vectorization] Processing progress callback: ${embedded}/${total}`);
                     progressTracker.updateEmbeddingProgress(embedded, total);
@@ -238,6 +259,16 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 try { progressTracker.addError(error.message || String(error)); } catch (_) {}
                 try { toastr.error('Failed to write embeddings: ' + (error.message || String(error)), 'VectFox'); } catch (_) {}
                 throw error;
+            }
+
+            // Persist chunk keywords to extension_settings so no-plugin users get
+            // keyword boosting. Native ST /api/vector/insert only stores
+            // {hash, text, index} — keywords live nowhere else without the plugin.
+            // saveSettingsDebounced batches all writes into one disk flush.
+            for (const chunk of finalChunks) {
+                if (chunk.keywords?.length > 0) {
+                    saveChunkMetadata(String(chunk.hash), { keywords: chunk.keywords });
+                }
             }
         }
 
@@ -455,8 +486,12 @@ async function prepareContent(contentType, rawContent, settings, startFromMessag
         case 'character':
             return prepareCharacterContent(rawContent, settings);
 
-        case 'chat':
-            return prepareChatContent(rawContent, settings, startFromMessage);
+        // 'chat' case removed 2026-05-24 — chat history is exclusively
+        // processed by EventBase (LLM event extraction), not chunked.
+        // The production gates in ui/content-vectorizer.js intercept chat
+        // before any code path can reach this dispatcher with that type.
+        // The defensive tripwire in generateCollectionId() below still
+        // throws if someone bypasses both gates manually.
 
         case 'url':
             return prepareUrlContent(rawContent, settings);
@@ -496,25 +531,34 @@ function prepareCharacterContent(rawContent, settings) {
     };
 
     // For per_field strategy
+    // Use cleanContentOrNull so a field whose entire content gets stripped
+    // by user regex is dropped from `fields` rather than appearing under
+    // its label with an empty value. Same bug class as the lorebook
+    // empty-after-clean leak.
     if (settings.strategy === 'per_field') {
         const fields = {};
         for (const [fieldId, enabled] of Object.entries(selectedFields)) {
             if (enabled && FIELD_MAP[fieldId] && character[FIELD_MAP[fieldId].key]) {
-                fields[FIELD_MAP[fieldId].label] = cleanText(character[FIELD_MAP[fieldId].key]);
+                const cleaned = cleanContentOrNull(character[FIELD_MAP[fieldId].key]);
+                if (cleaned !== null) {
+                    fields[FIELD_MAP[fieldId].label] = cleaned;
+                }
             }
         }
         return { text: fields, type: 'fields', character: character };
     }
 
     // Otherwise, concatenate selected fields
+    // cleanContentOrNull also covers the combined case — without it a
+    // fully-stripped field still produces `## Label\n` as its rendered
+    // section, surviving the `.filter(Boolean)` below.
     const combined = Object.entries(selectedFields)
         .filter(([, enabled]) => enabled)
         .map(([fieldId]) => {
             const field = FIELD_MAP[fieldId];
-            if (field && character[field.key]) {
-                return `## ${field.label}\n${cleanText(character[field.key])}`;
-            }
-            return null;
+            if (!field || !character[field.key]) return null;
+            const cleaned = cleanContentOrNull(character[field.key]);
+            return cleaned !== null ? `## ${field.label}\n${cleaned}` : null;
         })
         .filter(Boolean)
         .join('\n\n');
@@ -522,75 +566,13 @@ function prepareCharacterContent(rawContent, settings) {
     return { text: combined, type: 'combined', character: character };
 }
 
-/**
- * Prepares chat content for chunking
- * Maps to the unified chunking strategies in chunking.js
- */
-function prepareChatContent(rawContent, settings, startFromMessage = 1) {
-    const messages = rawContent.messages || rawContent.content;
-
-    if (!Array.isArray(messages)) {
-        return { text: cleanText(String(messages)), type: 'text' };
-    }
-
-    // Filter out system messages and empty messages
-    let validMessages = messages.filter(m => m.mes && !m.is_system);
-
-    // Apply start-from slice (1-based: startFromMessage=1 means all, =2000 means skip first 1999)
-    if (startFromMessage > 1) {
-        const sliceIdx = Math.min(startFromMessage - 1, validMessages.length);
-        console.log(`VectFox: Start-from message ${startFromMessage} — skipping first ${sliceIdx} messages, ${validMessages.length - sliceIdx} remaining`);
-        validMessages = validMessages.slice(sliceIdx);
-    }
-
-    // Apply text cleaning to messages
-    const cleanedMessages = cleanMessages(validMessages);
-
-    // Normalize messages to have consistent properties for chunking.js
-    const normalizedMessages = cleanedMessages.map((m, idx) => ({
-        text: m.mes,
-        mes: m.mes,
-        is_user: m.is_user,
-        name: m.name,
-        index: idx,
-        id: m.send_date || m.id || idx,
-    }));
-
-    // For per_message strategy - return array of messages for chunking.js
-    if (settings.strategy === 'per_message') {
-        return {
-            text: normalizedMessages,
-            type: 'messages',
-            messages: validMessages,
-        };
-    }
-
-    // For conversation_turns strategy - return array for chunking.js to pair
-    if (settings.strategy === 'conversation_turns') {
-        return {
-            text: normalizedMessages,
-            type: 'messages',
-            messages: validMessages,
-        };
-    }
-
-    // For message_batch strategy - return array for chunking.js to batch
-    if (settings.strategy === 'message_batch') {
-        return {
-            text: normalizedMessages,
-            type: 'messages',
-            messages: validMessages,
-        };
-    }
-
-    // For adaptive or other text strategies - combine into single text
-    const combined = cleanedMessages.map(m => {
-        const speaker = m.is_user ? 'User' : (m.name || 'Character');
-        return `[${speaker}]: ${m.mes}`;
-    }).join('\n\n');
-
-    return { text: combined, type: 'combined', messages: cleanedMessages };
-}
+// prepareChatContent removed 2026-05-24 — chat history is exclusively
+// processed by EventBase (see eventbase-workflow.js::runEventBaseIngestion).
+// All previous chunking strategies (per_message / conversation_turns /
+// message_batch / adaptive) are unreachable from production code paths.
+// The dispatcher case above is gone; the defensive tripwire in
+// generateCollectionId() further down still throws if anyone bypasses
+// both gates by modifying source manually.
 
 /**
  * Prepares URL/webpage content
@@ -600,8 +582,14 @@ function prepareUrlContent(rawContent, settings) {
 
     // Basic text cleaning for web content
     if (typeof text === 'string') {
-        // Apply user's cleaning patterns first
-        text = cleanText(text);
+        // Apply user's cleaning patterns first; bail with empty text if
+        // nothing survives (caller can short-circuit instead of inserting
+        // a 0-byte chunk). See cleanContentOrNull docstring.
+        const cleaned = cleanContentOrNull(text);
+        if (cleaned === null) {
+            return { text: '', type: 'url', name: rawContent.name, url: rawContent.url };
+        }
+        text = cleaned;
         // Remove excessive whitespace
         text = text.replace(/\n{3,}/g, '\n\n');
         // Remove common web artifacts
@@ -622,8 +610,13 @@ function prepareDocumentContent(rawContent, settings) {
 
     // Basic text cleaning
     if (typeof text === 'string') {
-        // Apply user's cleaning patterns first
-        text = cleanText(text);
+        // Apply user's cleaning patterns first; bail with empty text if
+        // nothing survives. See cleanContentOrNull docstring.
+        const cleaned = cleanContentOrNull(text);
+        if (cleaned === null) {
+            return { text: '', type: 'document', name: rawContent.name };
+        }
+        text = cleaned;
         // Remove excessive whitespace
         text = text.replace(/\n{3,}/g, '\n\n');
         // Trim
@@ -641,23 +634,42 @@ function prepareWikiContent(rawContent, settings) {
 
     // Wiki content is already formatted with headers from scraper
     if (typeof text === 'string') {
-        // Apply user's cleaning patterns first
-        text = cleanText(text);
-        // Remove excessive whitespace
-        text = text.replace(/\n{3,}/g, '\n\n');
-        // Trim
-        text = text.trim();
+        // Apply user's cleaning patterns first; bail with empty text if
+        // nothing survives. See cleanContentOrNull docstring.
+        const cleaned = cleanContentOrNull(text);
+        if (cleaned === null) {
+            text = '';
+        } else {
+            text = cleaned;
+            // Remove excessive whitespace
+            text = text.replace(/\n{3,}/g, '\n\n');
+            // Trim
+            text = text.trim();
+        }
     }
 
     // For per_page strategy, split back into individual pages
+    // Per-page: clean ONLY the page content (not the `# Title` header).
+    // Two behaviors in one update:
+    //   1. Drop pages whose content goes empty after cleaning — same
+    //      bug class as the lorebook empty-header leak.
+    //   2. Title is preserved verbatim — it's metadata, not content
+    //      the user's regex should touch. Previously the title was
+    //      inside the cleanText call alongside the content.
     if (settings.strategy === 'per_page' && rawContent.pages) {
         return {
-            text: rawContent.pages.map(p => ({
-                text: cleanText(`# ${p.title}\n\n${p.content}`),
-                metadata: {
-                    pageTitle: p.title,
-                },
-            })),
+            text: rawContent.pages
+                .map(p => {
+                    const cleaned = cleanContentOrNull(p.content);
+                    if (cleaned === null) return null;
+                    return {
+                        text: `# ${p.title}\n\n${cleaned}`,
+                        metadata: {
+                            pageTitle: p.title,
+                        },
+                    };
+                })
+                .filter(Boolean),
             type: 'pages',
             pages: rawContent.pages,
             name: rawContent.name,
@@ -681,12 +693,18 @@ function prepareYouTubeContent(rawContent, settings) {
 
     // Clean up transcript text
     if (typeof text === 'string') {
-        // Apply user's cleaning patterns first
-        text = cleanText(text);
-        // Remove excessive whitespace
-        text = text.replace(/\n{3,}/g, '\n\n');
-        // Trim
-        text = text.trim();
+        // Apply user's cleaning patterns first; bail with empty text if
+        // nothing survives. See cleanContentOrNull docstring.
+        const cleaned = cleanContentOrNull(text);
+        if (cleaned === null) {
+            text = '';
+        } else {
+            text = cleaned;
+            // Remove excessive whitespace
+            text = text.replace(/\n{3,}/g, '\n\n');
+            // Trim
+            text = text.trim();
+        }
     }
 
     return {
@@ -854,13 +872,17 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
             index: index,
             keywords: dedupedKeywords,
             metadata: {
+                // Chunk-level metadata first (chunkIndex/totalChunks/strategy/etc.)
+                // so the explicit fields below win on conflict. The per_entry strategy
+                // writes `entryName: undefined` for string inputs, which would otherwise
+                // clobber the real entryName resolved from preparedContent.entries.
+                ...(chunk.metadata || {}),
                 contentType,
                 sourceName: source.name || source.filename || 'Unknown',
                 entryName,
                 entryUid,
                 keywordLevel,
                 keywordBaseWeight,
-                ...(chunk.metadata || {}),
             },
         };
     });
@@ -869,8 +891,34 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
 /**
  * Deletes a content collection
  */
-export async function deleteContentCollection(collectionId) {
-    const VectFoxSettings = extension_settings.vectfox;
-    await purgeVectorIndex(collectionId, VectFoxSettings);
-    console.log(`VectFox: Deleted collection: ${collectionId}`);
+/**
+ * Delete the underlying vector data for a content collection.
+ *
+ * The backend the data physically lives in is encoded in the collection ID
+ * itself (e.g. `vf_lorebook_qdrant_…` vs `vf_lorebook_standard_…`). The
+ * helper auto-detects this from the ID when the caller doesn't pass a
+ * `vector_backend` override, so cleanup ALWAYS targets the backend that
+ * actually holds the data — never the user's currently-selected global.
+ *
+ * Without this auto-detection, the previous code routed every cleanup
+ * through `extension_settings.vectfox.vector_backend`. If the user's global
+ * was `standard` while the data lived in qdrant (e.g. tests overriding
+ * `vector_backend: 'qdrant'` for one call), the purge silently no-op'd
+ * against vectra and the qdrant folder leaked on disk. Accumulated orphans
+ * eventually stalled Qdrant startup → plugin timeout → "Plugin shutting
+ * down" crash. Surfaced 2026-05-23 via 31 qdrant orphans on the NAS.
+ *
+ * @param {string} collectionId - bare collection ID (no `backend:` prefix)
+ * @param {object} [callerSettings] - per-call overrides; if omitted, the
+ *   backend is detected from the collection ID format.
+ */
+export async function deleteContentCollection(collectionId, callerSettings = null) {
+    let baseSettings = callerSettings;
+    if (!baseSettings) {
+        const detected = getBackendFromCollectionId(collectionId);
+        if (detected) baseSettings = { vector_backend: detected };
+    }
+    const effectiveSettings = resolveEffectiveSettings(baseSettings);
+    await purgeVectorIndex(collectionId, effectiveSettings);
+    console.log(`VectFox: Deleted collection: ${collectionId} (routed via ${effectiveSettings.vector_backend})`);
 }

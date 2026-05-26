@@ -218,10 +218,14 @@ const StringUtils = {
   },
 
   /**
-   * Escape HTML entities
+   * Escape HTML entities. Safe for both element-text and attribute-value
+   * contexts (escapes all 5 standard entities plus `/` per OWASP).
    *
-   * @param {string} str - String to escape
-   * @returns {string} Escaped string
+   * Coerces null/undefined/non-strings to '' first, so call sites don't need
+   * defensive `value || ''` guards — passing `null` is well-defined.
+   *
+   * @param {*} str - String (or anything coercible) to escape
+   * @returns {string} Escaped string, or '' for null/undefined
    */
   escapeHtml(str) {
     const map = {
@@ -232,7 +236,7 @@ const StringUtils = {
       "'": '&#39;',
       '/': '&#x2F;'
     };
-    return str.replace(/[&<>"'/]/g, char => map[char]);
+    return String(str ?? '').replace(/[&<>"'/]/g, char => map[char]);
   },
 
   /**

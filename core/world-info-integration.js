@@ -12,19 +12,36 @@
 
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
-import { getCollectionListing } from './collection-loader.js';
-import { getCollectionMeta } from './collection-metadata.js';
-import { parseRegistryKey } from './collection-ids.js';
+import { resolveBackendForCollection } from './collection-ids.js';
+import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
+import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
-import { eventSource, event_types, setExtensionPrompt, substituteParams } from '../../../../../script.js';
+import { eventSource, event_types, setExtensionPrompt, substituteParams, getCurrentChatId } from '../../../../../script.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
 // ============================================================================
+
+/**
+ * Resolve a display title for a semantic-activated lorebook entry.
+ * Prefers stored entryName; falls back to entry.key. `key` may carry either
+ * lorebook trigger strings (legacy ST shape) or VectFox keyword objects
+ * (`{text, weight}` from the extractor) — handle both rather than letting
+ * `[object Object], [object Object]` leak into the injected prompt.
+ */
+function _resolveEntryTitle(entry) {
+    if (entry.metadata?.entryName) return entry.metadata.entryName;
+    if (!Array.isArray(entry.key)) return String(entry.key || '');
+    return entry.key
+        .slice(0, 3)
+        .map(k => (typeof k === 'object' ? (k?.text || k?.keyword || '') : k))
+        .filter(Boolean)
+        .join(', ');
+}
 
 /**
  * Get vectorized lorebook entries that should be activated based on semantic similarity
@@ -70,16 +87,27 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 
     for (const collection of lorebookCollections) {
         try {
-            // collection.id is the registry key form; parse to extract the raw collection ID for the backend
-            const parsed = parseRegistryKey(collection.id || collection.registryKey || '');
-            const rawCollectionId = parsed.collectionId || collection.id;
+            // Canonical routing (Doc/collection_helper.md): pass the
+            // registry-key form ("backend:id") to queryCollection. Its
+            // resolveBackendForCollection helper picks the right backend
+            // per-collection. Previously we extracted the bare ID here and
+            // passed that down, which silently routed all lorebook queries
+            // through settings.vector_backend — broken for any user with
+            // mixed-backend lorebooks (e.g. a qdrant lorebook locked
+            // alongside a vectra lorebook).
+            //
+            // We also keep the bare collectionId on hand because downstream
+            // ST WI consumers expect entry.collectionId in bare form (the
+            // ID-only field on the semanticEntry object below).
+            const lookupKey = collection.id || collection.registryKey;
+            const { collectionId: rawCollectionId } = resolveBackendForCollection(lookupKey);
 
             // Run all query texts in parallel, merge by uid keeping the highest score.
             // In dual-query mode the user's last message runs alongside the full context —
             // a chunk that ranks outside topK for the context query can still be surfaced
             // if it ranks within topK for the focused user-message query.
             const queryResults = await Promise.all(
-                queryTexts.map(qt => queryCollection(rawCollectionId, qt, topK, settings).catch(() => null))
+                queryTexts.map(qt => queryCollection(lookupKey, qt, topK, settings).catch(() => null))
             );
 
             const bestByUid = new Map();
@@ -158,10 +186,25 @@ async function getEnabledLorebookCollections(settings) {
     const listing = getCollectionListing(settings);
     const collections = [];
 
+    const currentChatId = getCurrentChatId() ? String(getCurrentChatId()) : null;
+    const currentCharacterId = getContext().characterId != null ? String(getContext().characterId) : null;
+    const context = { currentChatId, currentCharacterId };
+
     for (const entry of listing) {
         if (!entry.collectionId.startsWith('vf_lorebook_')) continue;
-        // Skip explicitly paused collections (meta.enabled === false).
         if (entry.meta.enabled === false) continue;
+        // Respect persona ownership before checking activation. The activation
+        // chain (Doc/collection_helper.md) lets trigger keywords activate a
+        // collection regardless of who owns it — which leaks another persona's
+        // lorebooks into the current persona's chat when keywords coincide.
+        // `isOwn` (from getCollectionListing) is true when the current persona
+        // owns the collection OR superadmin mode is on, so single-persona and
+        // superadmin users see no behavior change; only multi-persona users
+        // stop seeing cross-persona content. Surfaced by prod symptom on
+        // 2026-05-23 (rabbit's Your Wives lorebook leaking into critblade's
+        // ArtificRealm chat) — TEST 011 covers this gate.
+        if (!entry.isOwn) continue;
+        if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;
 
         const sourceName = entry.meta?.sourceName || null;
         const name = sourceName || entry.collectionId;
@@ -229,7 +272,9 @@ function _findLorebookRegistryEntry(lorebookName, settings) {
     const lorebookPrefix = 'vf_lorebook_';
     const nameNeedle = `_${sanitizedName}_`;
 
-    const registry = getCollectionRegistry();
+    // Honor caller-supplied registry (used by tests / synthetic snapshots);
+    // otherwise read the module-global via getCollectionRegistry() like production.
+    const registry = settings?.vectfox_collection_registry || getCollectionRegistry();
     for (const key of registry) {
         // Registry keys can be "backend:collectionId" or bare "collectionId".
         const id = String(key).includes(':') ? String(key).split(':').slice(1).join(':') : String(key);
@@ -396,7 +441,11 @@ async function handleGenerationStarted(type, options, dryRun) {
         // Format entries into direct prompt injection under <VectFoxLorebook>
         const entryTexts = semanticEntries
             .filter(e => e.content?.trim())
-            .map(e => e.content.trim());
+            .map(e => {
+                const title = _resolveEntryTitle(e);
+                const content = e.content.trim();
+                return title ? `# ${title}\n${content}` : content;
+            });
 
         if (!entryTexts.length) return;
 
@@ -436,7 +485,11 @@ export async function runLorebookWIDryRun({ chat, testMessage, settings }) {
     const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, testMessage || null, lorebookCollections);
     if (!semanticEntries.length) return { injectionText: null, entryCount: 0 };
 
-    const entryTexts = semanticEntries.filter(e => e.content?.trim()).map(e => e.content.trim());
+    const entryTexts = semanticEntries.filter(e => e.content?.trim()).map(e => {
+        const title = _resolveEntryTitle(e);
+        const content = e.content.trim();
+        return title ? `# ${title}\n${content}` : content;
+    });
     if (!entryTexts.length) return { injectionText: null, entryCount: 0 };
 
     const xmlTag = settings.lorebook_xml_tag || 'VectFoxLorebook';

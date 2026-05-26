@@ -19,6 +19,7 @@ import {
   deleteCollection,
   sanitizeHandleId,
   getCollectionListing,
+  checkPluginAvailable,
 } from "../core/collection-loader.js";
 import { COLLECTION_PREFIXES } from "../core/collection-ids.js";
 import {
@@ -62,6 +63,7 @@ import {
 } from "../core/conditional-activation.js";
 import { world_names, loadWorldInfo } from "../../../../world-info.js";
 import { icons } from "./icons.js";
+import StringUtils from "../utils/string-utils.js";
 import { openVisualizer } from "./chunk-visualizer.js";
 import { queryCollection } from "../core/core-vector-api.js";
 import {
@@ -71,6 +73,7 @@ import {
   readImportFile,
   validateImportData,
   getExportInfo,
+  MAX_IMPORT_FILE_BYTES,
 } from "../core/collection-export.js";
 import {
   embedDataInPNG,
@@ -82,29 +85,9 @@ import {
 } from "../core/png-export.js";
 import { renderSizeInspectorTab } from "./size-inspector.js";
 
-// Plugin availability cache
-let pluginAvailable = null;
-
-/**
- * Check if the Similharity plugin is available
- * @returns {Promise<boolean>}
- */
-async function checkPluginAvailable() {
-  if (pluginAvailable !== null) return pluginAvailable;
-
-  try {
-    const response = await fetch("/api/plugins/similharity/health", {
-      method: "GET",
-      headers: getRequestHeaders(),
-    });
-    pluginAvailable = response.ok;
-  } catch {
-    pluginAvailable = false;
-  }
-  return pluginAvailable;
-}
-
 // Browser state
+// checkPluginAvailable() is imported from ../core/collection-loader.js —
+// that is the canonical implementation shared across the UI layer.
 let browserState = {
   isOpen: false,
   pluginAvailable: null,
@@ -114,6 +97,7 @@ let browserState = {
     scope: "all", // 'all', 'character', 'chat'
     collectionType: "all", // 'all', 'chat', 'file', 'lorebook'
     searchQuery: "",
+    onlyActiveForChat: false, // when true, only show collections active for the current chat (matches the 🔒 badge)
   },
   settings: null,
   // Bulk operations state
@@ -146,33 +130,47 @@ export function initializeDatabaseBrowser(settings) {
  * Opens the database browser modal
  */
 export async function openDatabaseBrowser() {
+  console.log("VECTFOX Database Browser: openDatabaseBrowser called, isOpen=", browserState.isOpen);
   if (browserState.isOpen) {
-    console.log("VECTFOX Database Browser: Already open");
+    console.log("VECTFOX Database Browser: Already open (early return)");
     return;
   }
 
   browserState.isOpen = true;
+  try {
+    // Check plugin availability
+    browserState.pluginAvailable = await checkPluginAvailable();
+    console.log("VECTFOX Database Browser: pluginAvailable=", browserState.pluginAvailable);
 
-  // Check plugin availability
-  browserState.pluginAvailable = await checkPluginAvailable();
+    // Create modal if it doesn't exist
+    if ($("#vectfox_database_browser_modal").length === 0) {
+      console.log("VECTFOX Database Browser: creating modal");
+      createBrowserModal();
+    } else {
+      console.log("VECTFOX Database Browser: modal already in DOM");
+    }
 
-  // Create modal if it doesn't exist
-  if ($("#vectfox_database_browser_modal").length === 0) {
-    createBrowserModal();
+    // Show/hide plugin warning banner
+    updatePluginWarningBanner();
+
+    // Force a fresh plugin scan on open so collections created since last scan
+    // (e.g. just-vectorized EventBase collections) land in pluginCollectionData with
+    // their real source/model — otherwise View Chunks sends source: 'unknown' and
+    // the plugin queries the wrong on-disk path.
+    console.log("VECTFOX Database Browser: about to refreshCollections(true)");
+    await refreshCollections(true);
+    console.log("VECTFOX Database Browser: refreshCollections done");
+
+    // Show modal
+    $("#vectfox_database_browser_modal").fadeIn(200);
+    console.log("VECTFOX Database Browser: Opened (fadeIn fired)");
+  } catch (err) {
+    // Never leave isOpen=true on error — that would jam the button forever
+    // (the early-return guard above would block every subsequent click).
+    console.error("VECTFOX Database Browser: openDatabaseBrowser threw, resetting isOpen=false", err);
+    browserState.isOpen = false;
+    throw err;
   }
-
-  // Show/hide plugin warning banner
-  updatePluginWarningBanner();
-
-  // Force a fresh plugin scan on open so collections created since last scan
-  // (e.g. just-vectorized EventBase collections) land in pluginCollectionData with
-  // their real source/model — otherwise View Chunks sends source: 'unknown' and
-  // the plugin queries the wrong on-disk path.
-  await refreshCollections(true);
-
-  // Show modal
-  $("#vectfox_database_browser_modal").fadeIn(200);
-  if (browserState.settings?.eventbase_debug_logging) console.log("VECTFOX Database Browser: Opened");
 }
 
 /**
@@ -293,12 +291,19 @@ function createBrowserModal() {
                             </label>
                         </div>
 
-                        <!-- Search Box -->
-                        <div class="vectfox-search-box">
+                        <!-- Search Box + Active-only toggle -->
+                        <div class="vectfox-search-box" style="display:flex; gap:8px; align-items:center;">
                             <input type="text"
                                    id="vectfox_collection_search"
                                    placeholder="Search collections..."
-                                   autocomplete="off">
+                                   autocomplete="off"
+                                   style="flex:1;">
+                            <label id="vectfox_only_active_toggle_label"
+                                   title="Show only collections active for the current chat (the ones with the 🔒 badge)"
+                                   style="display:flex; gap:6px; align-items:center; white-space:nowrap; cursor:pointer; font-size:0.85em;">
+                                <input type="checkbox" id="vectfox_only_active_toggle">
+                                🔒 Active here only
+                            </label>
                         </div>
 
                         <!-- Collections List -->
@@ -521,6 +526,15 @@ function bindBrowserEvents() {
     renderCollections();
   });
 
+  // "Active here only" toggle — filters down to the collections that currently
+  // carry the 🔒 badge for the current chat. Uses the canonical isActiveById
+  // lookup built from getCollectionListing inside renderCollections().
+  $("#vectfox_only_active_toggle").on("change", function (e) {
+    e.stopPropagation();
+    browserState.filters.onlyActiveForChat = $(this).prop("checked");
+    renderCollections();
+  });
+
   // Resync button - clears registry and rescans from disk
   $("#vectfox_reset_registry").on("click", async function (e) {
     e.stopPropagation();
@@ -570,6 +584,20 @@ function bindBrowserEvents() {
 
     // Reset input so same file can be selected again
     $(this).val("");
+
+    // H-3 mitigation: reject oversized files at the picker before any read
+    // commitment. Cap (MAX_IMPORT_FILE_BYTES) is defined once in
+    // core/collection-export.js and shared between this PNG picker and the
+    // JSON file-reader path — keeps the two import paths in sync if the
+    // cap is ever retuned.
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      toastr.error(
+        `File too large: ${mb} MB (max ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB).`,
+        "VECTFOX Import",
+      );
+      return;
+    }
 
     try {
       toastr.info("Reading import file...", "VectFox");
@@ -846,9 +874,21 @@ async function refreshCollections(withScan = false) {
 export function renderCollections() {
   const container = $("#vectfox_collections_list");
 
+  // Build lock-state lookup once — same canonical source of truth used by the
+  // card renderer (entry.isActive comes from getCollectionListing internally
+  // calling isCollectionActiveForContext, keyed by registry-key form). Built
+  // BEFORE the filter pass so "Active here only" can consult it without
+  // re-computing per card. See Doc/collection_helper.md:54.
+  const isActiveById = new Map();
+  for (const entry of getCollectionListing(browserState.settings)) {
+    isActiveById.set(entry.collectionId, entry.isActive);
+    isActiveById.set(entry.registryKey, entry.isActive);
+  }
+
     // Apply filters
     let filtered = browserState.collections.filter(c => {
         const scopeFilter = browserState.filters.scope;
+        const lookupKey = c.registryKey || c.id;
 
         // Scope filter:
         // - 'all' => no filter
@@ -857,12 +897,19 @@ export function renderCollections() {
         if (scopeFilter !== 'all') {
             // Lock counts are keyed by registry-key form ("backend:id") — same key
             // setCollectionLock writes to.
-            const lookupKey = c.registryKey || c.id;
             if (scopeFilter === 'chat') {
                 if (getCollectionLockCount(lookupKey) <= 0) return false;
             } else if (scopeFilter === 'character') {
                 if (getCollectionCharacterLockCount(lookupKey) <= 0) return false;
             }
+        }
+
+        // "Active here only" toggle — keeps just the collections that carry the
+        // 🔒 badge for the current chat (chat-lock match OR character-lock match
+        // for the active character). Uses the pre-built isActiveById lookup so
+        // we stay aligned with the badge's source of truth.
+        if (browserState.filters.onlyActiveForChat) {
+            if (!isActiveById.get(lookupKey)) return false;
         }
 
     // Type filter - map filter categories to actual collection types
@@ -903,14 +950,8 @@ export function renderCollections() {
     return;
   }
 
-  // Build lock-state lookup once from the listing (single source of truth for
-  // ownership AND isActive). Card rendering reads from this instead of calling
-  // isCollectionActiveForContext per card.
-  const isActiveById = new Map();
-  for (const entry of getCollectionListing(browserState.settings)) {
-    isActiveById.set(entry.collectionId, entry.isActive);
-    isActiveById.set(entry.registryKey, entry.isActive);
-  }
+  // isActiveById was built at the top of this function for the filter pass —
+  // reused here by the card renderer (entry.isActive lookups, no per-card calls).
 
   // Render collection cards
   const cardsHtml = filtered.map((c) => renderCollectionCard(c, isActiveById)).join("");
@@ -989,14 +1030,15 @@ function renderCollectionCard(collection, isActiveById = null) {
   // Source badge - shows embedding source (transformers, palm, openai, etc.)
   const sourceBadge =
     collection.source && collection.source !== "unknown"
-      ? `<span class="vectfox-badge vectfox-badge-source" title="Embedding source">${collection.source}</span>`
+      ? `<span class="vectfox-badge vectfox-badge-source" title="Embedding source">${StringUtils.escapeHtml(collection.source)}</span>`
       : "";
 
   // Model info - show current model and count if multiple
   const hasMultipleModels = collection.models && collection.models.length > 1;
   const currentModelName = collection.model || "(default)";
+  const safeCurrentModelName = StringUtils.escapeHtml(currentModelName);
   const modelBadge = hasMultipleModels
-    ? `<span class="vectfox-badge vectfox-badge-model" title="Current model: ${currentModelName} (${collection.models.length} available)">📐 ${currentModelName}</span>`
+    ? `<span class="vectfox-badge vectfox-badge-model" title="Current model: ${safeCurrentModelName} (${collection.models.length} available)">📐 ${safeCurrentModelName}</span>`
     : "";
 
   // Lock badge — show only when locked to the CURRENT chat. Locks to other chats
@@ -1034,11 +1076,24 @@ function renderCollectionCard(collection, isActiveById = null) {
   // Use registryKey for unique identification (source:id format)
   const uniqueKey = collection.registryKey || collection.id;
 
+  // Pre-escape every string field that ends up in HTML or attribute context.
+  // Source data can include lorebook entry names / character card names that
+  // came from third-party sharing sites (chub.ai, JanitorAI) and may contain
+  // HTML payloads. C-3: defense-in-depth — even `collection.id` (auto-
+  // generated `vf_*`) and the backend/source enums get escaped so a future
+  // malformed registry entry can't introduce attribute-context XSS.
+  const safeKey       = StringUtils.escapeHtml(uniqueKey);
+  const safeId        = StringUtils.escapeHtml(collection.id);
+  const safeName      = StringUtils.escapeHtml(collection.name);
+  const safeBackend   = StringUtils.escapeHtml(collection.backend);
+  const safeSource    = StringUtils.escapeHtml(collection.source || "transformers");
+  const safeModel     = StringUtils.escapeHtml(collection.model || "");
+
   return `
-        <div class="vectfox-collection-card" data-collection-key="${uniqueKey}" data-status="${collection.enabled ? "active" : "paused"}">
+        <div class="vectfox-collection-card" data-collection-key="${safeKey}" data-status="${collection.enabled ? "active" : "paused"}">
             <div class="vectfox-collection-header">
                 <span class="vectfox-collection-title">
-                    ${typeIcon} ${collection.name}
+                    ${typeIcon} ${safeName}
                 </span>
                 <div class="vectfox-collection-badges">
                     ${scopeBadge}
@@ -1052,23 +1107,23 @@ function renderCollectionCard(collection, isActiveById = null) {
 
             <div class="vectfox-collection-meta">
                 <span>${collection.chunkCount} chunks</span>
-                <span>ID: ${collection.id}</span>
+                <span>ID: ${safeId}</span>
             </div>
 
             <div class="vectfox-collection-actions">
                 <button class="vectfox-btn-sm vectfox-action-toggle"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         data-enabled="${collection.enabled}">
                     ${collection.enabled ? icons.pause(16) + " Pause" : icons.play(16) + " Enable"}
                 </button>
                 <button class="vectfox-btn-sm vectfox-action-rename"
-                        data-collection-key="${uniqueKey}"
-                        data-current-name="${collection.name.replace(/"/g, "&quot;")}"
+                        data-collection-key="${safeKey}"
+                        data-current-name="${safeName}"
                         title="Rename this collection">
                     ${icons.pencil(16)} Rename
                 </button>
                 <button class="vectfox-btn-sm vectfox-action-activation ${activationSummary.mode !== "auto" ? "vectfox-has-settings" : ""}"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         title="Configure activation, triggers, and conditions">
                     ${icons.settings(16)} Settings
                 </button>
@@ -1076,7 +1131,7 @@ function renderCollectionCard(collection, isActiveById = null) {
                   hasMultipleModels
                     ? `
                 <button class="vectfox-btn-sm vectfox-action-switch-model"
-                        data-collection-key="${uniqueKey}"
+                        data-collection-key="${safeKey}"
                         title="Switch embedding model (${collection.models.length} available)">
                     <i class="fa-solid fa-code-branch"></i> Model
                 </button>
@@ -1084,9 +1139,9 @@ function renderCollectionCard(collection, isActiveById = null) {
                     : ""
                 }
                 <button class="vectfox-btn-sm vectfox-action-visualize"
-                        data-collection-key="${uniqueKey}"
-                        data-backend="${collection.backend}"
-                        data-source="${collection.source || "transformers"}"
+                        data-collection-key="${safeKey}"
+                        data-backend="${safeBackend}"
+                        data-source="${safeSource}"
                         title="View and edit chunks in this collection">
                     ${icons.eye(16)} View Chunks
                 </button>
@@ -1097,27 +1152,27 @@ function renderCollectionCard(collection, isActiveById = null) {
                     </button>
                     <div class="vectfox-export-options">
                         <button class="vectfox-btn-sm vectfox-btn-json vectfox-action-export"
-                                data-collection-key="${uniqueKey}"
-                                data-collection-id="${collection.id}"
-                                data-backend="${collection.backend}"
-                                data-source="${collection.source || "transformers"}"
-                                data-model="${collection.model || ""}"
+                                data-collection-key="${safeKey}"
+                                data-collection-id="${safeId}"
+                                data-backend="${safeBackend}"
+                                data-source="${safeSource}"
+                                data-model="${safeModel}"
                                 title="Export as JSON (includes vectors)">
                             ${icons.fileExport(16)} JSON
                         </button>
                         <button class="vectfox-btn-sm vectfox-btn-png vectfox-action-export-png"
-                                data-collection-key="${uniqueKey}"
-                                data-collection-id="${collection.id}"
-                                data-backend="${collection.backend}"
-                                data-source="${collection.source || "transformers"}"
-                                data-model="${collection.model || ""}"
+                                data-collection-key="${safeKey}"
+                                data-collection-id="${safeId}"
+                                data-backend="${safeBackend}"
+                                data-source="${safeSource}"
+                                data-model="${safeModel}"
                                 title="Export as PNG (shareable image)">
                             ${icons.image(16)} PNG
                         </button>
                     </div>
                 </div>
                 <button class="vectfox-btn-sm vectfox-btn-danger vectfox-action-delete"
-                        data-collection-key="${uniqueKey}">
+                        data-collection-key="${safeKey}">
                     ${icons.trash(16)} Delete
                 </button>
             </div>
@@ -1205,15 +1260,90 @@ function formatBytes(bytes) {
 }
 
 /**
- * Escapes HTML special characters to prevent XSS
- * @param {string} text Text to escape
- * @returns {string} Escaped text
+ * Loads and opens the chunk visualizer for a collection.
+ * Shared by both the collections tab and search results tab handlers.
  */
-function escapeHtml(text) {
-  if (!text) return "";
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+async function openChunkVisualizer(collection) {
+  try {
+    toastr.info("Loading chunks...", "VectFox");
+
+    if (!collection.backend) {
+      toastr.error("Collection has no backend defined - this is a bug", "VectFox");
+      console.error("VectFox: Collection missing backend:", collection);
+      return;
+    }
+
+    if (!browserState.pluginAvailable) {
+      toastr.warning(
+        "The Similharity plugin is required to view chunks. Install the plugin to use this feature.",
+        "VectFox",
+        { timeOut: 6000 },
+      );
+      return;
+    }
+
+    const collectionSettings = {
+      ...browserState.settings,
+      vector_backend: collection.backend,
+    };
+
+    const doLoad = async (limit) => {
+      const requestBody = {
+        backend: collection.backend || "vectra",
+        collectionId: collection.id,
+        source: collection.source || "transformers",
+        model: collection.model || "",
+        ...(limit ? { limit } : {}),
+      };
+
+      console.log("VECTFOX DB Browser: Requesting chunks with:", requestBody);
+
+      const response = await fetch("/api/plugins/similharity/chunks/list", {
+        method: "POST",
+        headers: getRequestHeaders(),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to list chunks: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const results = data.items || data.chunks || data.results || [];
+      const dbChunkCount = Number(
+        data.total ?? data.totalCount ?? data.count ?? collection.chunkCount ?? results.length,
+      );
+
+      if (!results || results.length === 0) {
+        toastr.warning("No chunks found in this collection", "VectFox");
+        return;
+      }
+
+      const chunks = results.map((item, idx) => ({
+        hash: item.hash,
+        index: (item.index != null && item.index >= 0) ? item.index : idx,
+        text: item.text || item.metadata?.text || "No text available",
+        score: 1.0,
+        similarity: 1.0,
+        messageAge: item.metadata?.messageAge,
+        decayApplied: false,
+        decayMultiplier: 1.0,
+        metadata: item.metadata,
+      }));
+
+      openVisualizer(
+        { chunks, collectionType: collection.type, dbChunkCount },
+        collection.id,
+        collectionSettings,
+        doLoad,
+      );
+    };
+
+    await doLoad(null);
+  } catch (error) {
+    console.error("VectFox: Failed to load chunks", error);
+    toastr.error(`Failed to load chunks: ${error.message}`, "VectFox");
+  }
 }
 
 /**
@@ -1308,94 +1438,11 @@ function bindCollectionCardEvents() {
   $(".vectfox-action-visualize")
     .off("click")
     .on("click", async function (e) {
-      console.log("test");
       e.stopPropagation();
       const collectionKey = $(this).data("collection-key");
       const collection = findCollectionByKey(collectionKey);
-
       if (!collection) return;
-
-      try {
-        toastr.info("Loading chunks...", "VectFox");
-
-        // Use the collection's actual backend, not the global setting
-        // This ensures we query Standard collections with Standard backend, etc.
-        if (!collection.backend) {
-          toastr.error(
-            "Collection has no backend defined - this is a bug",
-            "VectFox",
-          );
-          console.error("VectFox: Collection missing backend:", collection);
-          return;
-        }
-
-        const collectionSettings = {
-          ...browserState.settings,
-          vector_backend: collection.backend,
-        };
-
-        const doLoad = async (limit) => {
-          const requestBody = {
-            backend: collection.backend || "vectra",
-            collectionId: collection.id,
-            source: collection.source || "transformers",
-            model: collection.model || "",
-            ...(limit ? { limit } : {}),
-          };
-
-          console.log("VECTFOX DB Browser: Requesting chunks with:", requestBody);
-
-          const response = await fetch("/api/plugins/similharity/chunks/list", {
-            method: "POST",
-            headers: getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to list chunks: ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          // Support all plugin response shapes: items (new), chunks/results (older/backends)
-          const results = data.items || data.chunks || data.results || [];
-          const dbChunkCount = Number(
-            data.total ??
-            data.totalCount ??
-            data.count ??
-            collection.chunkCount ??
-            results.length,
-          );
-
-          if (!results || results.length === 0) {
-            toastr.warning("No chunks found in this collection", "VectFox");
-            return;
-          }
-
-          const chunks = results.map((item, idx) => ({
-            hash: item.hash,
-            index: (item.index != null && item.index >= 0) ? item.index : idx,
-            text: item.text || item.metadata?.text || "No text available",
-            score: 1.0,
-            similarity: 1.0,
-            messageAge: item.metadata?.messageAge,
-            decayApplied: false,
-            decayMultiplier: 1.0,
-            metadata: item.metadata,
-          }));
-
-          openVisualizer(
-            { chunks, collectionType: collection.type, dbChunkCount },
-            collection.id,
-            collectionSettings,
-            doLoad,
-          );
-        };
-
-        await doLoad(null);
-      } catch (error) {
-        console.error("VectFox: Failed to load chunks", error);
-        toastr.error(`Failed to load chunks: ${error.message}`, "VectFox");
-      }
+      await openChunkVisualizer(collection);
     });
 
   // Export toggle - show/hide export options
@@ -2978,9 +3025,9 @@ function renderKeywordTags() {
   let html = displayKeywords.map(kw => {
     const isActive = currentFilter.includes(kw.text);
     return `<span class="vectfox-keyword-tag ${isActive ? 'active' : ''}"
-                  data-keyword="${escapeHtml(kw.text)}"
+                  data-keyword="${StringUtils.escapeHtml(kw.text)}"
                   title="${kw.count} occurrence(s)">
-              ${escapeHtml(kw.text)} <small>(${kw.count})</small>
+              ${StringUtils.escapeHtml(kw.text)} <small>(${kw.count})</small>
             </span>`;
   }).join('');
 
@@ -3193,8 +3240,8 @@ function renderSearchResults(results, query, originalResults = null) {
 
   if (totalResults === 0) {
     const filterMsg = wasFiltered
-      ? `<p>No results match keyword filter: "${escapeHtml(browserState.keywordFilter)}"</p><small>${originalTotal} result(s) found before filtering</small>`
-      : `<p>No results found for "${escapeHtml(query)}"</p><small>Try adjusting the score threshold or search in more collections</small>`;
+      ? `<p>No results match keyword filter: "${StringUtils.escapeHtml(browserState.keywordFilter)}"</p><small>${originalTotal} result(s) found before filtering</small>`
+      : `<p>No results found for "${StringUtils.escapeHtml(query)}"</p><small>Try adjusting the score threshold or search in more collections</small>`;
 
     $("#vectfox_search_results").html(`
             <div class="vectfox-search-empty">
@@ -3227,7 +3274,7 @@ function renderSearchResults(results, query, originalResults = null) {
     html += `
             <div class="vectfox-search-collection">
                 <div class="vectfox-search-collection-header">
-                    ${icons.folder(16)} ${escapeHtml(collectionName)}
+                    ${icons.folder(16)} ${StringUtils.escapeHtml(collectionName)}
                     <span class="vectfox-search-count">${collectionResults.hashes.length} result(s)</span>
                 </div>
                 <div class="vectfox-search-collection-results">
@@ -3263,25 +3310,25 @@ function renderSearchResults(results, query, originalResults = null) {
       if (chunkKeywords.length > 0) {
         const keywordTags = chunkKeywords.slice(0, 5).map(kw => {
           const text = typeof kw === 'object' ? kw.text : kw;
-          return `<span class="vectfox-result-keyword">${escapeHtml(text)}</span>`;
+          return `<span class="vectfox-result-keyword">${StringUtils.escapeHtml(text)}</span>`;
         }).join('');
         const moreCount = chunkKeywords.length > 5 ? `<span class="vectfox-result-keyword-more">+${chunkKeywords.length - 5}</span>` : '';
         keywordsHtml = `<div class="vectfox-result-keywords">${keywordTags}${moreCount}</div>`;
       }
 
       html += `
-                <div class="vectfox-search-result" data-collection="${collectionId}" data-hash="${collectionResults.hashes[i]}">
+                <div class="vectfox-search-result" data-collection="${StringUtils.escapeHtml(collectionId)}" data-hash="${collectionResults.hashes[i]}">
                     ${scoreDisplay}
                     <div class="vectfox-search-result-content">
-                        <div class="vectfox-search-result-text">${escapeHtml(preview)}</div>
+                        <div class="vectfox-search-result-text">${StringUtils.escapeHtml(preview)}</div>
                         ${keywordsHtml}
                     </div>
                 </div>
 
                 <button class="vectfox-btn-sm vectfox-action-visualize"
-                        data-collection-key="${uniqueKey}"
-                        data-backend="${collection.backend}"
-                        data-source="${collection.source || "transformers"}"
+                        data-collection-key="${StringUtils.escapeHtml(uniqueKey)}"
+                        data-backend="${StringUtils.escapeHtml(collection.backend)}"
+                        data-source="${StringUtils.escapeHtml(collection.source || "transformers")}"
                         title="View and edit chunks in this collection">
                     ${icons.eye(16)} View Chunks
                 </button>
@@ -3292,93 +3339,14 @@ function renderSearchResults(results, query, originalResults = null) {
   }
 
   $("#vectfox_search_results").html(html);
-  // sloppy, temporary fix to replicate OG chunk link functionality (1091)
   $(".vectfox-action-visualize")
     .off("click")
     .on("click", async function (e) {
-      console.log("test");
       e.stopPropagation();
       const collectionKey = $(this).data("collection-key");
       const collection = findCollectionByKey(collectionKey);
-
       if (!collection) return;
-
-      try {
-        toastr.info("Loading chunks...", "VectFox");
-
-        // Use the collection's actual backend, not the global setting
-        // This ensures we query Standard collections with Standard backend, etc.
-        if (!collection.backend) {
-          toastr.error(
-            "Collection has no backend defined - this is a bug",
-            "VectFox",
-          );
-          console.error("VectFox: Collection missing backend:", collection);
-          return;
-        }
-
-        const collectionSettings = {
-          ...browserState.settings,
-          vector_backend: collection.backend,
-        };
-
-        const doLoad = async (limit) => {
-          const response = await fetch("/api/plugins/similharity/chunks/list", {
-            method: "POST",
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-              backend: collection.backend || "vectra",
-              collectionId: collection.id,
-              source: collection.source || "transformers",
-              model: collection.model || "",
-              ...(limit ? { limit } : {}),
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to list chunks: ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          const results = data.items || [];
-          const dbChunkCount = Number(
-            data.total ??
-            data.totalCount ??
-            data.count ??
-            collection.chunkCount ??
-            results.length,
-          );
-
-          if (!results || results.length === 0) {
-            toastr.warning("No chunks found in this collection", "VectFox");
-            return;
-          }
-
-          const chunks = results.map((item, idx) => ({
-            hash: item.hash,
-            index: (item.index != null && item.index >= 0) ? item.index : idx,
-            text: item.text || item.metadata?.text || "No text available",
-            score: 1.0,
-            similarity: 1.0,
-            messageAge: item.metadata?.messageAge,
-            decayApplied: false,
-            decayMultiplier: 1.0,
-            metadata: item.metadata,
-          }));
-
-          openVisualizer(
-            { chunks, collectionType: collection.type, dbChunkCount },
-            collection.id,
-            collectionSettings,
-            doLoad,
-          );
-        };
-
-        await doLoad(null);
-      } catch (error) {
-        console.error("VectFox: Failed to load chunks", error);
-        toastr.error(`Failed to load chunks: ${error.message}`, "VectFox");
-      }
+      await openChunkVisualizer(collection);
     });
 }
 
@@ -3414,14 +3382,15 @@ function renderBulkList() {
   for (const collection of collections) {
     const uniqueKey = collection.registryKey || collection.id;
     const isSelected = browserState.bulkSelected.has(uniqueKey);
+    const safeKey = StringUtils.escapeHtml(uniqueKey);
 
     html += `
-            <div class="vectfox-bulk-item ${isSelected ? "selected" : ""}" data-key="${uniqueKey}">
+            <div class="vectfox-bulk-item ${isSelected ? "selected" : ""}" data-key="${safeKey}">
                 <label class="vectfox-bulk-checkbox">
-                    <input type="checkbox" ${isSelected ? "checked" : ""} data-key="${uniqueKey}">
+                    <input type="checkbox" ${isSelected ? "checked" : ""} data-key="${safeKey}">
                 </label>
                 <div class="vectfox-bulk-item-info">
-                    <span class="vectfox-bulk-item-name">${escapeHtml(collection.name || collection.id)}</span>
+                    <span class="vectfox-bulk-item-name">${StringUtils.escapeHtml(collection.name || collection.id)}</span>
                     <span class="vectfox-bulk-item-meta">
                         ${collection.chunkCount || 0} chunks •
                         ${collection.enabled ? `${icons.toggleRight(12)} Enabled` : `${icons.toggleLeft(12)} Disabled`}

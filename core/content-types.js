@@ -180,17 +180,25 @@ export const CONTENT_TYPES = {
             autoSync: true,
         },
 
-        // LEGACY CHAT STRATEGIES NOTE:
-        // *** will be remove in future version because no longer used by eventbased path ***
-        // These remain in the registry for backward compatibility, but EventBase-only chat
-        // retrieval means they are no longer surfaced in the chat Auto-Sync GUI.
-        chunkingStrategies: ['per_message', 'conversation_turns', 'message_batch', 'adaptive'],
-        defaultStrategy: 'per_message',
-
-        defaults: {
-            chunkSize: 500,
-            batchSize: 4,
-        },
+        // 2026-05-24 cleanup: chunkingStrategies / defaultStrategy / the populated
+        // defaults object are all GONE. Chat history is exclusively processed by
+        // EventBase (LLM event extraction) — no chunking strategy, no chunk size,
+        // no batch size applies. The production gates in ui/content-vectorizer.js
+        // (startVectorization / continueVectorization / previewChunks) intercept
+        // chat → EventBase before any chunking-config reader could fire.
+        //
+        // `defaults: {}` is kept INTENTIONALLY as a defensive shim. Some readers
+        // (e.g. content-vectorization.js:98 / content-vectorizer.js:2280) access
+        // `type.defaults.chunkSize` without optional chaining. The empty object
+        // ensures `undefined` is returned instead of TypeError IF someone ever
+        // manually modifies code to bypass the production gates and route chat
+        // through the chunk pipeline. Same spirit as the `case 'chat': throw`
+        // tripwire in generateCollectionId() — defense in depth.
+        //
+        // Do NOT re-add chunkSize / batchSize / chunkingStrategies here. If you
+        // need chat-specific tuning, it belongs in EventBase's own settings
+        // (eventbase_window_size, eventbase_window_overlap, etc.).
+        defaults: {},
 
         sourceType: 'chat',
         sourceOptions: {

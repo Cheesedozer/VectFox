@@ -323,7 +323,7 @@
         flex-shrink: 0 !important;
     }
 
-    .vectfox-search-box input {
+    .vectfox-search-box input[type="text"] {
         min-height: 44px !important;
     }
 

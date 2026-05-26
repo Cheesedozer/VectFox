@@ -11,7 +11,7 @@
 
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
-import { parseRegistryKey, COLLECTION_PREFIXES } from './collection-ids.js';
+import { parseRegistryKey, COLLECTION_PREFIXES, parseCollectionId } from './collection-ids.js';
 
 // ============================================================================
 // COLLECTION METADATA CRUD
@@ -23,7 +23,16 @@ import { parseRegistryKey, COLLECTION_PREFIXES } from './collection-ids.js';
 const defaultCollectionMeta = {
     enabled: true,
     autoSync: false,  // Per-collection auto-sync for chat vectorization
-    scope: 'unknown',
+    // `null` (not the string 'unknown'). Truthy-string defaults break the
+    // `storedMeta.scope || parsedMeta.scope` fall-through pattern used by
+    // the collection loader (line ~1007) — with `'unknown'` as the default,
+    // the OR short-circuits and the correctly-parsed scope from the ID
+    // structure is ignored, leaving collections un-lockable via the UI.
+    // Surfaced 2026-05-24 by a no-plugin user whose fallback-discovered
+    // EventBase collection couldn't be activated — the checkbox flipped
+    // visually but `saveActivation` had no branch for scope='unknown' and
+    // silently wrote nothing. See Doc/collection_helper.md.
+    scope: null,
     displayName: null,
     description: '',
     tags: [],
@@ -145,26 +154,78 @@ function ensureCollectionsObject() {
 
 
 /**
- * Gets metadata for a collection
+ * Canonical scope resolver — returns the EFFECTIVE scope of a collection,
+ * always 'chat' or 'character', never null/undefined/'unknown'.
+ *
+ * Use this anywhere you need to branch on scope. Never branch on bare
+ * `meta.scope === 'chat'` (or compare to 'character'), because `meta.scope`
+ * can be `null` (post-2026-05-24 default) or the legacy string `'unknown'`
+ * (collections created before the default fix landed). Both cases would
+ * silently miss every branch and write nothing — exactly the 2026-05-24
+ * "lock checkbox doesn't stick" no-plugin regression.
+ *
+ * Resolution order:
+ *   1. Stored `meta.scope` if it's a valid value ('chat' or 'character').
+ *   2. Parsed from the collection ID structure (via `parseCollectionId`):
+ *      - `vf_eventbase_*` / `vf_archiveevent_*` → 'chat'
+ *      - `vf_character_*` / `vf_lorebook_*` / `vf_document_*` → 'character'
+ *   3. Default 'character' (matches `content-vectorization.js` insert default).
+ *      Only reached for unparseable IDs (parser returns 'unknown' sentinel)
+ *      and legacy stored values like the retired 'global'.
+ *
+ * @param {string} collectionIdOrRegistryKey - bare ID or "backend:id"
+ * @param {object} [meta] - already-loaded meta (avoids re-reading from storage)
+ * @returns {'chat'|'character'}
+ */
+export function getEffectiveScope(collectionIdOrRegistryKey, meta = null) {
+    // 1. Stored meta wins if it's a valid scope value.
+    const stored = meta?.scope;
+    if (stored === 'chat' || stored === 'character') return stored;
+
+    // 2. Parse from the bare collection ID (strip registry-key prefix first).
+    const parsed = parseRegistryKey(collectionIdOrRegistryKey);
+    const bareId = parsed.collectionId || collectionIdOrRegistryKey;
+    const parsedScope = parseCollectionId(bareId).scope;
+    if (parsedScope === 'chat' || parsedScope === 'character') return parsedScope;
+
+    // 3. Default — matches the content-vectorization insert default so a
+    //    user creating then immediately locking lands on 'character' (the
+    //    safer / wider-scope option).
+    return 'character';
+}
+
+/**
+ * Gets metadata for a collection.
+ *
+ * Auto-resolves `meta.scope` to a valid value via {@link getEffectiveScope}
+ * before returning, so callers never see `null` or legacy `'unknown'` and
+ * don't have to remember the defensive `scope === 'chat'` branching pattern.
+ *
  * @param {string} collectionId Collection identifier
- * @returns {object} Collection metadata (with defaults applied)
+ * @returns {object} Collection metadata (with defaults applied + scope resolved)
  */
 export function getCollectionMeta(collectionId) {
     // VEC-26: Add comprehensive null checks
     if (!ensureCollectionsObject()) {
-        return { ...defaultCollectionMeta };
+        const fresh = { ...defaultCollectionMeta };
+        fresh.scope = getEffectiveScope(collectionId, fresh);
+        return fresh;
     }
 
     const stored = extension_settings.vectfox.collections[collectionId];
-    if (!stored) {
-        return { ...defaultCollectionMeta };
-    }
+    const merged = stored
+        ? { ...defaultCollectionMeta, ...stored }
+        : { ...defaultCollectionMeta };
 
-    // Merge with defaults to ensure all fields exist
-    return {
-        ...defaultCollectionMeta,
-        ...stored,
-    };
+    // Always return a usable scope. Cheap when stored is already valid
+    // (single string comparison); only parses the ID when stored is null/
+    // undefined/'unknown'. This is the single place that fixes every
+    // downstream consumer of meta.scope — saveActivation, refreshWIStatus,
+    // the badge renderer, the activation editor — without each of them
+    // needing their own defensive read.
+    merged.scope = getEffectiveScope(collectionId, merged);
+
+    return merged;
 }
 
 /**
@@ -703,10 +764,13 @@ export function getCollectionCharacterLockCount(collectionId) {
 export function isCollectionActiveForContext(collectionId, { chatId, characterId } = {}) {
     if (!collectionId) return false;
     const meta = getCollectionMeta(collectionId);
-    if (meta.scope === 'chat') {
+    // Infer missing scope from type so old collections (created before scope stamping)
+    // still resolve correctly instead of silently returning false.
+    const scope = (meta.scope && meta.scope !== 'unknown') ? meta.scope : (meta.type || 'chat');
+    if (scope === 'chat') {
         return Boolean(chatId && isCollectionLockedToChat(collectionId, chatId));
     }
-    if (meta.scope === 'character') {
+    if (scope === 'character') {
         return Boolean(characterId && isCollectionLockedToCharacter(collectionId, String(characterId)));
     }
     return false;

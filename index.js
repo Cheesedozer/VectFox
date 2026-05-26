@@ -6,7 +6,7 @@
  * All logic is in separate modules - see project guidelines
  *
  * @author Kritblade
- * @version 3.3.0
+ * @version 3.3.1
  * ============================================================================
  */
 
@@ -27,6 +27,7 @@ import { synchronizeChat, rearrangeChat, vectorizeAll } from './core/chat-vector
 import { purgeAllVectorIndexes, purgeVectorIndex } from './core/core-vector-api.js';
 import { migrateOldEnabledKeys } from './core/collection-metadata.js';
 import { clearCollectionRegistry, discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
+import { migrateLegacyApiKeys } from './core/api-keys.js';
 import AsyncUtils from './utils/async-utils.js';
 
 // VectFox modules - UI
@@ -51,12 +52,22 @@ const defaultSettings = {
     qdrant_host: 'localhost',
     qdrant_port: 6333,
     qdrant_url: '',
-    qdrant_api_key: '',
+    // Qdrant API key: stored in ST's secret_state custom slot 'api_key_qdrant'
+    // post-2026-05-26 migration. NOT in defaults — keeping it here would cause
+    // the Object.assign re-introduction loop documented on the vLLM keys. The
+    // Similharity plugin reads the slot server-side; the UI presence indicator
+    // round-trips via /api/plugins/similharity/qdrant/key-status. Migration
+    // drains any legacy settings.qdrant_api_key plaintext on first load.
+    // Reader: core/api-keys.js::getQdrantApiKey (transition-fallback only),
+    // core/api-keys.js::fetchQdrantApiKeyPresence (canonical presence check).
     qdrant_use_cloud: false,
     qdrant_multitenancy: false, // Use single collection with content_type field instead of separate collections
     ollama_alt_endpoint_url: '',
     ollama_use_alt_endpoint: false,
-    ollama_api_key: '',
+    // ollama_api_key removed 2026-05-26: ST has no SECRET_KEYS.OLLAMA and no
+    // ollama auth path in additional-headers.js — the field was dead code on
+    // both sides. Migration in core/api-keys.js drains-and-deletes any
+    // leftover plaintext from settings.json on first load post-upgrade.
     vllm_alt_endpoint_url: '',
     vllm_use_alt_endpoint: false,
     rate_limit_calls: 60,
@@ -68,16 +79,34 @@ const defaultSettings = {
     openai_model: 'text-embedding-ada-002',
     electronhub_model: 'text-embedding-3-small',
     openrouter_model: 'openai/text-embedding-3-large',
-    openrouter_api_key: '', // Stored here so the Choose button can send auth; also written to ST secrets for actual embedding calls
+    // OpenRouter key: stored in SECRET_KEYS.OPENROUTER (ST's shared slot, not in
+    // defaults). Reader: core/api-keys.js::getOpenRouterApiKey. The legacy
+    // plaintext slot used to live here as `openrouter_api_key: ''` but kept
+    // re-appearing in settings.json — every UI handler does
+    // Object.assign(extension_settings.vectfox, settings) which would re-add
+    // any default-declared empty field after migrateLegacyApiKeys() deleted it.
     cohere_model: 'embed-english-v3.0',
     ollama_model: 'mxbai-embed-large',
     ollama_keep: false,
     vllm_model: '',
-    vllm_api_key: '', // Stored here since custom keys aren't returned by ST's readSecretState()
+    // vLLM key: stored in ST's SECRET_KEYS.CUSTOM (chat-side, via
+    // chat_completion_source: 'custom' proxy) AND SECRET_KEYS.VLLM
+    // (embedding-side, via ST's vector handler). Dual-write from VectFox UI
+    // preserves the "one shared key" UX. NO plaintext field in settings.json
+    // post-2026-05-26. Migration drains any legacy `vllm_api_key` plaintext
+    // into both slots on first load. Reader: core/api-keys.js::getCustomApiKey
+    // (presence/masked-value indicator only; real key lives server-side).
     webllm_model: '',
     google_model: 'text-embedding-005',
     bananabread_rerank: false,
-    bananabread_api_key: '', // Stored here since custom keys aren't returned by ST's readSecretState()
+    // bananabread_api_key removed from defaults 2026-05-26 — the BananaBread
+    // provider is unselectable (commented out in providers.js) and the API
+    // key input handler had no matching HTML element. The deeper bananabread
+    // code paths still reference settings.bananabread_api_key defensively
+    // via `if (settings.bananabread_api_key) ...` guards; they handle the
+    // missing field gracefully. Migration drains-and-deletes any leftover
+    // plaintext from settings.json on first load. See Doc/dev_helper.md
+    // "Unresolved code" section for the full BananaBread state.
 
     // Chat vectorization
     enabled_chats: true,
@@ -130,10 +159,15 @@ const defaultSettings = {
 
     // Summarization before vectorization
     summarize_provider: 'openrouter', // 'openrouter', 'vllm'
-    summarize_openrouter_api_key: '',  // OpenRouter API key for summarization (stored here, not ST secrets)
+    // summarize_openrouter_api_key and summarize_vllm_api_key are NOT in
+    // defaults — they're legacy plaintext fields drained by
+    // migrateLegacyApiKeys() into SECRET_KEYS.OPENROUTER and
+    // SECRET_KEYS.CUSTOM (chat-side) + SECRET_KEYS.VLLM (embedding-side)
+    // respectively. Keeping them here would cause the same Object.assign
+    // re-introduction loop documented above on the embedding-side keys.
+    // Readers: core/api-keys.js helpers.
     summarize_model: '',              // Model ID for summarization (e.g. 'google/gemini-flash-1.5-8b')
     summarize_vllm_url: '',           // vLLM base URL for summarization (e.g. 'http://localhost:8000')
-    summarize_vllm_api_key: '',       // vLLM API key (stored in extension settings, not ST secrets)
     summarize_prompt: '',             // Custom prompt template (empty = use built-in default)
 
     // Hybrid Search fusion settings.
@@ -168,11 +202,12 @@ const defaultSettings = {
     cjk_tokenizer_mode: CJK_TOKENIZER_MODES.intl, // intl | jieba | jieba_tw | tiny_segmenter
 
     // EventBase workflow
-    eventbase_provider: 'openrouter',             // 'openrouter' | 'vllm'
-    eventbase_model: '',                          // Model ID (e.g. 'google/gemini-flash-1.5-8b')
-    eventbase_openrouter_api_key: '',             // API key (falls back to summarize key then ST secrets)
-    eventbase_vllm_url: '',                       // vLLM base URL
-    eventbase_vllm_api_key: '',                   // vLLM API key
+    // Legacy fields (eventbase_provider, eventbase_model, eventbase_openrouter_api_key,
+    // eventbase_vllm_url, eventbase_vllm_api_key) were unified into the Core
+    // `summarize_*` keys. The init block below copies any leftover values from
+    // those fields into `summarize_*` then deletes them, so they no longer
+    // need defaults here. Pre-existing installs that already had values move
+    // forward cleanly; new installs never see the fields at all.
     eventbase_temperature: 0.2,
     eventbase_max_tokens: 2048,
     eventbase_timeout_ms: 60000,
@@ -245,9 +280,12 @@ const defaultSettings = {
     agentic_retrieval_enabled: false,                  // Master toggle (default OFF)
     agentic_retrieval_provider: '',                    // '' → inherit summarize_provider
     agentic_retrieval_model: '',                       // '' → inherit summarize_model
-    agentic_retrieval_openrouter_api_key: '',          // '' → inherit summarize_openrouter_api_key
+    // agentic_retrieval_openrouter_api_key and agentic_retrieval_vllm_api_key
+    // are NOT in defaults — same Object.assign re-introduction reason as the
+    // other legacy *_api_key slots above. Migration drains them into
+    // SECRET_KEYS.OPENROUTER and SECRET_KEYS.CUSTOM + SECRET_KEYS.VLLM
+    // (dual-write for vLLM, see embedding/chat split in api-keys.js header).
     agentic_retrieval_vllm_url: '',                    // '' → inherit summarize_vllm_url
-    agentic_retrieval_vllm_api_key: '',                // '' → inherit summarize_vllm_api_key
     agentic_retrieval_chat_depth: 3,                   // # of past chat turns sent to planner (slider 1-10)
     agentic_retrieval_candidates_to_show: 12,          // Pre-search slice shown to planner (slider 5-20)
     agentic_retrieval_max_queries: 4,                  // Hard ceiling on planner output (slider 1-4)
@@ -422,15 +460,70 @@ jQuery(async () => {
         console.log(`VectFox: Migrated ${migrationResult.migrated} old collection enabled keys`);
     }
 
-    // Migrate legacy EventBase LLM overrides → unified Core summarize settings
+    // Migrate legacy EventBase LLM overrides → unified Core summarize settings.
+    // Copy any non-empty legacy value into the corresponding summarize_* field
+    // (only if summarize_* is still empty — never clobber), then DELETE the
+    // legacy field unconditionally. Previous version copied but left the
+    // legacy keys behind as stale empty strings in settings.json.
     const _ebs = extension_settings.vectfox;
-    if (!_ebs.summarize_model && _ebs.eventbase_model) _ebs.summarize_model = _ebs.eventbase_model;
-    if (!_ebs.summarize_provider && _ebs.eventbase_provider) _ebs.summarize_provider = _ebs.eventbase_provider;
-    if (!_ebs.summarize_openrouter_api_key && _ebs.eventbase_openrouter_api_key) {
-        _ebs.summarize_openrouter_api_key = _ebs.eventbase_openrouter_api_key;
+    const _ebLegacyMap = [
+        ['eventbase_model', 'summarize_model'],
+        ['eventbase_provider', 'summarize_provider'],
+        ['eventbase_openrouter_api_key', 'summarize_openrouter_api_key'],
+        ['eventbase_vllm_url', 'summarize_vllm_url'],
+        ['eventbase_vllm_api_key', 'summarize_vllm_api_key'],
+    ];
+    let _ebMutated = false;
+    for (const [legacy, canonical] of _ebLegacyMap) {
+        if (!Object.prototype.hasOwnProperty.call(_ebs, legacy)) continue;
+        const v = _ebs[legacy];
+        if (!_ebs[canonical] && typeof v === 'string' && v.trim().length > 0) {
+            _ebs[canonical] = v;
+        }
+        delete _ebs[legacy];
+        _ebMutated = true;
     }
-    if (!_ebs.summarize_vllm_url && _ebs.eventbase_vllm_url) _ebs.summarize_vllm_url = _ebs.eventbase_vllm_url;
-    if (!_ebs.summarize_vllm_api_key && _ebs.eventbase_vllm_api_key) _ebs.summarize_vllm_api_key = _ebs.eventbase_vllm_api_key;
+    if (_ebMutated) {
+        // Persist deletions synchronously (NOT debounced). Migrations are
+        // one-shot at init and the user may reload before a debounced save
+        // would flush — leaving settings.json with stale legacy fields even
+        // though extension_settings.vectfox is clean in memory. Confirmed
+        // 2026-05-26 against a user whose summarize_openrouter_api_key /
+        // summarize_vllm_api_key persisted on disk across multiple reloads
+        // because the debounced save never fired before page close.
+        const { saveSettings } = await import('../../../../script.js');
+        await saveSettings();
+    }
+
+    // H-1 one-shot migration (2026-05-24): move plaintext *_api_key values
+    // from settings.json to ST secret_state. Runs AFTER the eventbase →
+    // summarize copy above so any user who only had eventbase_* set gets
+    // the value migrated correctly. Idempotent: empty fields = no-op.
+    // See plans/review-fix.md §H-1 and core/api-keys.js for the full design.
+    try {
+        await migrateLegacyApiKeys();
+    } catch (err) {
+        console.warn('[VectFox] migrateLegacyApiKeys failed:', err?.message || err);
+        // Non-fatal — readers fall back to legacy plaintext slots if migration didn't complete.
+    }
+
+    // CRITICAL: re-sync the local `settings` from the now-cleaned
+    // extension_settings.vectfox. The spread at line 412 captured the PRE-
+    // migration state including any legacy *_api_key empty strings the user
+    // had on disk. Every UI handler does Object.assign(extension_settings.vectfox,
+    // settings) — without this re-sync, the first UI interaction copies the
+    // legacy fields back into extension_settings.vectfox and they get saved
+    // again, defeating the migration. Tracked symptom: settings.json kept the
+    // empty summarize_openrouter_api_key / summarize_vllm_api_key fields even
+    // after migration logged success on every reload.
+    settings = {
+        ...defaultSettings,
+        ...extension_settings.vectfox,
+        collections: {
+            ...defaultSettings.collections,
+            ...extension_settings.vectfox.collections,
+        },
+    };
 
     // Migrate empty rag_xml_tag to default value
     if (!settings.rag_xml_tag) {

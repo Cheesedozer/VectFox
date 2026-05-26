@@ -198,7 +198,7 @@ async function clientSideHybridSearch(backend, collectionId, searchText, topK, s
             const mod = await import('./corpus-stats.js');
             corpusStats = await mod.getCorpusStats(collectionId, settings);
             if (!corpusStats && debugLog) {
-                console.warn(`[HybridSearch] Corpus-IDF disabled for ${collectionId}: getCorpusStats returned null. Falling back to local-IDF BM25.`);
+                console.warn(`[HybridSearch] Corpus-IDF disabled for ${collectionId}: getCorpusStats returned null (plugin unavailable or /chunks/list failed). Falling back to local-IDF BM25.`);
             }
         } catch (err) {
             console.warn(`[HybridSearch] Corpus-IDF unavailable for ${collectionId}, falling back to local-IDF BM25. Reason: ${err?.message || err}`);
@@ -209,7 +209,7 @@ async function clientSideHybridSearch(backend, collectionId, searchText, topK, s
     const bm25Results = performBM25Search(resultsWithText, searchText, {
         k1: settings.bm25_k1 || 1.5,
         b: settings.bm25_b || 0.75,
-        fieldBoosting: true,  // Enable title (3x) and tags (2x) boosting
+        fieldBoosting: true,  // Enable title (4x) and tags (4x) boosting (see bm25-scorer.js:534, 541)
         corpusStats,
         settings,
         debugLog,

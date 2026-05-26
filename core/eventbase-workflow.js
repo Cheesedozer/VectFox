@@ -167,6 +167,16 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     // stampAutoSyncMarker in eventbase-store.js for the placement logic.
     // Only applies to auto-sync runs; manual Vectorize Content / backfill
     // intentionally ignores the marker so the user can refill historical gaps.
+    //
+    // ⚠️ Regression coverage: TEST 014 (fingerprint cache, same window size) +
+    // TEST 015 (this marker filter, window-size-change protection) in
+    // tests/Eventbase-test.spec.js together cover the two-layer auto-sync
+    // safety story. Doc/collection_helper.md → "Chat Auto-Sync" explains the
+    // contract. Any change here — guard, operator (>= vs >), or filter shape
+    // — must be reviewed against both tests and the doc. The boundary `>=`
+    // is load-bearing: stampAutoSyncMarker uses max(source_window_end)+1,
+    // so the next legitimate window starts exactly AT marker. `>` would
+    // skip the first new window (extraction gap).
     if (isAutoSync) {
         const { getAutoSyncMarker } = await import('./eventbase-store.js');
         const marker = getAutoSyncMarker(uuid);
@@ -233,10 +243,27 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         const batch = windows.slice(windowIdx, windowIdx + CONCURRENCY);
         windowIdx += batch.length;
 
+        // Concurrency diagnostics — proves whether N parallel LLM calls actually
+        // fire together vs. queueing somewhere. Per-window dispatch/finish
+        // timestamps let you see if window K starts at t=0 alongside K+1..K+N-1
+        // (true parallel) or only after K-1 returns (serial). Also separates
+        // the LLM-extract phase from the serialized Qdrant-insert phase so you
+        // can see which one dominates wall time.
+        const batchStartedAt = performance.now();
+        const batchFirstIdx = windowIdx - batch.length;
+        const batchLastIdx = windowIdx - 1;
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Dispatching batch: windows ${batchFirstIdx}-${batchLastIdx} (size=${batch.length}, CONCURRENCY=${CONCURRENCY}) at t=${batchStartedAt.toFixed(1)}ms`);
+        }
+
         // Process batch in parallel
         const batchResults = await Promise.allSettled(
             batch.map(async (win, batchOffset) => {
                 const wIdx = windowIdx - batch.length + batchOffset;
+                const winStartedAt = performance.now();
+                if (debugLog) {
+                    console.log(`[EventBase concurrency] Window ${wIdx}: dispatched at +${(winStartedAt - batchStartedAt).toFixed(1)}ms`);
+                }
 
                 if (abortSignal?.aborted) return { skipped: true };
 
@@ -262,6 +289,7 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
 
                 // LLM extraction
                 let rawEvents;
+                const extractStart = performance.now();
                 try {
                     rawEvents = await extractEvents({
                         messages: win.msgs,
@@ -270,6 +298,10 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
                         settings,
                         windowIndex: wIdx,
                     });
+                    const extractMs = performance.now() - extractStart;
+                    if (debugLog) {
+                        console.log(`[EventBase concurrency] Window ${wIdx}: LLM extract done in ${extractMs.toFixed(0)}ms (finished at +${(performance.now() - batchStartedAt).toFixed(1)}ms from batch start)`);
+                    }
                 } catch (err) {
                     // User/request cancellation is expected and should not be logged as a failure.
                     if (err?.name === 'AbortError' || abortSignal?.aborted) {
@@ -301,18 +333,60 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
             }),
         );
 
-        // Insert sequentially — Cloudflare/nginx HTTP/2 fan-out can merge concurrent
-        // POST bodies into a single mangled request when many windows finish together.
-        // LLM extraction above stays parallel; only the vectra writes are serialized.
+        const extractPhaseEndedAt = performance.now();
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Batch extract phase complete: ${(extractPhaseEndedAt - batchStartedAt).toFixed(0)}ms wall (${batch.length} window(s))`);
+        }
+
+        // Coalesce all events from this batch's windows into ONE insertEvents
+        // call. The Similharity plugin (similharity/index.js::insertVectors)
+        // batches embedding requests: when N items arrive together, it calls
+        // OpenRouter ONCE with all texts and gets N vectors back. Before this
+        // change we paid for one ~9s embedding round-trip PER WINDOW (so
+        // 8 windows = 8×9s = 72s); now the whole batch shares one round-trip.
+        //
+        // The old "insert sequentially because Cloudflare/nginx HTTP/2 fan-out
+        // can merge concurrent POST bodies" guard targeted hosted-proxy setups
+        // — it doesn't apply here (local ST + local plugin + local Qdrant),
+        // and we're no longer firing concurrent POSTs anyway: we're firing
+        // ONE bigger POST.
+        //
+        // Atomicity tradeoff: per-batch instead of per-window. If the batched
+        // embed/insert fails, no windows in this batch get marked extracted,
+        // and the next run re-extracts all of them. Extract is cheap (~6s for
+        // 8 windows) so this is acceptable.
+        const allEvents = [];
+        const hashesToMark = [];
         for (const r of batchResults) {
             if (r.status !== 'fulfilled' || r.value?.skipped) continue;
             const { events: winEvents, sourceHashes: winHashes } = r.value;
             if (!winHashes) continue; // extraction failed — do not mark
-            if (abortSignal?.aborted) break;
             if (winEvents?.length > 0) {
-                await insertEvents(winEvents, settings, abortSignal, collectionId);
+                allEvents.push(...winEvents);
             }
-            markWindowExtracted(winHashes, uuid);
+            hashesToMark.push(winHashes);
+        }
+
+        let insertWallMs = 0;
+        if (!abortSignal?.aborted && allEvents.length > 0) {
+            const insertStart = performance.now();
+            await insertEvents(allEvents, settings, abortSignal, collectionId);
+            insertWallMs = performance.now() - insertStart;
+        }
+        // Mark windows only after the batched insert succeeded (or there was
+        // nothing to insert — in which case we still mark zero-event windows
+        // so we don't re-extract them next run).
+        if (!abortSignal?.aborted) {
+            for (const winHashes of hashesToMark) {
+                markWindowExtracted(winHashes, uuid);
+            }
+        }
+
+        const batchEndedAt = performance.now();
+        const insertPhaseMs = batchEndedAt - extractPhaseEndedAt;
+        const extractPhaseMs = extractPhaseEndedAt - batchStartedAt;
+        if (debugLog) {
+            console.log(`[EventBase concurrency] Batch DONE: total=${(batchEndedAt - batchStartedAt).toFixed(0)}ms (extract=${extractPhaseMs.toFixed(0)}ms parallel, insert=${insertPhaseMs.toFixed(0)}ms — 1 batched POST with ${allEvents.length} event(s))`);
         }
 
         // Tally results, watch for fatal errors
@@ -540,9 +614,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     // query them via queryCollection directly and attach _hash (same as queryEvents does).
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2;
     const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
-    const archiveEventPromises = archiveCollections.map(async ({ collectionId: archColId }) => {
+    const archiveEventPromises = archiveCollections.map(async ({ registryKey: archKey, collectionId: archColId }) => {
         try {
-            const { hashes, metadata } = await queryCollection(archColId, effectiveSearchText, topK, ebSettings);
+            // Canonical routing (Doc/collection_helper.md): pass registry-key
+            // form so queryCollection routes per-collection-backend. Previously
+            // passed the bare `archColId` which silently sent every archive
+            // query through settings.vector_backend.
+            const { hashes, metadata } = await queryCollection(archKey, effectiveSearchText, topK, ebSettings);
             if (!hashes?.length) return [];
             return metadata.map((meta, i) => ({ ...meta, _hash: hashes[i] }));
         } catch (err) {
@@ -574,7 +652,14 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
         keywordQuery,
         chatLength: getContext().chat?.length || chat?.length || 0,
         settings,
-        liveCollectionIds: lockedLiveCollections.map(c => c.collectionId),
+        // Canonical routing (Doc/collection_helper.md): pass registry-key form
+        // ("backend:id") so queryCollection's resolveBackendForCollection picks the right
+        // backend per-collection. Previously passing the bare collectionId
+        // here silently routed EVERY locked collection through
+        // settings.vector_backend, breaking mixed-backend users (e.g. a
+        // standard EventBase locked + a qdrant EventBase locked at the same
+        // time would both query whichever backend was the default).
+        liveCollectionIds: lockedLiveCollections.map(c => c.registryKey),
         additionalCandidates,
         skipLiveQuery: !queryEventbase,
         skipContextDedup: isCrossChat,
@@ -738,8 +823,17 @@ export function isChatFullyVectorized(messages, settings, chatUUID) {
  * Returns one of:
  *   { state: 'no-chat' }                                              — no chat is open
  *   { state: 'no-collection' }                                        — chat has no eventbase collection yet
- *   { state: 'partial',          collectionId, registryKey }          — collection exists, last window not extracted
- *   { state: 'fully-vectorized', collectionId, registryKey }          — collection exists, last window already extracted
+ *   { state: 'vectorization-ahead', collectionId, registryKey,
+ *     chatMessageCount, markerValue }                                  — collection exists, but its auto-sync marker
+ *                                                                       is past the current chat tail (user bound a
+ *                                                                       collection vectorized on a longer chat, or
+ *                                                                       deleted messages after vectorizing). NOTHING
+ *                                                                       should sync — we wait for chat to catch up.
+ *   { state: 'partial',          collectionId, registryKey,
+ *     chatMessageCount, markerValue? }                                 — collection exists, last window not extracted;
+ *                                                                       counts let the UI show the backfill gap
+ *   { state: 'fully-vectorized', collectionId, registryKey,
+ *     chatMessageCount, markerValue? }                                 — collection exists, last window already extracted
  *
  * @param {object} settings - extension_settings.vectfox
  * @returns {object}
@@ -769,11 +863,35 @@ export function getChatAutoSyncStatus(settings) {
     const messages = Array.isArray(ctx?.chat)
         ? ctx.chat.filter(m => m.mes && m.mes.trim().length > 0)
         : [];
+    const chatMessageCount = messages.length;
+
+    // Read the auto-sync marker (per-chat message-index threshold). When this
+    // is past the chat tail, the marker filter in runEventBaseIngestion will
+    // reject every window — extraction is effectively frozen until the chat
+    // catches up. Surface that as a distinct UI state so the user understands
+    // why "auto-sync enabled" produces no work (they probably bound a chat
+    // vectorization that ran on a longer version of this chat).
+    //
+    // The marker may be undefined when auto-sync was never enabled — in that
+    // case we don't have enough info to detect the ahead-of-chat condition,
+    // so fall through to the existing partial / fully-vectorized branch.
+    const markerValue = extension_settings?.vectfox?.eventbase_autosync_start_marker?.[uuid];
+    if (typeof markerValue === 'number' && markerValue > chatMessageCount) {
+        return {
+            state: 'vectorization-ahead',
+            collectionId: match.collectionId,
+            registryKey: match.registryKey,
+            chatMessageCount,
+            markerValue,
+        };
+    }
 
     const fullyVectorized = isChatFullyVectorized(messages, settings, uuid);
     return {
         state: fullyVectorized ? 'fully-vectorized' : 'partial',
         collectionId: match.collectionId,
         registryKey: match.registryKey,
+        chatMessageCount,
+        markerValue: typeof markerValue === 'number' ? markerValue : undefined,
     };
 }

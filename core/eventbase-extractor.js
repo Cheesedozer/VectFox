@@ -11,7 +11,8 @@
  * ============================================================================
  */
 
-import { SECRET_KEYS, secret_state } from '../../../../secrets.js';
+import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
+import { getRequestHeaders } from '../../../../../script.js';
 import {
     EVENT_TYPES,
     EventBaseExtractionError,
@@ -40,23 +41,10 @@ const DEFAULT_TIMEOUT_MS = 60000;
  * @param {object} settings
  * @returns {string}
  */
-function _getOpenRouterApiKey(settings) {
-    if (settings?.summarize_openrouter_api_key) {
-        return settings.summarize_openrouter_api_key.trim();
-    }
-
-    // Fall back to ST secrets store
-    const stored = secret_state[SECRET_KEYS.OPENROUTER];
-    if (typeof stored === 'string') return stored.trim();
-    if (Array.isArray(stored) && stored.length > 0) {
-        const active = stored.find(s => s?.active) || stored[0];
-        if (typeof active?.value === 'string') return active.value.trim();
-    }
-    if (stored && typeof stored === 'object' && typeof stored.value === 'string') {
-        return stored.value.trim();
-    }
-    return '';
-}
+// _getOpenRouterApiKey lived inline here pre-H-1; now an alias for the
+// canonical single-key helper. ONE OpenRouter key shared across
+// embedding/summarize/agentic — see core/api-keys.js docstring.
+const _getOpenRouterApiKey = getOpenRouterApiKey;
 
 // ---------------------------------------------------------------------------
 // Response body builder
@@ -316,6 +304,10 @@ function _inferLanguageHint(text) {
 // ---------------------------------------------------------------------------
 
 async function _callOpenRouter(prompt, settings, windowIndex) {
+    // Presence-only check: see summarizer._callOpenRouter for the full rationale.
+    // Short version: getOpenRouterApiKey() returns ST's MASKED value, so we route
+    // through /api/backends/chat-completions/generate which reads the real key
+    // server-side via readSecret(SECRET_KEYS.OPENROUTER).
     const apiKey = _getOpenRouterApiKey(settings);
     if (!apiKey) {
         throw new EventBaseFatalError(
@@ -336,13 +328,13 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
     const temperature = settings.eventbase_temperature ?? DEFAULT_TEMPERATURE;
     const timeoutMs = settings.eventbase_timeout_ms || DEFAULT_TIMEOUT_MS;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(_buildBody(prompt, model, maxTokens, temperature)),
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            chat_completion_source: 'openrouter',
+            ..._buildBody(prompt, model, maxTokens, temperature),
+        }),
         signal: AbortSignal.timeout(timeoutMs),
     });
 
@@ -369,7 +361,10 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
 }
 
 async function _callVLLM(prompt, settings, windowIndex) {
-    const baseUrl = (settings.summarize_vllm_url || '').replace(/\/$/, '');
+    // Routes through ST's chat-completions proxy with `chat_completion_source:
+    // 'custom'` — server reads key from SECRET_KEYS.CUSTOM, forwards to
+    // settings.summarize_vllm_url. Same pattern as summarizer.js::_callVLLM.
+    const baseUrl = (settings.summarize_vllm_url || '').trim();
     if (!baseUrl) {
         throw new EventBaseFatalError(
             'EventBase: vLLM URL not configured. Set the vLLM URL in Core → LLM Summarization settings.',
@@ -385,18 +380,28 @@ async function _callVLLM(prompt, settings, windowIndex) {
         );
     }
 
+    const apiKey = getCustomApiKey(settings);
+    if (!apiKey) {
+        throw new EventBaseFatalError(
+            'EventBase: vLLM / Custom OpenAI-compatible API key not configured. Enter it in Core → LLM Summarization settings.',
+            'missing_api_key',
+        );
+    }
+
     const maxTokens = settings.eventbase_max_tokens || DEFAULT_MAX_TOKENS;
     const temperature = settings.eventbase_temperature ?? DEFAULT_TEMPERATURE;
     const timeoutMs = settings.eventbase_timeout_ms || DEFAULT_TIMEOUT_MS;
 
-    const headers = { 'Content-Type': 'application/json' };
-    const apiKey = settings.summarize_vllm_api_key;
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const body = {
+        ..._buildBody(prompt, model, maxTokens, temperature),
+        chat_completion_source: 'custom',
+        custom_url: baseUrl,
+    };
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(_buildBody(prompt, model, maxTokens, temperature)),
+        headers: getRequestHeaders(),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
     });
 
@@ -404,7 +409,7 @@ async function _callVLLM(prompt, settings, windowIndex) {
         const errText = await response.text().catch(() => response.statusText);
         if (response.status === 401 || response.status === 403) {
             throw new EventBaseFatalError(
-                `EventBase: vLLM authentication failed (${response.status}). Check your API key.`,
+                `EventBase: vLLM authentication failed (${response.status}). Check your API key in Core → LLM Summarization settings.`,
                 'invalid_api_key',
             );
         }

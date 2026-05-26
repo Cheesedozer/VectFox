@@ -347,16 +347,11 @@ export async function checkQdrantBackend(settings) {
                 category: 'infrastructure'
             };
         }
-        if (!settings.qdrant_api_key) {
-            return {
-                name: backendName,
-                status: 'fail',
-                message: 'Qdrant Cloud API key not configured',
-                fixable: true,
-                fixAction: 'configure_qdrant',
-                category: 'infrastructure'
-            };
-        }
+        // Post-2026-05-26: the Qdrant API key lives in ST's secret_state slot
+        // 'api_key_qdrant' (custom slot, not surfaced in client-side
+        // secret_state). We can't presence-check it from JS — let the plugin's
+        // /backend/init/qdrant handler surface "auth failed" or similar if
+        // the key is genuinely missing. Skipping the explicit check here.
     } else {
         if (!settings.qdrant_host || !settings.qdrant_port) {
             return {
@@ -376,7 +371,12 @@ export async function checkQdrantBackend(settings) {
             host: settings.qdrant_host || 'localhost',
             port: settings.qdrant_port || 6333,
             url: isCloud ? settings.qdrant_url : null,
-            apiKey: settings.qdrant_api_key || null,
+            // Plugin resolves the key server-side from secret_state slot
+            // 'api_key_qdrant' (post-2026-05-26 migration). The transition-
+            // fallback for users still on plaintext is handled in
+            // backends/qdrant.js's normal init path, not here — diagnostics
+            // run independently and shouldn't drag the legacy reader along.
+            apiKey: null,
         };
 
         const initResponse = await fetch('/api/plugins/similharity/backend/init/qdrant', {

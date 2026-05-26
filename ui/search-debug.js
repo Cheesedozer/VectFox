@@ -14,6 +14,8 @@
  * ============================================================================
  */
 
+import StringUtils from '../utils/string-utils.js';
+
 // ============================================================================
 // STATE
 // ============================================================================
@@ -225,7 +227,7 @@ function createModalHtml(data, historyIndex = 0) {
                 return `
                     <button class="vectfox-debug-history-tab ${isActive ? 'active' : ''} ${statusClass}"
                             data-history-index="${idx}"
-                            title="${escapeHtml(q.query.substring(0, 100))}">
+                            title="${StringUtils.escapeHtml(q.query.substring(0, 100))}">
                         <span class="tab-num">#${idx + 1}</span>
                         <span class="tab-injected">${injectedCount}</span>
                     </button>
@@ -262,9 +264,9 @@ function createModalHtml(data, historyIndex = 0) {
                             <i class="fa-solid fa-chevron-down vectfox-debug-expand-icon"></i>
                         </div>
                         <div class="vectfox-debug-card-body">
-                            <div class="vectfox-debug-query-preview">${escapeHtml(queryPreview)}</div>
+                            <div class="vectfox-debug-query-preview">${StringUtils.escapeHtml(queryPreview)}</div>
                             <div class="vectfox-debug-query-full" style="display: none;">
-                                <pre>${escapeHtml(data.query)}</pre>
+                                <pre>${StringUtils.escapeHtml(data.query)}</pre>
                             </div>
                         </div>
                     </div>
@@ -513,13 +515,13 @@ function renderStageChunks(chunks, stageName, data) {
                     <i class="fa-solid fa-chevron-down vectfox-debug-chunk-expand-icon"></i>
                 </div>
                 ${scoreBreakdown}
-                <div class="vectfox-debug-chunk-text-preview">${escapeHtml(textPreview)}</div>
+                <div class="vectfox-debug-chunk-text-preview">${StringUtils.escapeHtml(textPreview)}</div>
 
                 <!-- Expanded content (hidden by default) -->
                 <div class="vectfox-debug-chunk-expanded" style="display: none;">
                     <div class="vectfox-debug-chunk-fulltext">
                         <div class="vectfox-debug-chunk-fulltext-label">Full Text:</div>
-                        <pre>${escapeHtml(chunk.text || '(no text)')}</pre>
+                        <pre>${StringUtils.escapeHtml(chunk.text || '(no text)')}</pre>
                     </div>
                     <div class="vectfox-debug-chunk-meta-full">
                         <div class="vectfox-debug-meta-grid">
@@ -794,7 +796,7 @@ function renderInjectionVerification(data) {
                 </div>
                 <div class="vectfox-verification-text-wrapper" style="display: none;">
                     <div class="vectfox-verification-text-label">Actual Injected Text:</div>
-                    <pre class="vectfox-verification-text">${escapeHtml(text)}</pre>
+                    <pre class="vectfox-verification-text">${StringUtils.escapeHtml(text)}</pre>
                 </div>
             </div>
         </div>
@@ -1176,16 +1178,6 @@ function getTimeAgo(timestamp) {
     return new Date(timestamp).toLocaleString();
 }
 
-/**
- * Escapes HTML special characters
- */
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 // ============================================================================
 // DEVELOPER TRACE LOG
 // ============================================================================
@@ -1225,9 +1217,9 @@ function renderTraceLog(data) {
                             <div class="vectfox-debug-trace-entry ${stageClass}">
                                 <div class="vectfox-debug-trace-time">+${relTime}ms</div>
                                 <div class="vectfox-debug-trace-stage">${entry.stage}</div>
-                                <div class="vectfox-debug-trace-action">${escapeHtml(entry.action)}</div>
+                                <div class="vectfox-debug-trace-action">${StringUtils.escapeHtml(entry.action)}</div>
                                 ${detailsJson !== '{}' ? `
-                                    <pre class="vectfox-debug-trace-details">${escapeHtml(detailsJson)}</pre>
+                                    <pre class="vectfox-debug-trace-details">${StringUtils.escapeHtml(detailsJson)}</pre>
                                 ` : ''}
                             </div>
                         `;
@@ -1278,7 +1270,7 @@ function renderChunkFates(data) {
                                     </span>
                                 </div>
                                 ${isDropped && fate.finalReason ? `
-                                    <div class="vectfox-debug-fate-reason">${escapeHtml(fate.finalReason)}</div>
+                                    <div class="vectfox-debug-fate-reason">${StringUtils.escapeHtml(fate.finalReason)}</div>
                                 ` : ''}
                                 <div class="vectfox-debug-fate-journey">
                                     ${fate.stages.map(s => `

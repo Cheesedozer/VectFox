@@ -5,13 +5,31 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock the backend-manager
+// SillyTavern host modules transitively pulled in via core/hybrid-search.js
+// → core/collection-ids.js → ../../../../extensions.js, etc. Without these
+// mocks vite's import-analysis fails and the whole file refuses to load.
+vi.mock('../../../../extensions.js', () => ({
+    extension_settings: { vectfox: {} },
+    getContext: vi.fn(() => ({ chat: [], characterId: null })),
+}));
+vi.mock('../../../../../script.js', () => ({
+    getRequestHeaders: vi.fn(() => ({ 'Content-Type': 'application/json' })),
+    eventSource: { on: vi.fn(), removeListener: vi.fn() },
+    event_types: {},
+    saveSettings: vi.fn(),
+}));
+
+// Mock the backend-manager (both helpers — hybrid-search.js uses both)
 vi.mock('../backends/backend-manager.js', () => ({
     getBackend: vi.fn(),
+    getBackendForCollection: vi.fn(),
 }));
 
 // Mock the bm25-scorer - provide a working implementation
 vi.mock('../core/bm25-scorer.js', () => ({
+    // porterStemmer: identity function in tests (real one stems English Latin tokens).
+    // hybrid-search.js calls it on every query token after extraction.
+    porterStemmer: vi.fn((token) => token),
     createBM25Scorer: vi.fn((documents, options) => {
         // Simple mock BM25 scorer that scores based on query term overlap
         const docs = documents.map(d => {
@@ -728,7 +746,8 @@ describe('hybridSearch', () => {
                 vectorWeight: 0.7,
                 textWeight: 0.3,
                 rrfK: 40,
-            })
+            }),
+            expect.any(Object)  // 6th arg: filters (added after this test was written)
         );
     });
 
@@ -758,7 +777,8 @@ describe('hybridSearch', () => {
                 vectorWeight: 0.6,
                 textWeight: 0.4,
                 rrfK: 50,
-            })
+            }),
+            expect.any(Object)  // 6th arg: filters (added after this test was written)
         );
     });
 

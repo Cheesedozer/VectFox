@@ -209,7 +209,54 @@ export function buildEmbedText(event) {
     if (event.items?.length) parts.push(`ITEMS: ${event.items.join(', ')}`);
     if (event.keywords?.length) parts.push(`KEYS: ${event.keywords.join(', ')}`);
     if (event.open_threads?.length) parts.push(`THREADS: ${event.open_threads.join(', ')}`);
+    // Note: `factions` is INTENTIONALLY excluded from embed text — faction
+    // names tend to be generic strings ("Empire", "Council", "Rebels") that
+    // would dominate keyword recall and pollute vector similarity with
+    // matches that don't reflect actual narrative relevance. Factions are
+    // still collected by the validator + stored in payload, and AgentMode
+    // can filter by them via the `factions_any` planner field. Treat
+    // factions as a STRUCTURED filter signal, not a text-retrieval signal.
     return parts.join('\n');
+}
+
+const _ARRAY_KEYS = new Set(['CHARS', 'LOCS', 'ITEMS', 'KEYS', 'THREADS']);
+const _KEY_MAP = { TIME: 'DateTime', CAUSE: 'cause', RESULT: 'result', CHARS: 'characters', LOCS: 'locations', ITEMS: 'items', KEYS: 'keywords', THREADS: 'open_threads' };
+
+/**
+ * Reverses buildEmbedText — parses a stored embed text string back into
+ * EventBase content fields. Used by the native ST backend path where Vectra
+ * only stores {hash, text, index} and structured metadata is unavailable.
+ *
+ * Recovers: event_type, summary, DateTime, cause, result, characters,
+ *           locations, items, keywords, open_threads.
+ * Does NOT recover: importance, message_order, event_id, should_persist
+ *                   (those were never written into the embed text).
+ * @param {string} text
+ * @returns {object}
+ */
+export function parseEmbedText(text) {
+    if (!text) return {};
+    const lines = text.split('\n');
+    const result = {};
+
+    const firstLine = lines[0] || '';
+    const typeMatch = firstLine.match(/^\[([^\]]+)\]\s*(.*)/s);
+    if (typeMatch) {
+        result.event_type = typeMatch[1].trim();
+        result.summary = typeMatch[2].trim();
+    }
+
+    for (let i = 1; i < lines.length; i++) {
+        const colonIdx = lines[i].indexOf(':');
+        if (colonIdx < 0) continue;
+        const key = lines[i].slice(0, colonIdx).trim();
+        const val = lines[i].slice(colonIdx + 1).trim();
+        const field = _KEY_MAP[key];
+        if (!field) continue;
+        result[field] = _ARRAY_KEYS.has(key) ? val.split(', ').filter(Boolean) : val;
+    }
+
+    return result;
 }
 
 // ---------------------------------------------------------------------------

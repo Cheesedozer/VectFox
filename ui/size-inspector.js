@@ -14,11 +14,12 @@
  * ============================================================================
  */
 
-import { getRequestHeaders } from "../../../../../script.js";
 import { extension_settings } from "../../../../extensions.js";
 import { loadAllCollections } from "../core/collection-loader.js";
 import { buildRegistryKey } from "../core/collection-ids.js";
+import { listChunks } from "../core/core-vector-api.js";
 import { icons } from "./icons.js";
+import StringUtils from "../utils/string-utils.js";
 
 // Cache of last scan so the detail view can reuse already-fetched items
 // without re-hitting the backend.
@@ -148,7 +149,7 @@ async function runScan() {
         // discovery, dedup of (backend, collectionId) collisions, scope migration,
         // and per-entry source/model resolution. Each returned entry already
         // carries { id, registryKey, backend, source, model, chunkCount } — no
-        // local fetch + dedup needed here. See dev_helper.md §14.
+        // local fetch + dedup needed here. See Doc/collection_helper.md.
         const settings = extension_settings?.vectfox;
         if (!settings) {
             throw new Error("VectFox settings not initialized");
@@ -174,7 +175,6 @@ async function runScan() {
             // (source, model) on disk, so forwarding the discovered values is
             // mandatory — defaults would silently hit an empty new index.
             const source = entry.source || "transformers";
-            const model = entry.model || "";
             const registryKey = entry.registryKey || buildRegistryKey(collectionId, backend);
             if (!collectionId) {
                 done++;
@@ -182,17 +182,13 @@ async function runScan() {
             }
 
             try {
-                const r = await fetch("/api/plugins/similharity/chunks/list", {
-                    method: "POST",
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({ backend, collectionId, source, model, limit: 5000 }),
-                });
-
-                let items = [];
-                if (r.ok) {
-                    const data = await r.json();
-                    items = data.items || [];
-                }
+                const entrySettings = {
+                    ...settings,
+                    vector_backend: backend,
+                    source,
+                };
+                const data = await listChunks(collectionId, entrySettings, { limit: 5000 });
+                const items = data.items || [];
 
                 const row = summarize(collectionId, backend, items, registryKey);
                 summaries.push(row);
@@ -267,14 +263,14 @@ function renderSummaryRows(rows) {
     for (const r of rows) {
         const cls = r.error ? "error" : (r.count > 0 ? "clickable" : "");
         $tbody.append(`
-            <tr class="${cls}" data-key="${escapeAttr(r.key)}">
-                <td class="collection-cell" title="${escapeAttr(r.collectionId)}">${escapeHtml(truncateMid(r.collectionId, 60))}</td>
-                <td>${escapeHtml(r.backend)}</td>
+            <tr class="${cls}" data-key="${StringUtils.escapeHtml(r.key)}">
+                <td class="collection-cell" title="${StringUtils.escapeHtml(r.collectionId)}">${StringUtils.escapeHtml(truncateMid(r.collectionId, 60))}</td>
+                <td>${StringUtils.escapeHtml(r.backend)}</td>
                 <td class="num">${r.count}</td>
                 <td class="num">${r.maxChars}</td>
                 <td class="num">${r.avgChars}</td>
                 <td class="num">${r.totalKB}</td>
-                <td class="preview-cell" title="${escapeAttr(r.worstPreview)}">${escapeHtml(r.worstPreview.slice(0, 60))}</td>
+                <td class="preview-cell" title="${StringUtils.escapeHtml(r.worstPreview)}">${StringUtils.escapeHtml(r.worstPreview.slice(0, 60))}</td>
             </tr>
         `);
     }
@@ -310,8 +306,8 @@ function showCollectionDetail(key) {
             <tr>
                 <td class="num">${i + 1}</td>
                 <td class="num">${r.chars}</td>
-                <td class="hash-cell">${escapeHtml(String(r.hash))}</td>
-                <td class="preview-cell" title="${escapeAttr(r.preview)}">${escapeHtml(r.preview.slice(0, 120))}</td>
+                <td class="hash-cell">${StringUtils.escapeHtml(String(r.hash))}</td>
+                <td class="preview-cell" title="${StringUtils.escapeHtml(r.preview)}">${StringUtils.escapeHtml(r.preview.slice(0, 120))}</td>
             </tr>
         `);
     }
@@ -321,16 +317,6 @@ function showCollectionDetail(key) {
 }
 
 // ---------- small helpers ----------
-
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-    }[c]));
-}
-
-function escapeAttr(s) {
-    return escapeHtml(s);
-}
 
 function truncateMid(s, max) {
     s = String(s);

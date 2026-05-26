@@ -16,7 +16,10 @@ import { describe, it, expect, vi } from 'vitest';
 // touch ../../../../extensions.js or any other SillyTavern path.
 vi.mock('../core/text-cleaning.js', () => ({
     cleanText: vi.fn((t) => (t ?? '').trim()),
-    cleanMessages: vi.fn((msgs) => msgs),
+    cleanContentOrNull: vi.fn((t) => {
+        const trimmed = (t ?? '').trim();
+        return trimmed ? trimmed : null;
+    }),
 }));
 
 import { prepareLorebookContent } from '../core/lorebook-content-preparer.js';

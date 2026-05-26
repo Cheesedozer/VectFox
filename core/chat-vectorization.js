@@ -1364,8 +1364,12 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
             let keywordMatchCount = 0;
 
             for (const chunk of chunks) {
-                // Get chunk keywords from metadata
-                const chunkKeywords = (chunk.metadata?.keywords || [])
+                // Get chunk keywords — prefer vectra/qdrant metadata (plugin path),
+                // fall back to extension_settings (saved during insert for no-plugin users).
+                const rawKeywords = chunk.metadata?.keywords?.length > 0
+                    ? chunk.metadata.keywords
+                    : (getChunkMetadata(String(chunk.hash))?.keywords || []);
+                const chunkKeywords = rawKeywords
                     .map(kw => (typeof kw === 'object' ? kw.text : kw)?.toLowerCase())
                     .filter(Boolean);
 

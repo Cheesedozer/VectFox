@@ -5,8 +5,6 @@
  * Note: Tests that require mocking backend classes are limited due to ESM module
  * constraints. The focus here is on the metrics tracking functionality which
  * doesn't require mocking backend implementations.
- *
- * @vitest-environment jsdom
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

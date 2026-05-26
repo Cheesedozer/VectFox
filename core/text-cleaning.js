@@ -48,7 +48,7 @@ export const BUILTIN_PATTERNS = {
     strip_hidden_divs: {
         id: 'strip_hidden_divs',
         name: 'Strip Hidden Divs',
-        pattern: '<div[^>]*style="[^"]*display:\\s*none[^"]*"[^>]*>[\\s\\S]*?(?:</div>|$)',
+        pattern: '<div[^>]*style="[^"]*display:\\s*none[^"]*"[^>]*>[\\s\\S]*?</div>',
         replacement: '',
         flags: 'gi',
         builtin: true,
@@ -271,6 +271,44 @@ function applyPattern(text, pattern) {
 }
 
 /**
+ * Cleans text and returns null when nothing meaningful survives.
+ *
+ * Canonical entry point for content-preparation pipelines (lorebook,
+ * character, document, URL, wiki, YouTube) — anywhere the pattern is
+ * "clean a piece of content, then drop the unit entirely if nothing
+ * is left." Bundles the clean + emptiness-check into one call so
+ * callers can't accidentally skip the check.
+ *
+ * Returns null when:
+ *   - input is falsy
+ *   - input is not a string
+ *   - cleaned result has zero non-whitespace characters
+ *
+ * Why a separate function vs. an `if (!cleanText(x).trim())` check at
+ * each call site: the 2026-05-24 lorebook regression where a stripped
+ * `<Intimacy_System>...</Intimacy_System>` block left an empty entry
+ * whose `# <comment>` header + auto-appended `[KEYWORDS: ...]` still
+ * built a "valid-looking" chunk. The fix needed an emptiness re-check
+ * after cleanText — and every other content pipeline (character per-
+ * field, document, URL, wiki, YouTube, wiki per-page) has the exact
+ * same shape, the exact same bug, just with different surrounding
+ * metadata. Centralizing the gate stops the pattern from drifting.
+ *
+ * DOES NOT replace `cleanText`. Use the original when you want the
+ * cleaned string regardless of whether it's empty (e.g. per-message
+ * cleaning fed to an LLM extractor like eventbase-extractor.js, where
+ * an empty message just produces no events and isn't a chunk leak).
+ *
+ * @param {string} text - raw content
+ * @returns {string|null} cleaned text, or null if empty/whitespace-only
+ */
+export function cleanContentOrNull(text) {
+    if (typeof text !== 'string' || !text) return null;
+    const cleaned = cleanText(text);
+    return cleaned && cleaned.trim() ? cleaned : null;
+}
+
+/**
  * Cleans text using all active patterns
  * @param {string} text - Text to clean
  * @returns {string} Cleaned text
@@ -292,25 +330,9 @@ export function cleanText(text) {
     return result;
 }
 
-/**
- * Cleans an array of messages
- * @param {Array<object>} messages - Messages with .mes or .text property
- * @returns {Array<object>} Messages with cleaned text
- */
-export function cleanMessages(messages) {
-    if (!Array.isArray(messages)) return messages;
-
-    return messages.map(msg => {
-        const cleaned = { ...msg };
-        if (cleaned.mes) {
-            cleaned.mes = cleanText(cleaned.mes);
-        }
-        if (cleaned.text) {
-            cleaned.text = cleanText(cleaned.text);
-        }
-        return cleaned;
-    });
-}
+// cleanMessages removed 2026-05-24 — its only consumer was prepareChatContent
+// in content-vectorization.js, which is itself gone. EventBase's per-message
+// cleaning happens inline in eventbase-extractor.js via cleanText() directly.
 
 // ============================================================================
 // CUSTOM PATTERN MANAGEMENT
@@ -407,16 +429,48 @@ export function exportPatterns() {
     return JSON.stringify(settings.customPatterns || [], null, 2);
 }
 
+/** Length cap on imported regex patterns. Legitimate patterns are well
+ * under 200 chars; 300 leaves headroom without restricting normal use. */
+const MAX_IMPORTED_PATTERN_LEN = 300;
+
+/** Catastrophic-backtracking motifs commonly found in ReDoS payloads:
+ *  - nested quantifier: (X+)+ or (X*)* — exponential on inputs that
+ *    can be split multiple ways
+ *  - quantified alternation with overlapping branches: (X|X)+ — same
+ *    class of exponential ambiguity
+ * These heuristics intentionally don't sweep up legitimate patterns
+ * like `(foo)+` (single non-quantified group, then quantifier). */
+const REDOS_MOTIF_RE = /\([^)]*[+*][^)]*\)\s*[+*]|\([^)]*\|[^)]*\)\s*[+*]/;
+
+/**
+ * Validate an imported pattern string for length + ReDoS shape before
+ * it reaches `new RegExp(...)`. Returns { ok: true } if safe to import,
+ * or { ok: false, reason: string } if it should be skipped.
+ */
+function _validateImportedPattern(pattern) {
+    if (typeof pattern !== 'string') {
+        return { ok: false, reason: 'pattern is not a string' };
+    }
+    if (pattern.length > MAX_IMPORTED_PATTERN_LEN) {
+        return { ok: false, reason: `exceeds ${MAX_IMPORTED_PATTERN_LEN} char limit (got ${pattern.length})` };
+    }
+    if (REDOS_MOTIF_RE.test(pattern)) {
+        return { ok: false, reason: 'matches a catastrophic-backtracking motif (nested quantifier or quantified alternation) — add manually if intended' };
+    }
+    return { ok: true };
+}
+
 /**
  * Imports patterns from JSON (supports both pattern arrays and full templates)
  * @param {string} json - JSON string of patterns or template
- * @returns {{success: boolean, count: number, isTemplate?: boolean, templateName?: string, error?: string}}
+ * @returns {{success: boolean, count: number, isTemplate?: boolean, templateName?: string, error?: string, warnings?: string[]}}
  */
 export function importPatterns(json) {
     try {
         const data = JSON.parse(json);
         const settings = getCleaningSettings();
         settings.customPatterns = settings.customPatterns || [];
+        const warnings = [];
 
         // Check if this is a full template (has preset/enabledBuiltins/customPatterns)
         if (data.customPatterns && !Array.isArray(data)) {
@@ -431,6 +485,12 @@ export function importPatterns(json) {
             let count = 0;
             for (const pattern of (data.customPatterns || [])) {
                 if (!pattern.pattern) continue;
+
+                const validation = _validateImportedPattern(pattern.pattern);
+                if (!validation.ok) {
+                    warnings.push(`Pattern "${pattern.name || '(unnamed)'}" skipped: ${validation.reason}`);
+                    continue;
+                }
 
                 const exists = settings.customPatterns.some(p => p.pattern === pattern.pattern);
                 if (!exists) {
@@ -448,7 +508,7 @@ export function importPatterns(json) {
             }
 
             saveCleaningSettings(settings);
-            return { success: true, count, isTemplate: true, templateName: data.name || 'Unnamed Template' };
+            return { success: true, count, warnings, isTemplate: true, templateName: data.name || 'Unnamed Template' };
         }
 
         // Array format (just patterns)
@@ -459,6 +519,12 @@ export function importPatterns(json) {
         let count = 0;
         for (const pattern of data) {
             if (!pattern.pattern) continue;
+
+            const validation = _validateImportedPattern(pattern.pattern);
+            if (!validation.ok) {
+                warnings.push(`Pattern "${pattern.name || '(unnamed)'}" skipped: ${validation.reason}`);
+                continue;
+            }
 
             // Check for duplicates by pattern string
             const exists = settings.customPatterns.some(p => p.pattern === pattern.pattern);
@@ -477,7 +543,7 @@ export function importPatterns(json) {
         }
 
         saveCleaningSettings(settings);
-        return { success: true, count };
+        return { success: true, count, warnings };
 
     } catch (e) {
         return { success: false, count: 0, error: e.message };

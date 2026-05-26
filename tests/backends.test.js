@@ -62,6 +62,7 @@ vi.mock('../core/providers.js', () => ({
         };
         return modelFields[source] || null;
     }),
+    getModelFromSettings: vi.fn(() => 'test-model'),
 }));
 
 // Mock constants.js

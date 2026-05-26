@@ -28,6 +28,9 @@ import { extension_settings, getContext } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
 import { getChatUUID } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
+import { getOpenRouterApiKey } from '../core/api-keys.js';
+import StringUtils from '../utils/string-utils.js';
+import { resolveEffectiveSettings } from '../core/content-vectorization.js';
 import { renderCollections } from './database-browser.js';
 import { buildArchiveEventCollectionId } from '../core/collection-ids.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../../popup.js';
@@ -1444,7 +1447,7 @@ async function populateSourceSelect(type) {
                 if (context?.characterId) {
                     const currentChar = characters.find(c => c.avatar === context.characterId);
                     if (currentChar) {
-                        select.append(`<option value="${currentChar.avatar}" selected>📌 ${currentChar.name} (current)</option>`);
+                        select.append(`<option value="${StringUtils.escapeHtml(currentChar.avatar)}" selected>📌 ${StringUtils.escapeHtml(currentChar.name)} (current)</option>`);
                     }
                 }
 
@@ -1452,7 +1455,7 @@ async function populateSourceSelect(type) {
                 characters.forEach(char => {
                     // Skip if already added as current
                     if (char.avatar === context?.characterId) return;
-                    select.append(`<option value="${char.avatar}">${char.name}</option>`);
+                    select.append(`<option value="${StringUtils.escapeHtml(char.avatar)}">${StringUtils.escapeHtml(char.name)}</option>`);
                 });
             } else {
                 select.append('<option value="" disabled>No characters found</option>');
@@ -2255,6 +2258,22 @@ async function previewChunks() {
         return;
     }
 
+    // EventBase is the exclusive chat pipeline — chat content is processed
+    // by LLM event extraction at vectorize time, not chunked synchronously,
+    // so there's nothing meaningful to preview. Mirrors the production gate
+    // at startVectorization() so chat never reaches the chunk-prepare path.
+    if (currentContentType === 'chat') {
+        $('.vectfox-cv-preview-section').show();
+        $('#vectfox_cv_preview_content').html(
+            '<div class="vectfox-cv-info">' +
+            'Chat content is processed by EventBase (LLM event extraction) ' +
+            'rather than chunked. Click <strong>Vectorize</strong> to run extraction — ' +
+            'there is no synchronous chunk preview for chat.' +
+            '</div>'
+        );
+        return;
+    }
+
     // Show preview section
     $('.vectfox-cv-preview-section').show();
     const container = $('#vectfox_cv_preview_content');
@@ -2304,7 +2323,7 @@ async function previewChunks() {
                     return `
                     <div class="vectfox-cv-preview-chunk">
                         <span class="vectfox-cv-preview-num">#${i + 1}</span>
-                        <span class="vectfox-cv-preview-text">${escapeHtml(chunkText.substring(0, 150))}${chunkText.length > 150 ? '...' : ''}</span>
+                        <span class="vectfox-cv-preview-text">${StringUtils.escapeHtml(chunkText.substring(0, 150))}${chunkText.length > 150 ? '...' : ''}</span>
                         <span class="vectfox-cv-preview-size">${chunkText.length} chars</span>
                     </div>
                 `}).join('')}
@@ -2440,11 +2459,11 @@ async function startContinueVectorization() {
 
     // currentSettings only carries content-type defaults — merge global VECTFOX settings
     // so the user's summarize_model / API key (set in Core → LLM Summarization) is visible.
-    const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+    const mergedSettings = resolveEffectiveSettings(currentSettings);
     console.log('[VectFox] LLM config check (vectorize-content):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!mergedSettings.summarize_openrouter_api_key,
+        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
@@ -2484,7 +2503,7 @@ async function startContinueVectorization() {
         // Merge global VECTFOX settings (vector_backend, source, model, etc.) into currentSettings,
         // which by itself is only the content-type defaults. Without this, the collection-ID builder
         // sees `settings.vector_backend` as undefined and drops the backend segment from the name.
-        const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+        const mergedSettings = resolveEffectiveSettings(currentSettings);
         const result = await vectorizeContent({
             contentType: currentContentType,
             source: source,
@@ -2708,11 +2727,11 @@ async function startVectorization() {
     // make LLM calls that share the summarize_* settings. Fail fast with a clear message
     // rather than letting it blow up mid-ingest. Merge global settings so the user's
     // summarize_model / API key set in Core → LLM Summarization is visible here.
-    const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+    const mergedSettings = resolveEffectiveSettings(currentSettings);
     console.log('[VectFox] LLM config check (start-vectorization):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!mergedSettings.summarize_openrouter_api_key,
+        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
@@ -2777,7 +2796,7 @@ async function startVectorization() {
         const { vectorizeContent } = await import('../core/content-vectorization.js');
 
         // Merge global VECTFOX settings (vector_backend, source, model, etc.) into currentSettings.
-        const mergedSettings = { ...(extension_settings.vectfox || {}), ...currentSettings };
+        const mergedSettings = resolveEffectiveSettings(currentSettings);
         const result = await vectorizeContent({
             contentType: currentContentType,
             source: source,
@@ -2825,15 +2844,6 @@ async function startVectorization() {
         activeVectorizeAbortController = null;
         updateVectorizeButtonState(false);
     }
-}
-
-/**
- * Escapes HTML entities
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // ============================================================================

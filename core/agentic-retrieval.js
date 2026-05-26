@@ -23,6 +23,8 @@ import { getContext } from '../../../../extensions.js';
 import { retrieveEvents } from './eventbase-retrieval.js';
 import { queryCollection } from './core-vector-api.js';
 import { buildPlannerUserMessage, getAgenticPlannerPrompt } from './prompts-i18n.js';
+import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
+import { getRequestHeaders } from '../../../../../script.js';
 
 // ============================================================================
 // Public API
@@ -279,7 +281,14 @@ export function _resolveAgenticLLMConfig(settings = {}) {
     }
 
     if (provider === 'openrouter') {
-        const apiKey = (settings.agentic_retrieval_openrouter_api_key || settings.summarize_openrouter_api_key || '').trim();
+        // Single shared OpenRouter key (SECRET_KEYS.OPENROUTER). The
+        // AgentMode-specific "override" slot was removed when the
+        // architecture pivoted to one key per provider — see
+        // core/api-keys.js docstring for rationale. The UI's
+        // "(empty → inherit summarize key)" placeholder is now a
+        // no-op visual hint; all three inputs (embedding/summarize/
+        // agentic) write the same SECRET_KEYS.OPENROUTER slot.
+        const apiKey = getOpenRouterApiKey(settings);
         if (!apiKey) {
             return { ok: false, reason: 'missing_openrouter_api_key' };
         }
@@ -291,7 +300,13 @@ export function _resolveAgenticLLMConfig(settings = {}) {
         if (!vllmUrl) {
             return { ok: false, reason: 'missing_vllm_url' };
         }
-        const apiKey = (settings.agentic_retrieval_vllm_api_key || settings.summarize_vllm_api_key || '').trim();
+        // Key lives in SECRET_KEYS.CUSTOM (masked client-side). getCustomApiKey
+        // returns the masked presence indicator; real key is read server-side
+        // by ST's chat-completions proxy. Same shared slot as summarize/agent.
+        const apiKey = getCustomApiKey(settings);
+        if (!apiKey) {
+            return { ok: false, reason: 'missing_vllm_api_key' };
+        }
         return { ok: true, provider, model, vllmUrl, apiKey };
     }
 
@@ -314,17 +329,24 @@ async function _callPlanner({ systemPrompt, userMessage, llmCfg, timeoutMs }) {
         response_format: { type: 'json_object' },
     };
 
-    let endpoint, headers;
+    let endpoint, headers, requestBody;
     if (llmCfg.provider === 'openrouter') {
-        endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${llmCfg.apiKey}`,
-        };
+        // Route through ST's chat-completions proxy. llmCfg.apiKey here is the
+        // MASKED placeholder (presence indicator only); the real key is read
+        // server-side via readSecret(SECRET_KEYS.OPENROUTER). See
+        // summarizer._callOpenRouter for the full rationale.
+        endpoint = '/api/backends/chat-completions/generate';
+        headers = getRequestHeaders();
+        requestBody = { chat_completion_source: 'openrouter', ...body };
     } else if (llmCfg.provider === 'vllm') {
-        endpoint = `${llmCfg.vllmUrl.replace(/\/$/, '')}/v1/chat/completions`;
-        headers = { 'Content-Type': 'application/json' };
-        if (llmCfg.apiKey) headers['Authorization'] = `Bearer ${llmCfg.apiKey}`;
+        // Route through ST's chat-completions proxy with `chat_completion_source:
+        // 'custom'`. ST reads the real key server-side from SECRET_KEYS.CUSTOM
+        // and forwards to llmCfg.vllmUrl. llmCfg.apiKey here is the MASKED
+        // presence value — never sent over the wire. Same pattern as the
+        // openrouter branch above.
+        endpoint = '/api/backends/chat-completions/generate';
+        headers = getRequestHeaders();
+        requestBody = { chat_completion_source: 'custom', custom_url: llmCfg.vllmUrl, ...body };
     } else {
         throw new Error(`Unknown provider: ${llmCfg.provider}`);
     }
@@ -332,7 +354,7 @@ async function _callPlanner({ systemPrompt, userMessage, llmCfg, timeoutMs }) {
     const response = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(timeoutMs),
     });
 

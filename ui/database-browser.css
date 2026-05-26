@@ -236,7 +236,7 @@
     padding: 0 24px 20px 24px;
 }
 
-.vectfox-search-box input {
+.vectfox-search-box input[type="text"] {
     width: 100%;
     padding: 14px 18px;
     background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
@@ -248,11 +248,11 @@
     transition: all 0.2s ease;
 }
 
-.vectfox-search-box input::placeholder {
+.vectfox-search-box input[type="text"]::placeholder {
     color: color-mix(in srgb, var(--SmartThemeBodyColor) 45%, transparent);
 }
 
-.vectfox-search-box input:focus {
+.vectfox-search-box input[type="text"]:focus {
     outline: none;
     border-color: var(--vectfox-primary);
     background: color-mix(in srgb, var(--vectfox-primary) 8%, transparent);

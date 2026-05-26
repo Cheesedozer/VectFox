@@ -10,6 +10,8 @@
  * ============================================================================
  */
 
+import StringUtils from '../utils/string-utils.js';
+
 // ============================================================================
 // INTERNALS
 // ============================================================================
@@ -51,14 +53,6 @@ async function waitForPopupsClosed(maxWaitMs = 1500) {
     }
 }
 
-function escapeHtml(s) {
-    return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
 // ============================================================================
 // PUBLIC API
 // ============================================================================
@@ -92,7 +86,7 @@ export async function showLorebookRenameModal(mismatches) {
     const { callGenericPopup, POPUP_TYPE } = await import('../../../../popup.js');
 
     const list = mismatches
-        .map(m => `<li><code>${escapeHtml(m.sourceName)}</code></li>`)
+        .map(m => `<li><code>${StringUtils.escapeHtml(m.sourceName)}</code></li>`)
         .join('');
 
     const html = `

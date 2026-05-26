@@ -33,6 +33,7 @@ import { VectorBackend } from './backend-interface.js';
 import { getModelFromSettings } from '../core/providers.js';
 import { VECTOR_LIST_LIMIT } from '../core/constants.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
+import { getQdrantApiKey } from '../core/api-keys.js';
 
 const BACKEND_TYPE = 'qdrant';
 
@@ -65,7 +66,9 @@ function getPluginProviderParams(settings) {
                 ? settings.ollama_alt_endpoint_url
                 : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
             params.keep = !!settings.ollama_keep;
-            if (settings.ollama_api_key) params.apiKey = settings.ollama_api_key;
+            // No apiKey: ST has no ollama auth path. The setAdditionalHeadersByType
+            // call in ST's ollama-vectors.js is a no-op for ollama. The previous
+            // params.apiKey = getOllamaApiKey(...) line was dead code on both sides.
             break;
         case 'vllm':
             params.apiUrl = (settings.vllm_use_alt_endpoint
@@ -74,7 +77,9 @@ function getPluginProviderParams(settings) {
                 ?.replace(/\/$/, '')
                 .replace(/\/v1\/embeddings$/, '')
                 .replace(/\/embeddings$/, '');
-            if (settings.vllm_api_key) params.apiKey = settings.vllm_api_key;
+            // No apiKey passed: ST's vLLM embedding handler reads
+            // SECRET_KEYS.VLLM server-side via setAdditionalHeadersByType.
+            // Same rationale as backends/standard.js — see comment there.
             break;
         // case 'llamacpp': params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP]; break;
         // case 'koboldcpp': params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP]; break;
@@ -106,15 +111,23 @@ export class QdrantBackend extends VectorBackend {
         let config;
 
         if (settings.qdrant_use_cloud) {
-            // Cloud mode: use URL and API key
+            // Cloud mode: use URL. The API key is resolved server-side by the
+            // Similharity plugin from ST's secret_state slot 'api_key_qdrant'
+            // (post-2026-05-26 migration). Client sends apiKey:null and the
+            // plugin's /backend/init/qdrant handler reads the real key via
+            // readSecret() before passing config to qdrantBackend.initialize.
+            // For pre-migration users still on plaintext, getQdrantApiKey()
+            // returns the transition-fallback value — keep checking it so
+            // that flow doesn't break during the upgrade window.
+            const legacyPlaintext = getQdrantApiKey(settings);
             config = {
                 url: settings.qdrant_url || null,
-                apiKey: settings.qdrant_api_key || null,
+                apiKey: legacyPlaintext || null,
                 // Explicitly clear local settings to prevent conflicts
                 host: null,
                 port: null,
             };
-            console.log('VectFox: Initializing Qdrant Cloud:', config.url);
+            console.log('VectFox: Initializing Qdrant Cloud:', config.url, legacyPlaintext ? '(using legacy plaintext key — will migrate)' : '(plugin resolves key from secret_state)');
         } else {
             // Local mode: use host and port
             config = {
@@ -370,7 +383,14 @@ export class QdrantBackend extends VectorBackend {
         try {
             // Dynamic import to avoid circular dependency
             const { registerCollection } = await import('../core/collection-loader.js');
-            registerCollection(collectionId);
+            const { buildRegistryKey } = await import('../core/collection-ids.js');
+            // Use the canonical registry-key form ("backend:id") — see
+            // Doc/collection_helper.md (storage-key convention). Passing the
+            // bare collectionId here previously left a
+            // duplicate registry entry (B4) that the DB Browser then displayed as
+            // a phantom "VECTRA"-badged 0-chunk orphan, because no prefix defaults
+            // to the standard backend in the badge logic.
+            registerCollection(buildRegistryKey(collectionId, settings));
         } catch (e) {
             console.warn('VectFox: Failed to register collection after Qdrant insert:', e);
         }
@@ -471,7 +491,22 @@ export class QdrantBackend extends VectorBackend {
         return { hashes, metadata };
     }
 
-    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings) {
+    /**
+     * Multi-collection query.
+     *
+     * `queryVector = null` matches StandardBackend.queryMultipleCollections's
+     * signature. Without this parameter, the `if (queryVector)` reference
+     * below threw a ReferenceError (caught by the per-collection try/catch
+     * and silently swallowed as empty results) — see plans/review-fix.md C-1
+     * for the 2026-05 audit that surfaced this. The bug was qdrant-only;
+     * standard backend always had the param.
+     *
+     * Caller at core/core-vector-api.js:1071 passes queryVector as the 6th
+     * positional arg when the upstream path generated an embedding —
+     * without the parameter, the embedding was effectively ignored and
+     * every collection returned 0 results.
+     */
+    async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings, queryVector = null) {
         const results = {};
 
         for (const collectionId of collectionIds) {

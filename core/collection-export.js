@@ -27,12 +27,13 @@ import {
     saveChunkMetadata,
     getAllChunkMetadata,
     clearCollectionLock,
+    getEffectiveScope,
 } from './collection-metadata.js';
 import {
     registerCollection,
     getCollectionRegistry,
 } from './collection-loader.js';
-import { COLLECTION_PREFIXES, buildRegistryKey, parseCollectionId } from './collection-ids.js';
+import { COLLECTION_PREFIXES, buildRegistryKey, parseCollectionId, normalizeBackendForId, remapCollectionIdToBackend } from './collection-ids.js';
 import { getModelFromSettings } from './providers.js';
 import { encodeSparseVector } from './sparse-vector-encoder.js';
 import { progressTracker } from '../ui/progress-tracker.js';
@@ -42,25 +43,9 @@ import { getStringHash } from '../../../../utils.js';
 // HELPERS
 // ============================================================================
 
-/**
- * Resolve a usable scope for export/import metadata.
- *
- * Stored `scope` defaults to the literal string 'unknown' (truthy), so the
- * previous `storedScope || 'character'` idiom never fell through when the
- * collection had never been scoped — and worse, defaulted chat-type imports
- * to 'character', which prevents `saveActivation` from writing a chat lock.
- *
- * Order of preference:
- *   1. Stored scope if it's already a definitive value ('chat' / 'character').
- *   2. Parsed scope from the ID prefix (vf_eventbase_* → 'chat', vf_character_* → 'character').
- *   3. 'character' as a last-resort fallback (preserves previous behavior for unrecognized IDs).
- */
-function _inferScope(storedScope, collectionId) {
-    if (storedScope === 'chat' || storedScope === 'character') return storedScope;
-    const parsed = parseCollectionId(collectionId || '');
-    if (parsed.scope === 'chat' || parsed.scope === 'character') return parsed.scope;
-    return 'character';
-}
+// Scope resolution lives in core/collection-metadata.js as `getEffectiveScope`
+// (formerly duplicated here as a private `_inferScope`). Single source of truth
+// — see Doc/collection_helper.md (scope handling).
 
 // ============================================================================
 // CONSTANTS
@@ -75,48 +60,10 @@ export const EXPORT_FILE_EXTENSION = '.vectfox.json';
 /** Maximum chunks to export at once (for progress updates) */
 const EXPORT_BATCH_SIZE = 100;
 
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-/** Backend labels that appear in collection IDs (normalized form). */
-const _BACKEND_ID_LABELS = ['standard', 'qdrant'];
-
-/**
- * Returns the normalized backend label used inside collection IDs.
- * 'vectra' is the internal storage name but IDs always use 'standard'.
- * @param {string} backend - Value from settings.vector_backend or embedding.backend
- * @returns {string}
- */
-function _normalizeBackendLabel(backend) {
-    const b = String(backend || 'standard').toLowerCase();
-    return b === 'vectra' ? 'standard' : b;
-}
-
-/**
- * Replaces the backend segment in a collection ID so it matches the target backend.
- * Only touches IDs that use a known VectFox prefix + known backend label.
- * Returns the original ID unchanged for legacy / unknown formats.
- *
- * @param {string} collectionId - e.g. 'vf_eventbase_standard_rabbit_chat_uuid'
- * @param {string} targetBackend - normalized label, e.g. 'qdrant' or 'standard'
- * @returns {string}
- */
-function _remapCollectionIdToBackend(collectionId, targetBackend) {
-    for (const prefix of Object.values(COLLECTION_PREFIXES)) {
-        if (!collectionId.startsWith(prefix)) continue;
-        const rest = collectionId.slice(prefix.length); // e.g. 'standard_rabbit_chat_uuid'
-        for (const srcBackend of _BACKEND_ID_LABELS) {
-            if (rest.startsWith(srcBackend + '_')) {
-                return srcBackend === targetBackend
-                    ? collectionId
-                    : prefix + targetBackend + rest.slice(srcBackend.length);
-            }
-        }
-        break; // matched prefix but no backend segment — legacy ID
-    }
-    return collectionId; // unknown format — leave unchanged
-}
+// Backend-name helpers (normalize / remap) used to live here as private copies;
+// they're now canonicalized in core/collection-ids.js (`normalizeBackendForId`,
+// `remapCollectionIdToBackend`). Importing from there keeps a single source of
+// truth — see Doc/collection_helper.md (single-source-of-truth rule).
 
 // ============================================================================
 // EXPORT FUNCTIONS
@@ -252,7 +199,9 @@ export async function exportCollection(collectionId, settings, collectionInfo = 
                 name: collectionMeta.displayName || collectionId,
                 description: collectionMeta.description || '',
                 contentType: collectionMeta.contentType || detectContentType(collectionId),
-                scope: _inferScope(collectionMeta.scope, collectionId),
+                // collectionMeta.scope is auto-resolved by getCollectionMeta
+                // — see Doc/collection_helper.md (scope handling).
+                scope: collectionMeta.scope,
                 tags: collectionMeta.tags || [],
                 color: collectionMeta.color,
                 createdAt: collectionMeta.createdAt,
@@ -364,7 +313,8 @@ export async function exportMultipleCollections(collectionIds, settings) {
                     name: collectionMeta.displayName || collectionId,
                     description: collectionMeta.description || '',
                     contentType: collectionMeta.contentType || detectContentType(collectionId),
-                    scope: _inferScope(collectionMeta.scope, collectionId),
+                    // Auto-resolved by getCollectionMeta — see Doc/collection_helper.md.
+                    scope: collectionMeta.scope,
                     tags: collectionMeta.tags || [],
                     color: collectionMeta.color,
                     createdAt: collectionMeta.createdAt,
@@ -550,6 +500,7 @@ export function validateImportData(data, currentSettings = {}) {
 async function insertChunksWithVectors(collectionId, chunks, settings, onBatchProgress, abortSignal = null) {
     const backendName = settings.vector_backend || 'standard';
     const model = getModelFromSettings(settings);
+
     // Batch to avoid 413. Qdrant accepts up to 32 MB per request; live ingestion uses 100
     // (backends/qdrant.js). Per-batch overhead (collection metadata GETs + wait=true index)
     // dominates total time, so larger batches roughly amortize that cost. 100 chunks ≈ 5 MB
@@ -585,24 +536,45 @@ async function insertChunksWithVectors(collectionId, chunks, settings, onBatchPr
             throw Object.assign(new Error('Import stopped by user'), { name: 'AbortError' });
         }
         const batch = items.slice(i, i + BATCH_SIZE);
-        const response = await fetch('/api/plugins/similharity/chunks/insert', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                backend: backendName === 'standard' ? 'vectra' : backendName,
-                collectionId,
-                source: settings.source || 'transformers',
-                model,
-                items: batch,
-                // qdrant requires nativeSparse=true so the collection is created with text_sparse
-                // index (BM25 hybrid search). Without it, hybrid queries fail with "Not existing
-                // vector name error: text_sparse".
-                ...(backendName === 'qdrant' && {
-                    nativeSparse: true,
-                    cjkTokenizerMode: settings.cjk_tokenizer_mode || null,
+
+        let response;
+        if (backendName === 'standard') {
+            // Standard backend always uses native ST API — plugin is Qdrant-only
+            response = await fetch('/api/vector/insert', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    collectionId,
+                    source: settings.source || 'transformers',
+                    model,
+                    items: batch.map(item => ({
+                        hash: item.hash,
+                        text: item.text || '',
+                        index: item.index ?? 0,
+                    })),
+                    embeddings: Object.fromEntries(batch.map(item => [item.text || '', item.vector])),
                 }),
-            }),
-        });
+            });
+        } else {
+            response = await fetch('/api/plugins/similharity/chunks/insert', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    backend: backendName === 'standard' ? 'vectra' : backendName,
+                    collectionId,
+                    source: settings.source || 'transformers',
+                    model,
+                    items: batch,
+                    // qdrant requires nativeSparse=true so the collection is created with text_sparse
+                    // index (BM25 hybrid search). Without it, hybrid queries fail with "Not existing
+                    // vector name error: text_sparse".
+                    ...(backendName === 'qdrant' && {
+                        nativeSparse: true,
+                        cjkTokenizerMode: settings.cjk_tokenizer_mode || null,
+                    }),
+                }),
+            });
+        }
 
         if (!response.ok) {
             const error = await response.text();
@@ -650,11 +622,11 @@ export async function importCollection(exportData, settings, options = {}) {
 
     // Remap collection ID when the export's backend differs from the current backend.
     // e.g. vf_eventbase_standard_rabbit_... → vf_eventbase_qdrant_rabbit_... when importing to qdrant.
-    const targetBackendLabel = _normalizeBackendLabel(settings.vector_backend);
-    const collectionId = _remapCollectionIdToBackend(sourceId, targetBackendLabel);
+    const targetBackendLabel = normalizeBackendForId(settings.vector_backend);
+    const collectionId = remapCollectionIdToBackend(sourceId, targetBackendLabel);
     const wasRemapped = collectionId !== sourceId;
     if (wasRemapped) {
-        const srcLabel = _normalizeBackendLabel(exportData.embedding?.backend || '?');
+        const srcLabel = normalizeBackendForId(exportData.embedding?.backend || '?');
         console.log(`VectFox Import: remapped collection ID ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
     }
 
@@ -664,6 +636,58 @@ export async function importCollection(exportData, settings, options = {}) {
     if (validChunks.length === 0) {
         throw new Error('No valid chunks to import (all chunks missing text)');
     }
+
+    // ─── H-3 mitigations ──────────────────────────────────────────────────
+    // Reject imports that carry payloads which would cause passive harm
+    // post-import (regex ReDoS at every chat scan; NaN/Infinity vectors that
+    // produce NaN similarity scores and silently break retrieval).
+    //
+    // Length cap on triggers: catastrophic-backtracking patterns can be
+    // shorter than typical legitimate triggers — capping at 300 chars draws
+    // a generous line without restricting normal use. Shape heuristics
+    // intentionally NOT applied (e.g. `(.+)+` is a valid regex when the
+    // user actually means it).
+    const MAX_TRIGGER_LEN = 300;
+    const importedTriggers = exportData?.settings?.triggers;
+    if (Array.isArray(importedTriggers)) {
+        for (const t of importedTriggers) {
+            if (typeof t === 'string' && t.length > MAX_TRIGGER_LEN) {
+                throw new Error(`Trigger exceeds ${MAX_TRIGGER_LEN} char limit (got ${t.length}): "${t.slice(0, 80)}…"`);
+            }
+        }
+    }
+
+    // Vector validation: any non-finite component (NaN, ±Infinity) would
+    // pollute similarity calculations downstream. Reject the whole import
+    // if any vector contains one — better than silently storing broken
+    // vectors and watching retrieval scores come back as NaN. No magnitude
+    // bound — providers vary, normalization is provider-specific.
+    //
+    // Also enforce vector-dimension consistency across all chunks: Qdrant
+    // rejects dim-mismatch at insert time (reactive), but Standard/Vectra
+    // accepts whatever it's given, so a mixed-dim import would silently
+    // corrupt every subsequent cosine query with no clear error pointing
+    // at the cause. Catch it here once, with an actionable message.
+    let importDim = null;
+    for (let i = 0; i < validChunks.length; i++) {
+        const v = validChunks[i].vector;
+        if (!v || !Array.isArray(v)) continue; // skip — will be re-embedded
+        for (let j = 0; j < v.length; j++) {
+            if (!Number.isFinite(v[j])) {
+                throw new Error(`Chunk ${i} vector has non-finite component at index ${j} (value: ${v[j]}). Refusing to import.`);
+            }
+        }
+        if (importDim === null) {
+            importDim = v.length;
+        } else if (v.length !== importDim) {
+            throw new Error(
+                `Vector dimension mismatch: chunk 0 has dim=${importDim}, ` +
+                `chunk ${i} has dim=${v.length}. All vectors in an import must share one dimension. ` +
+                `Refusing to import.`
+            );
+        }
+    }
+    // ─── end H-3 mitigations ──────────────────────────────────────────────
 
     // Check if we can use pre-computed vectors
     const embeddingInfo = exportData.embedding || {};
@@ -763,7 +787,10 @@ export async function importCollection(exportData, settings, options = {}) {
                 ? undefined
                 : (sourceCollection.name || collectionId),
             description: sourceCollection.description || '',
-            scope: _inferScope(sourceCollection.scope, collectionId),
+            // Import side: sourceCollection comes from the export file payload
+            // (not getCollectionMeta), so its scope is untrusted. Use the
+            // canonical resolver explicitly. See Doc/collection_helper.md.
+            scope: getEffectiveScope(collectionId, sourceCollection),
             tags: sourceCollection.tags || [],
             color: sourceCollection.color,
             contentType: sourceCollection.contentType,
@@ -897,10 +924,22 @@ export async function importMultipleCollections(multiExportData, settings, optio
  */
 async function importCollectionSilent(exportData, settings, options = {}) {
     const sourceCollection = exportData.collection || {};
-    const collectionId = options.collectionId || sourceCollection.id;
+    const sourceId = options.collectionId || sourceCollection.id;
 
-    if (!collectionId) {
+    if (!sourceId) {
         throw new Error('No collection ID specified');
+    }
+
+    // Remap collection ID when the export's backend differs from the current
+    // backend — same logic as importCollection. Missing this previously caused
+    // bulk-imports of qdrant exports into standard to keep the `_qdrant_`
+    // segment in the on-disk vectra folder name, breaking every other code
+    // path that parses the backend out of the ID. Surfaced 2026-05-23.
+    const targetBackendLabel = normalizeBackendForId(settings.vector_backend);
+    const collectionId = remapCollectionIdToBackend(sourceId, targetBackendLabel);
+    if (collectionId !== sourceId) {
+        const srcLabel = normalizeBackendForId(exportData.embedding?.backend || '?');
+        console.log(`VectFox Import (silent): remapped ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
     }
 
     const chunks = exportData.chunks || [];
@@ -908,6 +947,30 @@ async function importCollectionSilent(exportData, settings, options = {}) {
 
     if (validChunks.length === 0) {
         throw new Error('No valid chunks to import');
+    }
+
+    // Mirror importCollection's vector validation: NaN/Infinity guard +
+    // dimension consistency check. Standard/Vectra silently accepts bad
+    // dims; Qdrant catches it reactively. Catching it here once per import
+    // gives a clear actionable error regardless of target backend.
+    let importDim = null;
+    for (let i = 0; i < validChunks.length; i++) {
+        const v = validChunks[i].vector;
+        if (!v || !Array.isArray(v)) continue;
+        for (let j = 0; j < v.length; j++) {
+            if (!Number.isFinite(v[j])) {
+                throw new Error(`Chunk ${i} vector has non-finite component at index ${j} (value: ${v[j]}). Refusing to import.`);
+            }
+        }
+        if (importDim === null) {
+            importDim = v.length;
+        } else if (v.length !== importDim) {
+            throw new Error(
+                `Vector dimension mismatch: chunk 0 has dim=${importDim}, ` +
+                `chunk ${i} has dim=${v.length}. All vectors in an import must share one dimension. ` +
+                `Refusing to import.`
+            );
+        }
     }
 
     // Check if we can use pre-computed vectors
@@ -957,7 +1020,9 @@ async function importCollectionSilent(exportData, settings, options = {}) {
         enabled: true,
         displayName: sourceCollection.name || collectionId,
         description: sourceCollection.description || '',
-        scope: _inferScope(sourceCollection.scope, collectionId),
+        // Import side: sourceCollection is from the export file payload
+        // (not getCollectionMeta), so use the canonical resolver explicitly.
+        scope: getEffectiveScope(collectionId, sourceCollection),
         tags: sourceCollection.tags || [],
         color: sourceCollection.color,
         contentType: sourceCollection.contentType,
@@ -1027,12 +1092,26 @@ function detectContentType(collectionId) {
     return 'unknown';
 }
 
+/** Upload size cap — generous enough for typical chat-history exports
+ * (the largest collections we've seen in production are well under 100 MB
+ * with vectors included). Caps the FileReader.readAsText() memory cost +
+ * the subsequent JSON.parse() main-thread block. */
+export const MAX_IMPORT_FILE_BYTES = 400 * 1024 * 1024; // 400 MB
+
 /**
  * Reads and parses an import file
  * @param {File} file - File object from input
  * @returns {Promise<object>} Parsed JSON data
  */
 export async function readImportFile(file) {
+    if (file?.size > MAX_IMPORT_FILE_BYTES) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        const capMB = MAX_IMPORT_FILE_BYTES / 1024 / 1024;
+        throw new Error(
+            `Import file too large: ${sizeMB} MB exceeds ${capMB} MB limit. ` +
+            `Split the export into smaller batches.`
+        );
+    }
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
 

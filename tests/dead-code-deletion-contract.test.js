@@ -444,6 +444,103 @@ describe('Dead code is removed (cleanup contract)', () => {
             expect(src).not.toMatch(/setChunkTemporallyBlind/);
         });
     });
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Phase D — Preview-only chunk-chat zombie layer (cleanup 2026-05-24)
+    //
+    // Earlier cleanup (Phase B above) removed the chat-vectorization
+    // create-side machinery (ID builders, source stamping, temporal decay).
+    // What remained was a "preview-only" layer reachable from
+    // previewChunks() in ui/content-vectorizer.js: prepareChatContent in
+    // content-vectorization.js, the dispatcher case that called it, and
+    // cleanMessages in text-cleaning.js (only consumer was prepareChatContent).
+    // CONTENT_TYPES.chat also carried legacy chunkingStrategies /
+    // defaultStrategy / defaults fields from before EventBase took over,
+    // never read for chat now. All cleaned up together.
+    //
+    // The defensive `case 'chat':` tripwire in generateCollectionId() is
+    // INTENTIONALLY kept — it throws if anyone tampers with source to
+    // bypass the production gates and route chat through the chunk pipeline.
+    // ──────────────────────────────────────────────────────────────────────
+    describe('Phase D — Preview-only chunk-chat zombie layer', () => {
+        it('prepareChatContent function no longer exists', () => {
+            const offenders = grepSourcesWithLines(/\bfunction\s+prepareChatContent\b/);
+            expect(offenders, `prepareChatContent still defined in:\n${offenders.join('\n')}`)
+                .toEqual([]);
+        });
+
+        it('cleanMessages function no longer exists', () => {
+            const offenders = grepSourcesWithLines(/\bexport\s+function\s+cleanMessages\b/);
+            expect(offenders, `cleanMessages still defined in:\n${offenders.join('\n')}`)
+                .toEqual([]);
+        });
+
+        it('No "chat" case remains in the prepareContent dispatcher', () => {
+            // The dispatcher lives in content-vectorization.js's
+            // prepareContent(contentType, ...) switch. We grep narrowly so
+            // we don't flag the unrelated tripwire in generateCollectionId
+            // (different function, intentional defense).
+            const src = readRel('core/content-vectorization.js');
+            const prepIdx = src.indexOf('function prepareContent(');
+            expect(prepIdx, 'prepareContent function not found').toBeGreaterThan(-1);
+            // Slice a generous window covering the whole switch.
+            const block = src.slice(prepIdx, prepIdx + 2000);
+            expect(block, 'case \'chat\': still present in prepareContent dispatcher')
+                .not.toMatch(/case\s+['"]chat['"]\s*:/);
+        });
+
+        it('generateCollectionId tripwire for chat is preserved (intentional defense)', () => {
+            // Mirror of the above but inverted — we WANT this case to stay.
+            // It's the last line of defense if both UI gates are bypassed.
+            const src = readRel('core/content-vectorization.js');
+            const genIdx = src.indexOf('function generateCollectionId(');
+            expect(genIdx, 'generateCollectionId function not found').toBeGreaterThan(-1);
+            const block = src.slice(genIdx, genIdx + 1500);
+            expect(block, 'generateCollectionId tripwire removed — restore the case \'chat\': throw block')
+                .toMatch(/case\s+['"]chat['"]\s*:[\s\S]*throw\s+new\s+Error/);
+        });
+
+        it('CONTENT_TYPES.chat no longer declares chunkingStrategies', () => {
+            const src = readRel('core/content-types.js');
+            const chatIdx = src.indexOf('chat: {');
+            expect(chatIdx, 'CONTENT_TYPES.chat entry not found').toBeGreaterThan(-1);
+            const block = src.slice(chatIdx, chatIdx + 800);
+            expect(block, 'chat entry still declares chunkingStrategies')
+                .not.toMatch(/chunkingStrategies\s*:/);
+        });
+
+        it('CONTENT_TYPES.chat no longer declares defaultStrategy', () => {
+            const src = readRel('core/content-types.js');
+            const chatIdx = src.indexOf('chat: {');
+            expect(chatIdx, 'CONTENT_TYPES.chat entry not found').toBeGreaterThan(-1);
+            const block = src.slice(chatIdx, chatIdx + 800);
+            expect(block, 'chat entry still declares defaultStrategy')
+                .not.toMatch(/defaultStrategy\s*:/);
+        });
+
+        it('CONTENT_TYPES.chat keeps defaults as an EMPTY object (defensive shim) or omits it', () => {
+            // Two acceptable shapes:
+            //   (a) `defaults: {}` — defensive shim against TypeError from
+            //       readers like `type.defaults.chunkSize` at
+            //       content-vectorization.js:98 that don't use optional
+            //       chaining. The UI's `isChatType` toggle hides the
+            //       chunking section so those readers never fire for chat,
+            //       but the shim is cheap insurance.
+            //   (b) No `defaults` field at all — also acceptable if every
+            //       reader has been updated to use optional chaining.
+            //
+            // What we MUST NOT see: `defaults: { chunkSize: ..., batchSize: ... }`
+            // with legacy chunking config still wired up.
+            const src = readRel('core/content-types.js');
+            const chatIdx = src.indexOf('chat: {');
+            expect(chatIdx, 'CONTENT_TYPES.chat entry not found').toBeGreaterThan(-1);
+            const block = src.slice(chatIdx, chatIdx + 800);
+            expect(block, 'chat entry still declares chunkSize in defaults')
+                .not.toMatch(/defaults\s*:\s*\{[^}]*chunkSize/);
+            expect(block, 'chat entry still declares batchSize in defaults')
+                .not.toMatch(/defaults\s*:\s*\{[^}]*batchSize/);
+        });
+    });
 });
 
 // ============================================================================

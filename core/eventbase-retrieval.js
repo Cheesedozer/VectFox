@@ -16,6 +16,8 @@
 import { queryCollection } from './core-vector-api.js';
 import { getBackendForCollection, getBackend } from '../backends/backend-manager.js';
 import { parseRegistryKey } from './collection-ids.js';
+import { parseEmbedText } from './eventbase-schema.js';
+import { checkPluginAvailable } from './collection-loader.js';
 
 // ---------------------------------------------------------------------------
 // Default re-rank weights (tuned for long-form SillyTavern RP)
@@ -181,7 +183,10 @@ async function _runOneLiveQuery({
                             return { ...m, _hash: h, _jsFinal: _jsFinalScore(m, rerankWeights, chatLength, anchorText, anchorBoostAmount) };
                         });
                         // Filter by min-importance to mirror the server-side filter.
-                        const jsFiltered = jsCandidates.filter(m => (m.importance ?? 0) >= rerankParams.minImportance);
+                        const jsFiltered = jsCandidates.filter(m => {
+                            const imp = m.importance ?? m.metadata?.importance;
+                            return imp == null || imp >= rerankParams.minImportance;
+                        });
                         jsFiltered.sort((a, b) => b._jsFinal - a._jsFinal);
 
                         // Apples-to-apples: the JS final score includes anchor boost
@@ -211,7 +216,15 @@ async function _runOneLiveQuery({
     // Legacy path: queryCollection (vector-only or hybrid, depending on settings).
     const { hashes, metadata } = await queryCollection(colId, queryText, topK, ebSettings);
     if (!hashes?.length) return [];
-    return metadata.map((m, i) => ({ ...m, _hash: hashes[i] }));
+    return metadata.map((m, i) => {
+        const base = { ...m, _hash: hashes[i] };
+        // Native ST Vectra only stores {hash, text, index} — no EventBase metadata.
+        // Parse the embed text to recover content fields when they are absent.
+        if (base.text && !base.event_type) {
+            Object.assign(base, parseEmbedText(base.text));
+        }
+        return base;
+    });
 }
 
 /**
@@ -333,14 +346,31 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     );
     const compareMode = useNativeRerank && settings.eventbase_compare_rerank === true && debugLog;
 
+    // Detect "no vector scoring" state — Standard backend without the Similharity
+    // plugin returns score=0 from the native /api/vector/query path (see
+    // backends/standard.js:438). Coerce cosine to 0 so _normalizeWeights
+    // redistributes its share onto importance/persist/recency, instead of
+    // leaving it as dead weight that silently caps the effective scoring budget.
+    // The user's saved cosine value is preserved and takes effect again the
+    // moment the plugin is installed or they switch to a backend with real
+    // vector scores. The UI mirrors this state by greying out the cosine input.
+    const activeBackend = settings.vector_backend || 'standard';
+    const cosineInactive = activeBackend === 'standard' && !(await checkPluginAvailable());
+    const effectiveCosine = cosineInactive
+        ? 0
+        : (settings.eventbase_rerank_w_cosine ?? DEFAULT_WEIGHTS.cosine);
+
     // Build re-rank params once — values are constant across the per-(collection,
     // queryText) calls in this retrieve invocation.
     const rerankWeights = _normalizeWeights({
-        cosine: settings.eventbase_rerank_w_cosine ?? DEFAULT_WEIGHTS.cosine,
+        cosine: effectiveCosine,
         importance: settings.eventbase_rerank_w_importance ?? DEFAULT_WEIGHTS.importance,
         persist: settings.eventbase_rerank_w_persist ?? DEFAULT_WEIGHTS.persist,
         recency: settings.eventbase_rerank_w_recency ?? DEFAULT_WEIGHTS.recency,
     });
+    if (cosineInactive && debugLog) {
+        console.log(`[EventBase] Cosine weight coerced to 0 (Standard backend, plugin unavailable). Effective weights:`, rerankWeights);
+    }
     const halfLife = !chatLength || chatLength === 0 ? 40 : Math.max(40, chatLength * 0.20);
     const dedupDepthForFilter = settings.deduplication_depth ?? 0;
     const visibleThresholdForFilter = dedupDepthForFilter > 0 ? chatLength - dedupDepthForFilter : -1;
@@ -362,12 +392,15 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     // 1. Dual vector query against each locked live EventBase collection.
     //    userQuery  → user's last message: high-precision, intent-focused
     //    searchText → full multi-message context: broad narrative coverage
-    //    When the two strings are identical (no user message extracted) we fall
-    //    back to a single query per collection to avoid paying double cost.
+    //    Empty/undefined inputs are dropped (B5: dryRun callers may pass only
+    //    one of the two; firing a query with empty text returns plugin 400).
+    //    Identical strings are deduped so we never pay double cost.
     //    Skipped entirely when no live collection is available.
     let rawCandidates = [];
-    const dualQuery = keywordQuery && keywordQuery !== searchText;
-    const queryTexts = dualQuery ? [keywordQuery, searchText] : [searchText];
+    const queryTexts = [keywordQuery, searchText]
+        .filter(q => q && String(q).trim())
+        .filter((q, i, arr) => arr.indexOf(q) === i);
+    const dualQuery = queryTexts.length > 1;
 
     // Per-(collection, queryText) live query. When useNativeRerank is on AND the
     // collection resolves to a Qdrant backend, dispatch to hybridQueryWithRerank
@@ -437,9 +470,15 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     // candidates via the outer range filter in the formula query, so they pass
     // through unconditionally. Non-rerank candidates (archive events or fallback
     // path results) still go through the JS filter.
+    //
+    // Native ST backend (Vectra) cannot store arbitrary metadata, so importance
+    // is never persisted for native-inserted events. When importance is absent,
+    // default to minImportance (i.e. just-pass) rather than 0 so native users
+    // still get results. Plugin/Qdrant data always carries the field.
     const importanceFiltered = allCandidates.filter(m => {
         if (m._rerankApplied) return true;
-        const imp = m.importance ?? m.metadata?.importance ?? 0;
+        const imp = m.importance ?? m.metadata?.importance;
+        if (imp == null) return true;   // missing importance → pass (native backend)
         return imp >= minImportance;
     });
 

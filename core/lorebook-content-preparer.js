@@ -4,7 +4,7 @@
  * without mocking SillyTavern globals.
  */
 
-import { cleanText } from './text-cleaning.js';
+import { cleanContentOrNull } from './text-cleaning.js';
 
 /**
  * Prepare lorebook entries for chunking.
@@ -29,9 +29,17 @@ export function prepareLorebookContent(rawContent, settings) {
         return { text: '', type: 'empty' };
     }
 
+    // Two-pass filter — pre-clean drops entries that never had content
+    // to begin with (no point running cleanText on null/undefined),
+    // post-clean drops entries whose content was entirely stripped by
+    // user regex. The post-clean drop is load-bearing: without it the
+    // entry's `comment` header + auto-appended `[KEYWORDS: ...]` survives
+    // as a "valid-looking" chunk with no real payload. See cleanContentOrNull
+    // docstring for the 2026-05-24 regression that motivated this.
     const validEntries = entries
         .filter(e => e && e.content)
-        .map(e => ({ ...e, content: cleanText(e.content) }));
+        .map(e => ({ ...e, content: cleanContentOrNull(e.content) }))
+        .filter(e => e.content !== null);
 
     if (settings.strategy === 'per_entry') {
         return {

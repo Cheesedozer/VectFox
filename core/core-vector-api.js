@@ -26,11 +26,16 @@ import { getRequestHeaders } from '../../../../../script.js';
 import { extension_settings, modules } from '../../../../extensions.js';
 import { secret_state } from '../../../../secrets.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
+// Embedding-side: no key helpers needed here. vLLM, Ollama, and other
+// "local-or-self-hosted" providers either resolve keys server-side via ST
+// (vLLM → SECRET_KEYS.VLLM) or send no auth at all (Ollama — ST has no
+// auth path for it). Cloud providers like OpenRouter route through ST's
+// chat-completions proxy from elsewhere, not through this file.
 import { oai_settings } from '../../../../openai.js';
 import { isWebLlmSupported } from '../../../shared.js';
 import { getWebLlmProvider } from '../providers/webllm.js';
 import { getBackend, getBackendForCollection, invalidateBackendHealth, recordQuery, recordInsert, recordDelete, recordError } from '../backends/backend-manager.js';
-import { parseRegistryKey } from './collection-ids.js';
+import { parseRegistryKey, resolveBackendForCollection } from './collection-ids.js';
 import {
     getProviderConfig,
     getModelField,
@@ -220,7 +225,8 @@ export function getVectorsRequestBody(args = {}, settings) {
             body.model = settings.ollama_model;
             body.apiUrl = settings.ollama_use_alt_endpoint ? settings.ollama_alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
             body.keep = !!settings.ollama_keep;
-            if (settings.ollama_api_key) body.apiKey = settings.ollama_api_key;
+            // No apiKey: ST has no ollama auth path. See backends/qdrant.js for
+            // the full rationale.
             break;
         case 'vllm':
             body.apiUrl = (settings.vllm_use_alt_endpoint ? settings.vllm_alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.VLLM])
@@ -228,7 +234,9 @@ export function getVectorsRequestBody(args = {}, settings) {
                 .replace(/\/v1\/embeddings$/, '')
                 .replace(/\/embeddings$/, '');
             body.model = settings.vllm_model;
-            if (settings.vllm_api_key) body.apiKey = settings.vllm_api_key;
+            // No apiKey passed: ST's vLLM embedding handler reads
+            // SECRET_KEYS.VLLM server-side. See backends/standard.js for the
+            // full rationale.
             break;
         // case 'extras': body.extrasUrl = extension_settings.apiUrl; body.extrasKey = extension_settings.apiKey; break;
         // case 'electronhub': body.model = settings.electronhub_model; break;
@@ -822,9 +830,15 @@ export async function deleteVectorItems(collectionId, hashes, settings) {
  * @returns {Promise<{ hashes: number[], metadata: object[]}>} - Hashes and metadata of the results
  */
 export async function queryCollection(collectionId, searchText, topK, settings, filters = {}) {
-    const parsed = parseRegistryKey(collectionId);
-    const backend = parsed.backend
-        ? await getBackendForCollection(parsed.backend, settings)
+    // Canonical routing (Doc/collection_helper.md): resolveBackendForCollection accepts either form
+    //   (registry-key "backend:id" or bare ID) and returns the backend label
+    //   plus the BARE collectionId for downstream calls. Falls back to
+    //   getBackend(settings) only when BOTH resolution paths fail, which
+    //   should never happen for a well-formed VectFox collection ID.
+    const resolved = resolveBackendForCollection(collectionId);
+    const bareCollectionId = resolved.collectionId;
+    const backend = resolved.backend
+        ? await getBackendForCollection(resolved.backend, settings)
         : await getBackend(settings);
 
     // Sources that require client-side embedding generation
@@ -869,9 +883,9 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
         }
         const queryStart = Date.now();
         try {
-            const result = await hybridSearch(collectionId, searchText, topK, settings, { queryVector, filters });
+            const result = await hybridSearch(bareCollectionId, searchText, topK, settings, { queryVector, filters });
             const queryLatency = Date.now() - queryStart;
-            recordQuery(settings?.vector_backend || 'standard', queryLatency);
+            recordQuery(resolved.backend || settings?.vector_backend || 'standard', queryLatency);
             if (settings.eventbase_debug_logging) {
                 const scores = (result.metadata || []).map(m => (m.score ?? 0).toFixed(4));
                 const fusionMethod = (settings.hybrid_fusion_method || 'rrf').toUpperCase();
@@ -879,7 +893,7 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
             }
             return result;
         } catch (error) {
-            recordError(settings?.vector_backend || 'standard', error);
+            recordError(resolved.backend || settings?.vector_backend || 'standard', error);
             throw error;
         }
     }
@@ -893,11 +907,10 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
     // VEC-18: Track query latency for health dashboard
     const queryStart = Date.now();
     let rawResults;
-    // Derive the actual backend name from the collection's registry key prefix,
-    // falling back to settings.vector_backend so metrics go to the right backend.
-    const actualBackendName = parsed.backend || settings?.vector_backend || 'standard';
+    // Backend name for metrics — resolved backend wins, fall back to settings.
+    const actualBackendName = resolved.backend || settings?.vector_backend || 'standard';
     try {
-        rawResults = await backend.queryCollection(collectionId, searchText, overfetchAmount, settings, queryVector);
+        rawResults = await backend.queryCollection(bareCollectionId, searchText, overfetchAmount, settings, queryVector);
         const queryLatency = Date.now() - queryStart;
         recordQuery(actualBackendName, queryLatency);
         if (settings.eventbase_debug_logging) {
@@ -918,7 +931,7 @@ export async function queryCollection(collectionId, searchText, topK, settings, 
         text: meta.text || ''
     }));
 
-    let finalResults = await scoreResults(resultsForBoost, searchText, topK, settings, collectionId);
+    let finalResults = await scoreResults(resultsForBoost, searchText, topK, settings, bareCollectionId);
 
     if (settings.eventbase_debug_logging) {
         const idfMode = settings.bm25_use_corpus_idf ? 'corpus-IDF' : 'local-IDF';
@@ -974,7 +987,7 @@ async function scoreResults(resultsForBoost, searchText, topK, settings, collect
             const mod = await import('./corpus-stats.js');
             corpusStats = await mod.getCorpusStats(collectionId, settings);
             if (!corpusStats && settings.eventbase_debug_logging) {
-                console.warn(`[VectFox] Corpus-IDF disabled for ${collectionId}: getCorpusStats returned null (chunks/list fetch failed). Falling back to local-IDF BM25.`);
+                console.warn(`[VectFox] Corpus-IDF disabled for ${collectionId}: getCorpusStats returned null (plugin unavailable or /chunks/list failed). Falling back to local-IDF BM25.`);
             }
         } catch (err) {
             console.warn(`[VectFox] Corpus-IDF unavailable for ${collectionId}, falling back to local-IDF BM25. Reason: ${err?.message || err}`);
@@ -1199,6 +1212,20 @@ export async function purgeAllVectorIndexes(settings) {
         console.error('VectFox: Failed to purge all', error);
         toastr.error('Failed to purge all vector indexes', 'Purge failed');
     }
+}
+
+/**
+ * List chunks in a collection
+ * Routes through the active backend so model is resolved via getModelFromSettings,
+ * not from a stale collection.model field.
+ * @param {string} collectionId - Collection ID
+ * @param {object} settings - VectFox settings (must include vector_backend + source)
+ * @param {object} options - {offset, limit, includeVectors}
+ * @returns {Promise<{items: Array<{hash, text, metadata}>, total: number}>}
+ */
+export async function listChunks(collectionId, settings, options = {}) {
+    const backend = await getBackend(settings);
+    return await backend.listChunks(collectionId, settings, options);
 }
 
 /**

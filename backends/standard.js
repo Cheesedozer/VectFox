@@ -1,11 +1,24 @@
 /**
  * ============================================================================
- * STANDARD BACKEND (Vectra - ST Native + Plugin)
+ * STANDARD BACKEND (Vectra - ST Native)
  * ============================================================================
- * Uses ST's native /api/vector/* endpoints as the primary method.
- * Falls back to Similharity plugin endpoints if available for extended features.
+ * Uses ST's native /api/vector/* endpoints as the primary path.
+ * This is the default backend — no setup required.
  *
- * This is the default backend - no setup required.
+ * ## Plugin dependency rule
+ *
+ * The Similharity plugin (/api/plugins/similharity/*) is an OPTIONAL
+ * enhancement here, NOT a requirement. Every method that calls the plugin
+ * MUST check `this.pluginAvailable` first and fall back to a native-API path
+ * when the plugin is absent. The standard backend must be fully functional
+ * without the plugin installed.
+ *
+ * Plugin-enhanced features (metadata, chunk listing, chunk editing) degrade
+ * gracefully to reduced functionality — never to a hard error.
+ *
+ * See Doc/dev_helper.md §15 for the full plugin dependency policy.
+ *
+ * !! DO NOT add any unconditional plugin calls here !!
  *
  * @author VectFox
  * @version 3.1.0
@@ -61,7 +74,12 @@ function getProviderSpecificParams(settings, isQuery = false) {
             params.apiUrl = settings.use_alt_endpoint
                 ? settings.alt_endpoint_url
                 : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-            if (settings.vllm_api_key) params.apiKey = settings.vllm_api_key;
+            // No apiKey passed: ST's vLLM embedding handler
+            // (src/vectors/vllm-vectors.js) reads SECRET_KEYS.VLLM server-side
+            // via setAdditionalHeadersByType — anything we set on params.apiKey
+            // is silently ignored. User configures the embedding key via ST's
+            // Text Completion → vLLM UI; chat key (separate slot) lives in
+            // SECRET_KEYS.CUSTOM after the 2026-05-26 migration.
             break;
 
         case 'bananabread':
@@ -102,7 +120,14 @@ export class StandardBackend extends VectorBackend {
     }
 
     async initialize(settings) {
-        // Check if plugin is available
+        // Check if plugin is available.
+        // !! SYNC WARNING !!
+        // This is an INDEPENDENT copy of checkPluginAvailable() from
+        // core/collection-loader.js. We cannot import from there because
+        // collection-loader → core-vector-api → (dynamic import) → standard.js
+        // would create a circular dependency.
+        // If you change the health endpoint or response parsing here,
+        // make the same change in collection-loader.js::checkPluginAvailable().
         console.log('VectFox DEBUG: Checking plugin availability...');
         try {
             const response = await fetch('/api/plugins/similharity/health');
@@ -355,6 +380,8 @@ export class StandardBackend extends VectorBackend {
         // and ST's native /api/vector/delete honor `model` when it's in the body —
         // mirror the insertVectorItems/getSavedHashes payload shape so delete lands
         // in the same partition the insert wrote to.
+        // This fix exists on `main` (commit bcc4302) but was lost in Dev during
+        // merge `e9ed4c5`. TEST 009 catches the regression — re-applied 2026-05-23.
         if (this.pluginAvailable) {
             const response = await fetch('/api/plugins/similharity/chunks/delete', {
                 method: 'POST',
@@ -564,6 +591,73 @@ export class StandardBackend extends VectorBackend {
      * Purge (delete) a collection
      * Uses native ST API
      */
+    /**
+     * ╔══════════════════════════════════════════════════════════════════╗
+     * ║  TEST-ONLY helper — do NOT call from production code paths       ║
+     * ╚══════════════════════════════════════════════════════════════════╝
+     *
+     * Aggressively remove a collection's entire on-disk folder under
+     * `/data/{handle}/vectors/{source}/{collectionId}/`.
+     *
+     * Why this exists separately from purgeVectorIndex:
+     *   - The Similharity plugin's purge handler at index.js calls
+     *     `store.deleteIndex()` which only removes the index files inside
+     *     `{collectionId}/{model}/`. The parent `{collectionId}/` folder
+     *     remains empty on disk after a normal purge.
+     *   - Production doesn't care (queries skip empty folders), but the
+     *     Playwright suite leaves 30+ orphan folders per session that ST's
+     *     plugin scan then rediscovers as zero-chunk collections, polluting
+     *     the registry and slowing down subsequent runs.
+     *   - Tests need a way to leave NO trace. Production must NOT change
+     *     behavior (the only-models-subdir purge is the agreed contract).
+     *
+     * What this helper does:
+     *   1. Runs the normal plugin purge to drop the model subdir.
+     *   2. Calls ST's native /api/vector/purge as a finisher. Depending on
+     *      ST version this may or may not drop the parent folder — we call
+     *      it best-effort and don't fail the helper if it 404s.
+     *
+     * Only `tests/Eventbase-test.spec.js` should call this. Marked with a
+     * leading underscore + explicit `forTestCleanup` suffix so the intent is
+     * unambiguous in any code review.
+     *
+     * @param {string} collectionId - bare collection ID (no `backend:` prefix)
+     * @param {object} settings - VectFox settings (source + model)
+     * @returns {Promise<{pluginOk: boolean, nativeOk: boolean}>}
+     */
+    async _purgeCollectionFolderForTestCleanup(collectionId, settings) {
+        const result = { pluginOk: false, nativeOk: false };
+
+        // Step 1: standard plugin-side purge (removes the model subdir).
+        try {
+            await this.purgeVectorIndex(collectionId, settings);
+            result.pluginOk = true;
+        } catch (e) {
+            console.warn(`[test cleanup] plugin purgeVectorIndex failed for ${collectionId}: ${e.message}`);
+        }
+
+        // Step 2: ST native /api/vector/purge as a finisher. Best-effort —
+        // some ST versions drop the parent folder, some don't. Either way
+        // it's the highest leverage we have without adding a new plugin
+        // endpoint or filesystem permissions.
+        try {
+            const response = await fetch('/api/vector/purge', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({ collectionId }),
+            });
+            result.nativeOk = response.ok;
+            if (!response.ok) {
+                const body = await response.text().catch(() => '');
+                console.warn(`[test cleanup] native /api/vector/purge ${response.status} for ${collectionId}: ${body.slice(0, 120)}`);
+            }
+        } catch (e) {
+            console.warn(`[test cleanup] native purge fetch failed for ${collectionId}: ${e.message}`);
+        }
+
+        return result;
+    }
+
     async purgeVectorIndex(collectionId, settings) {
         // Prefer the Similharity plugin's purge endpoint when available — it knows
         // about the `{source}/{collectionId}/{model}/` path layout that ST's
@@ -673,8 +767,28 @@ export class StandardBackend extends VectorBackend {
                 if (response.ok) {
                     return await response.json();
                 }
+                // Split the !ok path: 4xx is misconfiguration (wrong route,
+                // bad params, plugin version skew) — fail loud so the DB
+                // Browser shows a real error instead of silently rendering
+                // empty rows for collections that actually have data. 5xx
+                // is treated as a transient plugin outage — warn and fall
+                // back to native list (hashes only) so the UI stays usable.
+                const errBody = await response.text().catch(() => '<no body>');
+                if (response.status >= 400 && response.status < 500) {
+                    // Log BEFORE throwing so the failure leaves a console trace
+                    // even if the throw is caught silently upstream. This branch
+                    // hasn't been triggered in regression testing yet — keep the
+                    // log loud so a real 4xx in the wild is unmissable.
+                    console.error(`VectFox: Plugin listChunks ${response.status} ${response.statusText} for ${collectionId} — failing loud (misconfiguration / version skew suspected). Body: ${errBody.slice(0, 500)}`);
+                    throw new Error(`Plugin listChunks ${response.status} ${response.statusText} for ${collectionId}: ${errBody.slice(0, 200)}`);
+                }
+                console.warn(`VectFox: Plugin listChunks returned ${response.status} ${response.statusText} — falling back to native (hashes only). Body: ${errBody.slice(0, 200)}`);
             } catch (e) {
-                console.warn('VectFox: Plugin listChunks failed, using native fallback');
+                // Re-throw the 4xx error we raised above; only swallow real
+                // network/transport failures (fetch reject, timeout, etc.)
+                // which match the "transient outage" graceful-degrade case.
+                if (e?.message?.startsWith('Plugin listChunks 4')) throw e;
+                console.warn('VectFox: Plugin listChunks threw, using native fallback:', e.message);
             }
         }
 
@@ -805,33 +919,4 @@ export class StandardBackend extends VectorBackend {
         };
     }
 
-    /**
-     * Discover all collections on disk
-     * Plugin provides this; native API requires probing
-     */
-    async discoverCollections(settings) {
-        if (this.pluginAvailable) {
-            try {
-                const response = await fetch('/api/plugins/similharity/collections', {
-                    headers: getRequestHeaders(),
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    return (data.collections || []).map(c => ({
-                        id: c.id,
-                        source: c.source,
-                        chunkCount: c.chunkCount || 0,
-                        backend: c.backend || 'vectra',
-                    }));
-                }
-            } catch (e) {
-                console.warn('VectFox: Plugin discoverCollections failed');
-            }
-        }
-
-        // No native way to list collections - return empty
-        // Discovery will be handled by collection-loader probing known patterns
-        return null;
-    }
 }
