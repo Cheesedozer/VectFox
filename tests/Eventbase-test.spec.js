@@ -50,8 +50,8 @@ import { existsSync } from 'fs';
 // This override only affects THIS test file — it doesn't mutate the config
 // for any other suite.
 // ---------------------------------------------------------------------------
-const TEST_TARGET_URL = null;
-//const TEST_TARGET_URL = 'http://localhost:8000';
+//const TEST_TARGET_URL = null;
+const TEST_TARGET_URL = 'http://localhost:8000';
 
 if (TEST_TARGET_URL) {
     test.use({ baseURL: TEST_TARGET_URL });
@@ -571,14 +571,31 @@ test('TEST 001 — Qdrant lorebook: lock + query isolation', async () => {
             }
             console.log(`${TEST} Collection locked and active for current chat ✓`);
 
-            // Dry-run with a query that should match the Tesseract Crystal entry
+            // Dry-run with a query that should match the Tesseract Crystal entry.
+            // Force enabled_world_info=true: we're testing the retrieval path
+            // itself, not whether the user toggled "Enable Semantic WI Activation"
+            // in their settings. Without this override, the test would silently
+            // fail in any environment where that toggle is off — which is the
+            // common case for a fresh install or a user who only uses EventBase.
             const chat = ctx.chat ?? [];
             const testQuery = 'tesseract crystal magical energy rift mountains';
+            const testSettings = { ...vf, enabled_world_info: true };
+            console.log(`${TEST} [DEBUG] Running dry-run with enabled_world_info=true (user setting was ${vf.enabled_world_info}), vector_backend=${vf.vector_backend}`);
             let result;
-            try { result = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: vf }); }
+            try { result = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
 
-            if (!result.entryCount) { console.error(`${TEST} [FAIL] Dry-run returned 0 entries for query "${testQuery}"`); return; }
+            if (!result.entryCount) {
+                // Log the result envelope so a future failure tells us WHY: which
+                // guard fired (disabled / noCollections / search returned nothing).
+                console.error(`${TEST} [FAIL] Dry-run returned 0 entries for query "${testQuery}" — result envelope: ${JSON.stringify({
+                    entryCount: result.entryCount,
+                    disabled: result.disabled,
+                    noCollections: result.noCollections,
+                    hasInjectionText: !!result.injectionText,
+                })}`);
+                return;
+            }
 
             console.log(`${TEST} Dry-run: ${result.entryCount} entry/entries returned`);
             console.log(`  preview: ${(result.injectionText || '').slice(0, 200)}`);
@@ -750,60 +767,184 @@ test('TEST 002 — Qdrant EventBase: insert + field check', async () => {
 // ═══════════════════════════════════════════════════════════════════
 // Setup: TEST 001 + TEST 002 setups both complete
 test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
+    // SELF-CONTAINED 2026-05-26: creates its own synthetic lorebook + EventBase,
+    // locks both to current chat, verifies both retrieval paths return results,
+    // then cleans up. Previous version assumed TEST 001 + TEST 002 left their
+    // collections behind in the registry — broken assumption since both tests
+    // clean up in their finally blocks. New version mirrors TEST 013's
+    // self-contained pattern but skips sentinel matching (this is a "both
+    // paths return something" smoke test; TEST 013 covers data integrity).
     await skipIfQdrantUnavailable();
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 003 [E2EQuery]';
         const base = '/scripts/extensions/third-party/VectFox/';
-        const { getCollectionListing } = await import(base + 'core/collection-loader.js');
-        const { shouldCollectionActivate, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
+        const { insertEvents } = await import(base + 'core/eventbase-store.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
-
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
+
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
+        if (!(vf.qdrant_url || vf.qdrant_host)) { console.warn(`${TEST} [SKIP] Qdrant not configured`); return; }
+
         const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
-        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat`); return; }
+        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
         const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
 
-        const listing = getCollectionListing(vf);
+        // Derive persona handle for collection ID — see TEST 013 for rationale.
+        const personaHandle = (ctx?.name1 || 'user')
+            .normalize('NFC')
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}]+/gu, '_')
+            .replace(/^_|_$/g, '')
+            .substring(0, 30) || 'user';
 
-        const lorebookCols = listing.filter(e => e.collectionId.startsWith('vf_lorebook_'));
-        const lockedLorebooks = [];
-        for (const e of lorebookCols) {
-            if (await shouldCollectionActivate(e.registryKey, context)) lockedLorebooks.push(e);
+        const ts = Date.now();
+        const lorebookEntries = [{
+            uid: 'vf_test_003_a',
+            comment: 'Quasar Lantern',
+            key: ['quasar', 'lantern'],
+            content: 'The Quasar Lantern is a relic forged from compressed starlight. It illuminates passages through the Cinderwhisper Pass and is the only lightsource known to disperse the local mist. Wardens of the Pass require formal training to handle one.',
+        }];
+
+        const eventbaseCollectionId = `vf_eventbase_qdrant_${personaHandle}___vf_playwright_test_003__${ts}`;
+        const eventbaseRegistryKey  = `qdrant:${eventbaseCollectionId}`;
+        const testEvents = [{
+            event_type: 'discovery',
+            importance: 8,
+            summary: 'Wardens of Cinderwhisper Pass document an unusual mist pattern around the Quasar Lantern stations',
+            DateTime: '2027-09-03T04:15:00Z',
+            cause: 'Routine night patrol',
+            result: 'Pattern logged for further study',
+            characters: ['Warden Eilis', 'Tham Verlen'],
+            locations: ['Cinderwhisper Pass'],
+            factions: ['Order of Wardens'],
+            items: ['Quasar Lantern'],
+            concepts: ['mist', 'starlight', 'pass'],
+            keywords: ['quasar', 'lantern', 'mist'],
+            open_threads: ['Cause of the new mist pattern?'],
+            should_persist: true,
+            chat_uuid: currentChatId,
+            event_id: `test_event_003_001_${ts}`,
+            source_window_start: 0,
+            source_window_end: 5,
+            source_message_hashes: [33301, 33302],
+            schema_version: 1,
+        }];
+
+        let lorebookCollectionId = null, lorebookRegistryKey = null;
+        let eventbaseCreated = false;
+
+        try {
+            // ── Phase A: vectorize lorebook (auto-locks via scope='chat') ──
+            console.log(`${TEST} Phase A: vectorizing synthetic lorebook with Qdrant backend...`);
+            const lbRes = await vectorizeContent({
+                contentType: 'lorebook',
+                source: { type: 'file', name: '__vf_playwright_test_003_lb__', entries: lorebookEntries },
+                settings: { ...vf, vector_backend: 'qdrant', strategy: 'per_entry', scope: 'chat' },
+            });
+            if (!lbRes?.success || !lbRes.collectionId) { console.error(`${TEST} [FAIL] Lorebook vectorization failed`); return; }
+            lorebookCollectionId = lbRes.collectionId;
+            lorebookRegistryKey  = `qdrant:${lorebookCollectionId}`;
+
+            const lbActive = await shouldCollectionActivate(lorebookRegistryKey, context);
+            if (!lbActive) { console.error(`${TEST} [FAIL] Lorebook didn't auto-lock to current chat`); return; }
+            console.log(`${TEST} Lorebook ready and locked → ${lorebookRegistryKey}`);
+
+            // ── Phase B: insert synthetic event into a fresh EventBase, then lock it ──
+            console.log(`${TEST} Phase B: inserting 1 synthetic event into ${eventbaseCollectionId}...`);
+            await insertEvents(testEvents, { ...vf, vector_backend: 'qdrant' }, null, eventbaseCollectionId);
+            eventbaseCreated = true;
+
+            // EventBase doesn't auto-lock when collection ID is supplied explicitly.
+            // Lock it manually so runEventBaseRetrieval picks it up — see TEST 013.
+            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
+            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase: ${lockResult?.reason}`); return; }
+
+            const ebLocks = getCollectionLocks(eventbaseRegistryKey);
+            if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
+            console.log(`${TEST} EventBase locked to chat ✓`);
+
+            // ── Phase C: query lorebook via dry-run WI activation ──
+            const chat = ctx.chat ?? [];
+            // Use a synthetic-content-matching query unconditionally. Falling
+            // back to the user's actual last chat message (typical RP content
+            // in a foreign language) returns low-confidence matches that get
+            // filtered by the default score_threshold=0.25 — see TEST 007
+            // failure on 2026-05-26.
+            const testQuery = 'quasar lantern cinderwhisper pass mist starlight wardens';
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            const testSettings = { ...vf, enabled_world_info: true };
+
+            let lorebookResult;
+            try { lorebookResult = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: testSettings }); }
+            catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
+
+            if (!lorebookResult.entryCount) {
+                console.error(`${TEST} [FAIL] Lorebook returned 0 entries — result envelope: ${JSON.stringify({
+                    entryCount: lorebookResult.entryCount,
+                    disabled: lorebookResult.disabled,
+                    noCollections: lorebookResult.noCollections,
+                })}`);
+                return;
+            }
+            console.log(`${TEST} Lorebook: ${lorebookResult.entryCount} entries`);
+            console.log(`  preview: ${(lorebookResult.injectionText || '').slice(0, 200)}`);
+
+            // ── Phase D: query EventBase via dry-run retrieval ──
+            const { runEventBaseRetrieval } = await import(base + 'core/eventbase-workflow.js').catch(() => ({}));
+            if (typeof runEventBaseRetrieval !== 'function') { console.warn(`${TEST} [WARN] runEventBaseRetrieval not exported`); return; }
+
+            let eventbaseResult;
+            try { eventbaseResult = await runEventBaseRetrieval({ chat, settings: vf, dryRun: true, testMessage: testQuery }); }
+            catch (err) { console.error(`${TEST} [FAIL] runEventBaseRetrieval threw: ${err.message}`); return; }
+
+            const eventCount = eventbaseResult?.eventCount ?? 0;
+            if (!eventCount) { console.error(`${TEST} [FAIL] EventBase returned 0 events`); return; }
+            console.log(`${TEST} EventBase: ${eventCount} event(s) injected, lockedCollections=${eventbaseResult.lockedCollectionsCount}, archive=${eventbaseResult.archiveCollectionsCount}`);
+            console.log(`  preview: ${(eventbaseResult.injectionText || '').slice(0, 200)}`);
+
+            console.log(`${TEST} [PASS] Lorebook (${lorebookResult.entryCount}) + EventBase (${eventCount}) — both retrieval paths return locked collections only`);
+        } finally {
+            // ── Cleanup: remove every trace this test created ──
+            // EventBase first because we explicitly locked it; lorebook auto-cleans
+            // its lock via deleteContentCollection.
+            if (eventbaseCreated) {
+                try {
+                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'qdrant' }, eventbaseRegistryKey);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(eventbaseCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] EventBase folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseCollectionId);
+                    console.log(`${TEST} EventBase cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] EventBase cleanup failed: ${cleanupErr.message}`);
+                }
+            }
+            if (lorebookCollectionId) {
+                try {
+                    await deleteContentCollection(lorebookCollectionId);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(lorebookCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] Lorebook folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(lorebookRegistryKey);
+                    unregisterCollection(lorebookRegistryKey);
+                    unregisterCollection(lorebookCollectionId);
+                    console.log(`${TEST} Lorebook cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] Lorebook cleanup failed: ${cleanupErr.message}`);
+                }
+            }
         }
-        if (!lockedLorebooks.length) { console.error(`${TEST} [FAIL] No lorebook activated — complete TEST 001 setup`); return; }
-        lockedLorebooks.forEach(e => console.log(`${TEST} Active lorebook: ${e.registryKey}`));
-
-        const eventbaseCols = listing.filter(e => e.collectionId.startsWith('vf_eventbase_'));
-        const lockedEventbases = eventbaseCols.filter(e => getCollectionLocks(e.registryKey).some(l => l === currentChatId));
-        if (!lockedEventbases.length) { console.error(`${TEST} [FAIL] No EventBase locked — complete TEST 002 setup`); return; }
-        console.log(`${TEST} Locked EventBase: ${lockedEventbases.map(e => e.registryKey).join(', ')}`);
-
-        const chat = ctx.chat ?? [];
-        const lastUserMsg = [...chat].reverse().find(m => !m.is_system && m.mes)?.mes || 'test query';
-        let lorebookResult;
-        try { lorebookResult = await runLorebookWIDryRun({ chat, testMessage: lastUserMsg, settings: vf }); }
-        catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
-
-        if (!lorebookResult.entryCount) { console.error(`${TEST} [FAIL] Lorebook returned 0 entries`); return; }
-        console.log(`${TEST} Lorebook: ${lorebookResult.entryCount} entries`);
-        console.log(`  preview: ${(lorebookResult.injectionText || '').slice(0, 200)}`);
-
-        const { runEventBaseRetrieval } = await import(base + 'core/eventbase-workflow.js').catch(() => ({}));
-        if (typeof runEventBaseRetrieval !== 'function') { console.warn(`${TEST} [WARN] runEventBaseRetrieval not exported`); return; }
-
-        let eventbaseResult;
-        try { eventbaseResult = await runEventBaseRetrieval({ chat, settings: vf, dryRun: true, testMessage: lastUserMsg }); }
-        catch (err) { console.error(`${TEST} [FAIL] runEventBaseRetrieval threw: ${err.message}`); return; }
-
-        const eventCount = eventbaseResult?.eventCount ?? 0;
-        if (!eventCount) { console.error(`${TEST} [FAIL] EventBase returned 0 events`); return; }
-        console.log(`${TEST} EventBase: ${eventCount} event(s) injected, lockedCollections=${eventbaseResult.lockedCollectionsCount}, archive=${eventbaseResult.archiveCollectionsCount}`);
-        console.log(`  preview: ${(eventbaseResult.injectionText || '').slice(0, 200)}`);
-
-        console.log(`${TEST} [PASS] Lorebook (${lorebookResult.entryCount}) + EventBase (${eventCount}) — locked collections only`);
     });
     assertPassed(logs);
 });
@@ -1009,11 +1150,20 @@ test('TEST 005 — Standard lorebook: lock + query isolation', async () => {
 
             const chat = ctx.chat ?? [];
             const testQuery = 'quartzwood beetle ironvale prism carapace';
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            const testSettings = { ...vf, enabled_world_info: true };
             let result;
-            try { result = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: vf }); }
+            try { result = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
 
-            if (!result.entryCount) { console.error(`${TEST} [FAIL] Dry-run returned 0 entries for query "${testQuery}"`); return; }
+            if (!result.entryCount) {
+                console.error(`${TEST} [FAIL] Dry-run returned 0 entries for query "${testQuery}" — result envelope: ${JSON.stringify({
+                    entryCount: result.entryCount,
+                    disabled: result.disabled,
+                    noCollections: result.noCollections,
+                })}`);
+                return;
+            }
             console.log(`${TEST} Dry-run: ${result.entryCount} entries (vectorScore=0.0000 expected for standard backend)`);
             console.log(`  preview: ${(result.injectionText || '').slice(0, 200)}`);
             console.log(`${TEST} [PASS] Standard lorebook vectorized, locked, results returned`);
@@ -1200,63 +1350,177 @@ test('TEST 006 — Standard EventBase: insert + parseEmbedText recovery', async 
 // Setup: TEST 005 + TEST 006 setups both complete
 // Note: vectorScore=0.0000, imp=undefined, method=bm25 all expected
 test('TEST 007 — E2E standard: both locked, both return results', async () => {
+    // SELF-CONTAINED 2026-05-26: same refactor as TEST 003 but for the
+    // standard (vectra) backend. Previous version assumed TEST 005 + TEST 006
+    // left collections behind — broken assumption, both clean up in finally.
+    // Mirrors TEST 003's self-contained pattern with vector_backend='standard'.
     const logs = await runTestInPage(async () => {
         const TEST = 'TEST 007 [E2EStd]';
         const base = '/scripts/extensions/third-party/VectFox/';
-        const { getCollectionListing } = await import(base + 'core/collection-loader.js');
-        const { shouldCollectionActivate, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
+        const { insertEvents } = await import(base + 'core/eventbase-store.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
-
+        const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
+
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
+
         const ctx = window.SillyTavern?.getContext?.() ?? window.getContext?.() ?? {};
         const currentChatId = ctx.chatId ? String(ctx.chatId) : null;
-        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat`); return; }
+        if (!currentChatId) { console.warn(`${TEST} [WARN] No active chat — open a chat first`); return; }
         const context = { currentChatId, currentCharacterId: ctx.characterId != null ? String(ctx.characterId) : null };
 
-        const listing = getCollectionListing(vf);
+        // Derive persona handle for collection ID — see TEST 013 for rationale.
+        const personaHandle = (ctx?.name1 || 'user')
+            .normalize('NFC')
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}]+/gu, '_')
+            .replace(/^_|_$/g, '')
+            .substring(0, 30) || 'user';
 
-        const lorebookCols = listing.filter(e => e.collectionId.startsWith('vf_lorebook_'));
-        const lockedLorebooks = [];
-        for (const e of lorebookCols) {
-            if (await shouldCollectionActivate(e.registryKey, context)) lockedLorebooks.push(e);
+        const ts = Date.now();
+        const lorebookEntries = [{
+            uid: 'vf_test_007_a',
+            comment: 'Lambent Sextant',
+            key: ['lambent', 'sextant'],
+            content: 'The Lambent Sextant is a navigator’s instrument carved from petrified moonglass. It can chart courses through the Ember Channels where normal compasses spin uselessly. Only members of the Astrolabe Guild are permitted to apprentice on its use.',
+        }];
+
+        const eventbaseCollectionId = `vf_eventbase_standard_${personaHandle}___vf_playwright_test_007__${ts}`;
+        const eventbaseRegistryKey  = `vectra:${eventbaseCollectionId}`;
+        const testEvents = [{
+            event_type: 'discovery',
+            importance: 8,
+            summary: 'Astrolabe Guild apprentices report unexpected compass drift in the Ember Channels coinciding with Lambent Sextant readings',
+            DateTime: '2027-11-14T08:42:00Z',
+            cause: 'Routine charting expedition',
+            result: 'Drift correlation logged; further study scheduled',
+            characters: ['Apprentice Yves', 'Master Kallin'],
+            locations: ['Ember Channels'],
+            factions: ['Astrolabe Guild'],
+            items: ['Lambent Sextant'],
+            concepts: ['navigation', 'magnetic drift', 'guild apprentice'],
+            keywords: ['lambent', 'sextant', 'compass', 'drift'],
+            open_threads: ['Source of compass drift?'],
+            should_persist: true,
+            chat_uuid: currentChatId,
+            event_id: `test_event_007_001_${ts}`,
+            source_window_start: 0,
+            source_window_end: 5,
+            source_message_hashes: [77701, 77702],
+            schema_version: 1,
+        }];
+
+        let lorebookCollectionId = null, lorebookRegistryKey = null;
+        let eventbaseCreated = false;
+
+        try {
+            // ── Phase A: vectorize lorebook (auto-locks via scope='chat') ──
+            console.log(`${TEST} Phase A: vectorizing synthetic lorebook with standard backend...`);
+            const lbRes = await vectorizeContent({
+                contentType: 'lorebook',
+                source: { type: 'file', name: '__vf_playwright_test_007_lb__', entries: lorebookEntries },
+                settings: { ...vf, vector_backend: 'standard', strategy: 'per_entry', scope: 'chat' },
+            });
+            if (!lbRes?.success || !lbRes.collectionId) { console.error(`${TEST} [FAIL] Lorebook vectorization failed`); return; }
+            lorebookCollectionId = lbRes.collectionId;
+            lorebookRegistryKey  = `vectra:${lorebookCollectionId}`;
+
+            const lbActive = await shouldCollectionActivate(lorebookRegistryKey, context);
+            if (!lbActive) { console.error(`${TEST} [FAIL] Lorebook didn't auto-lock to current chat`); return; }
+            console.log(`${TEST} Lorebook ready and locked → ${lorebookRegistryKey}`);
+
+            // ── Phase B: insert synthetic event into a fresh EventBase, then lock it ──
+            console.log(`${TEST} Phase B: inserting 1 synthetic event into ${eventbaseCollectionId}...`);
+            await insertEvents(testEvents, { ...vf, vector_backend: 'standard' }, null, eventbaseCollectionId);
+            eventbaseCreated = true;
+
+            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
+            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase: ${lockResult?.reason}`); return; }
+
+            const ebLocks = getCollectionLocks(eventbaseRegistryKey);
+            if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
+            console.log(`${TEST} EventBase locked to chat ✓`);
+
+            // ── Phase C: query lorebook via dry-run WI activation ──
+            const chat = ctx.chat ?? [];
+            // Use a synthetic-content-matching query unconditionally — same
+            // rationale as TEST 003. The user's actual chat is typically RP
+            // content in a foreign language; a low-confidence semantic match
+            // against the synthetic lorebook gets filtered by
+            // score_threshold=0.25. Standard backend's client-side RRF
+            // produces tighter score distributions than Qdrant's native RRF,
+            // so the threshold bites harder here than in TEST 003.
+            const testQuery = 'lambent sextant ember channels compass drift navigator moonglass';
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            const testSettings = { ...vf, enabled_world_info: true };
+
+            let lorebookResult;
+            try { lorebookResult = await runLorebookWIDryRun({ chat, testMessage: testQuery, settings: testSettings }); }
+            catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
+
+            if (!lorebookResult.entryCount) {
+                console.error(`${TEST} [FAIL] Lorebook returned 0 entries — result envelope: ${JSON.stringify({
+                    entryCount: lorebookResult.entryCount,
+                    disabled: lorebookResult.disabled,
+                    noCollections: lorebookResult.noCollections,
+                })}`);
+                return;
+            }
+            console.log(`${TEST} Lorebook: ${lorebookResult.entryCount} entries (vectorScore=0.0000 expected for standard backend)`);
+            console.log(`  preview: ${(lorebookResult.injectionText || '').slice(0, 200)}`);
+
+            // ── Phase D: query EventBase via dry-run retrieval ──
+            const { runEventBaseRetrieval } = await import(base + 'core/eventbase-workflow.js').catch(() => ({}));
+            if (typeof runEventBaseRetrieval !== 'function') { console.warn(`${TEST} [WARN] runEventBaseRetrieval not exported`); return; }
+
+            let eventbaseResult;
+            try { eventbaseResult = await runEventBaseRetrieval({ chat, settings: vf, dryRun: true, testMessage: testQuery }); }
+            catch (err) { console.error(`${TEST} [FAIL] runEventBaseRetrieval threw: ${err.message}`); return; }
+
+            const eventCount = eventbaseResult?.eventCount ?? 0;
+            if (!eventCount) { console.error(`${TEST} [FAIL] EventBase returned 0 events`); return; }
+            console.log(`${TEST} EventBase: ${eventCount} event(s) injected, lockedCollections=${eventbaseResult.lockedCollectionsCount}, archive=${eventbaseResult.archiveCollectionsCount}`);
+            console.log(`  preview: ${(eventbaseResult.injectionText || '').slice(0, 200)}`);
+
+            console.log(`${TEST} [PASS] Lorebook (${lorebookResult.entryCount}) + EventBase (${eventCount}) — standard backend, both paths return locked collections only`);
+        } finally {
+            // ── Cleanup — mirror TEST 003 finally block but for standard backend ──
+            if (eventbaseCreated) {
+                try {
+                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'standard' }, eventbaseRegistryKey);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(eventbaseCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] EventBase folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseRegistryKey);
+                    unregisterCollection(eventbaseCollectionId);
+                    console.log(`${TEST} EventBase cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] EventBase cleanup failed: ${cleanupErr.message}`);
+                }
+            }
+            if (lorebookCollectionId) {
+                try {
+                    await deleteContentCollection(lorebookCollectionId);
+                    try {
+                        const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
+                        await stdBackend._purgeCollectionFolderForTestCleanup(lorebookCollectionId, vf);
+                    } catch (e) { console.warn(`${TEST} [WARN] Lorebook folder-cleanup helper failed: ${e.message}`); }
+                    deleteCollectionMeta(lorebookRegistryKey);
+                    unregisterCollection(lorebookRegistryKey);
+                    unregisterCollection(lorebookCollectionId);
+                    console.log(`${TEST} Lorebook cleanup ✓`);
+                } catch (cleanupErr) {
+                    console.warn(`${TEST} [WARN] Lorebook cleanup failed: ${cleanupErr.message}`);
+                }
+            }
         }
-        if (!lockedLorebooks.length) { console.error(`${TEST} [FAIL] No lorebook activated — complete TEST 005 setup`); return; }
-        if (!lockedLorebooks.some(e => e.registryKey.startsWith('vectra:')))
-            console.warn(`${TEST} [WARN] Active lorebook is not standard backend`);
-        lockedLorebooks.forEach(e => console.log(`${TEST} Active lorebook: ${e.registryKey}`));
-
-        const eventbaseCols = listing.filter(e => e.collectionId.startsWith('vf_eventbase_'));
-        const lockedEventbases = eventbaseCols.filter(e => getCollectionLocks(e.registryKey).some(l => l === currentChatId));
-        if (!lockedEventbases.length) { console.error(`${TEST} [FAIL] No EventBase locked — complete TEST 006 setup`); return; }
-        if (!lockedEventbases.some(e => e.registryKey.startsWith('vectra:')))
-            console.warn(`${TEST} [WARN] Locked EventBase is not standard backend`);
-        console.log(`${TEST} Locked EventBase: ${lockedEventbases.map(e => e.registryKey).join(', ')}`);
-
-        const chat = ctx.chat ?? [];
-        const lastUserMsg = [...chat].reverse().find(m => !m.is_system && m.mes)?.mes || 'test query';
-        let lorebookResult;
-        try { lorebookResult = await runLorebookWIDryRun({ chat, testMessage: lastUserMsg, settings: vf }); }
-        catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
-
-        if (!lorebookResult.entryCount) { console.error(`${TEST} [FAIL] Lorebook returned 0 entries`); return; }
-        console.log(`${TEST} Lorebook: ${lorebookResult.entryCount} entries (vectorScore=0.0000 expected)`);
-        console.log(`  preview: ${(lorebookResult.injectionText || '').slice(0, 200)}`);
-
-        const { runEventBaseRetrieval } = await import(base + 'core/eventbase-workflow.js').catch(() => ({}));
-        if (typeof runEventBaseRetrieval !== 'function') { console.warn(`${TEST} [WARN] runEventBaseRetrieval not exported`); return; }
-
-        let eventbaseResult;
-        try { eventbaseResult = await runEventBaseRetrieval({ chat, settings: vf, dryRun: true, testMessage: lastUserMsg }); }
-        catch (err) { console.error(`${TEST} [FAIL] runEventBaseRetrieval threw: ${err.message}`); return; }
-
-        const eventCount = eventbaseResult?.eventCount ?? 0;
-        if (!eventCount) { console.error(`${TEST} [FAIL] EventBase returned 0 events`); return; }
-        console.log(`${TEST} EventBase: ${eventCount} event(s) injected, lockedCollections=${eventbaseResult.lockedCollectionsCount}, archive=${eventbaseResult.archiveCollectionsCount}`);
-        console.log(`  preview: ${(eventbaseResult.injectionText || '').slice(0, 200)}`);
-
-        console.log(`${TEST} [PASS] Lorebook (${lorebookResult.entryCount}) + EventBase (${eventCount}) — standard backend, no contamination`);
     });
     assertPassed(logs);
 });
@@ -1720,10 +1984,13 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
             // ═══════ PHASE 1 — baseline: both should appear ═══════
             const chat = ctx.chat ?? [];
             const query = `${SENTINEL_A} ${SENTINEL_B} fiddlehead obelisk quasar lantern`;
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            // Both phases of this test reuse the same settings override.
+            const testSettings = { ...vf, enabled_world_info: true };
             console.log(`${TEST} Phase 1 query: "${query.slice(0, 80)}..."`);
 
             let p1;
-            try { p1 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            try { p1 = await runLorebookWIDryRun({ chat, testMessage: query, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] Phase 1 dry-run threw: ${err.message}`); return; }
 
             const injection1 = p1?.injectionText || '';
@@ -1756,7 +2023,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
             }
 
             let p2;
-            try { p2 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            try { p2 = await runLorebookWIDryRun({ chat, testMessage: query, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] Phase 2 dry-run threw: ${err.message}`); return; }
 
             const injection2 = p2?.injectionText || '';
@@ -1907,11 +2174,14 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
         try {
             const chat = ctx.chat ?? [];
             const query = `${SENTINEL} rubellite catacombs thressel old carmine faith`;
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            // Both phases of this test reuse the same settings override.
+            const testSettings = { ...vf, enabled_world_info: true };
 
             // ═══ PHASE 1 — baseline: current persona owns, sentinel must appear ═══
             console.log(`${TEST} Phase 1: query with current persona ownership intact...`);
             let p1;
-            try { p1 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            try { p1 = await runLorebookWIDryRun({ chat, testMessage: query, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] Phase 1 dry-run threw: ${err.message}`); return; }
 
             const p1HasSentinel = (p1?.injectionText || '').includes(SENTINEL);
@@ -1937,7 +2207,7 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
             }
 
             let p2;
-            try { p2 = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            try { p2 = await runLorebookWIDryRun({ chat, testMessage: query, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] Phase 2 dry-run threw: ${err.message}`); return; }
 
             const p2HasSentinel = (p2?.injectionText || '').includes(SENTINEL);
@@ -2318,15 +2588,21 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
             // ── Phase C: query lorebook via dry-run WI activation ──
             const chat = ctx.chat ?? [];
             const query = `${LOREBOOK_SENTINEL} ${EVENTBASE_SENTINEL} phosphoric anthelion stilled tide astrelle zirconic oscillator`;
+            // Force enabled_world_info=true — see TEST 001 for rationale.
+            const testSettings = { ...vf, enabled_world_info: true };
 
             console.log(`${TEST} Phase C: querying lorebook + EventBase against synthetic data...`);
             let lbResult;
-            try { lbResult = await runLorebookWIDryRun({ chat, testMessage: query, settings: vf }); }
+            try { lbResult = await runLorebookWIDryRun({ chat, testMessage: query, settings: testSettings }); }
             catch (err) { console.error(`${TEST} [FAIL] runLorebookWIDryRun threw: ${err.message}`); return; }
 
             const lbInjection = lbResult?.injectionText || '';
             if (!lbInjection.includes(LOREBOOK_SENTINEL)) {
-                console.error(`${TEST} [FAIL] Lorebook sentinel "${LOREBOOK_SENTINEL}" not found in injection (entries=${lbResult.entryCount})`);
+                console.error(`${TEST} [FAIL] Lorebook sentinel "${LOREBOOK_SENTINEL}" not found in injection (entries=${lbResult.entryCount}) — result envelope: ${JSON.stringify({
+                    entryCount: lbResult.entryCount,
+                    disabled: lbResult.disabled,
+                    noCollections: lbResult.noCollections,
+                })}`);
                 return;
             }
             console.log(`${TEST} Lorebook ✓ — ${lbResult.entryCount} entry/entries, sentinel found`);

@@ -209,7 +209,7 @@ async function clientSideHybridSearch(backend, collectionId, searchText, topK, s
     const bm25Results = performBM25Search(resultsWithText, searchText, {
         k1: settings.bm25_k1 || 1.5,
         b: settings.bm25_b || 0.75,
-        fieldBoosting: true,  // Enable title (3x) and tags (2x) boosting
+        fieldBoosting: true,  // Enable title (4x) and tags (4x) boosting (see bm25-scorer.js:534, 541)
         corpusStats,
         settings,
         debugLog,

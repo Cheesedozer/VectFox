@@ -151,7 +151,7 @@ All four merge with the original search and feed the same 4-weight re-ranker. Th
 **Why Agent Mode pairs with A3 (Qdrant)**:
 
 - Each planner query is a separate Qdrant call. Qdrant fanout completes in 1–3 seconds for 4 parallel queries.
-- A1/A2 (Vectra) would serialize these and lose the parallelism advantage.
+- AgentMode requires Qdrant — on the Standard backend it skips entirely (logs `mode=SKIPPED reason=requires_qdrant_backend`) and just returns the pre-search unchanged. No graceful degradation, by design.
 - Qdrant's payload filters (`characters_any`, `concepts_any`) let the planner narrow each search precisely — the standard backend doesn't expose these.
 
 **Cost & latency**: ~$0.0002 with GPT-4o-mini or Haiku as the planner, ~2–5 seconds added per turn. It's purely additive — never replaces normal search, and falls back cleanly to the standard flow if the planner fails. Configure it in the dedicated **AgentMode** tab; default off.
@@ -170,7 +170,7 @@ Most existing memory extensions use one of two approaches. Both lose detail as t
 | **At msg 200**              | Heavily compressed — names, numbers, and one-off details drift or vanish | Token budget overflow — older chunks score-pruned or dropped          | **Intact** — old events still in DB, surfaced by relevance                                                            |
 | **At msg 1,000+**           | Effectively a blur                                                        | DB bloat; retrieval gets noisy because raw chunks are low signal       | **Intact** — only the few events relevant to the current scene are pulled                                             |
 | **What "compression" does** | Re-summarizes the summary recursively, so every pass loses information    | None — but no synthesis either; raw text is hit-or-miss for retrieval | One-time, semantic — extracts*the meaningful event* and drops filler. Detail in the event itself is preserved.        |
-| **Retrieval signal**        | None — the whole summary is always injected                              | Vector similarity over raw text (catches paraphrases but also noise)   | Vector + BM25 hybrid over rich fields (`characters`, `items`, `locations`, `concepts`, `keywords`, plus dense meaning) |
+| **Retrieval signal**        | None — the whole summary is always injected                              | Vector similarity over raw text (catches paraphrases but also noise)   | Vector + BM25 hybrid over rich fields (`characters`, `items`, `locations`, `concepts`, `keywords`, `open_threads`, plus dense meaning) |
 | **Where detail goes**       | Lost forever once compressed                                              | Lost when chunk drops below score threshold                            | **Doesn't go anywhere** — events live in the vector DB and surface when relevant                                      |
 | **What gets injected**      | The whole running summary (every turn, every time)                        | A few semantically-close raw messages                                  | Only the events that matter for the current message                                                                    |
 
@@ -199,23 +199,25 @@ Browser does a vector search to get the top ~100 candidates, then computes BM25 
 
 ### A2 — Standard backend + Hybrid (Recommend for most users that doesn't go the A3 Path)
 
-Same as A1, but adds:
+Browser does a vector search to get the top ~100 candidates, then ranks **the same candidate pool** two ways — once by vector similarity, once by BM25 — and fuses the two ranked lists via:
 
-- **RRF (Reciprocal Rank Fusion)** — combines results by *position* instead of raw score
-- **Dual-signal bonus** — results that appear in *both* lists get up to +8% boost
+- **RRF (Reciprocal Rank Fusion)** — combines results by *position* in each list instead of raw score
+- **Dual-signal bonus** — results that appear in *both* lists get up to +8% boost; single-signal results take a small penalty (×0.55 vector-only / ×0.60 text-only)
 
-**Example:** Searching "Astarion drinks blood." An event matched by both vector ("vampires/hunger") *and* BM25 (literal "Astarion" + "blood") gets ranked higher than events in only one list.
+> ⚠️ **A2 is not independent sparse retrieval.** Both ranked lists are drawn from the *same dense ANN candidate pool*. BM25 can re-order what the dense layer already returned, but it cannot surface a keyword-only match that the dense ANN missed. Only **A3** stores a true sparse vector per event and runs sparse retrieval over the full corpus.
 
-**Tradeoff:** Better fusion on browser with a faster computer, but still limited to the vector top-K 100 candidate pool. (It's still top 100 sample)
+**Example:** Searching "Astarion drinks blood." If the dense ANN returned an event mentioning Astarion and blood (e.g. because "vampires/hunger" is semantically close), both rankings will surface it and the dual-signal bonus pushes it up. If a rare keyword-only event is outside the top-100 window, A2 won't find it — A3 would.
+
+**Tradeoff:** Better fusion on browser with a faster computer, but recall is still bounded by the dense top-K (~100 candidates).
 
 ### A3 — Qdrant native sparse + server-side RRF + formula rerank (best accuracy)
 
 A3 runs **everything inside Qdrant in a single API call**. The key structural advantage over A1 / A2 isn't just "faster" — it's that **A3 actually searches the full corpus by keywords**, while A1 / A2 only search by dense vectors:
 
 1. **Dense + sparse hybrid retrieval over the FULL corpus** — Qdrant stores a sparse keyword vector on every event at upsert time. At query time it runs the dense index (meaning) and the sparse index (keywords) **in parallel against every event in the collection**, then fuses the two result lists via native RRF. This is the part that genuinely scales: if a rare keyword only appears in one obscure event from 1,500 chats ago, the sparse index finds it directly — no dependence on the dense vector layer happening to surface it. (A1 / A2 only score the ANN top-K candidates the dense layer returned, so events outside that window are invisible no matter how well their keywords match.) BM25 IDF is also computed globally on the server, so rare-word scoring is correct by construction.
-2. **Server-side formula rerank** — Qdrant then applies the 4-weight importance/persist/recency formula to those hybrid results inside the same call: `cosine × RRF score + importance weight + persistence bonus + recency decay`. The final ranked list comes back already sorted. No extra round-trip. No browser JavaScript doing the scoring.
+2. **Server-side formula rerank** — Qdrant then applies a 4-weight rerank formula to those hybrid results inside the same call. Each `w_X` is a user-tunable weight slider; the term it multiplies is normalized so weights compose cleanly: `w_cosine × RRF_score + w_importance × (importance/10) + w_persist × (1 if should_persist else 0) + w_recency × exp_decay(source_window_end → chatLength)`. The final ranked list comes back already sorted. No extra round-trip. No browser JavaScript doing the scoring.
 3. **Server-side filtering** — Minimum importance threshold and context dedup cutoff (events already visible in recent chat) are enforced inside Qdrant, not after the results arrive. Events below the threshold never leave the server.
-4. **AgentMode semantic pre-filtering + multi-angle querying** — AgentMode does two things that compound each other. First, the planner LLM decomposes the user's question into multiple sub-queries from different angles — not just the surface meaning, but also *how did this happen?*, *what led up to it?*, *what were the consequences?*, *who else was involved?* Each angle runs as a separate vector search. Second, the planner emits structured entity filters (`characters_any`, `locations_any`, `factions_any`, `concepts_any`, `event_type_any`, `importance_gte`) applied as Qdrant payload clauses in the same call, narrowing the candidate pool *before* vector search even runs. The combination is powerful: multi-angle queries cast a wide semantic net while pinpoint filters ensure every search stays scoped to the right entities — irrelevant characters, locations, or event types never compete for recall slots.
+4. **AgentMode semantic pre-filtering + multi-angle querying** — AgentMode does two things that compound each other. First, the planner LLM decomposes the user's question into multiple sub-queries from different angles — not just the surface meaning, but also *how did this happen?*, *what led up to it?*, *what were the consequences?*, *who else was involved?* Each angle runs as a separate vector search. Second, the planner emits structured entity filters (`characters_any`, `locations_any`, `factions_any`, `items_any`, `concepts_any`, `event_type_any`, `importance_gte`) applied as Qdrant payload clauses in the same call, narrowing the candidate pool *before* vector search even runs. The combination is powerful: multi-angle queries cast a wide semantic net while pinpoint filters ensure every search stays scoped to the right entities — irrelevant characters, locations, or event types never compete for recall slots.
 
 The browser only handles anchor boost (phrase matching), pairwise dedup, and the final merge across multiple collections.
 
@@ -229,16 +231,16 @@ The browser only handles anchor boost (phrase matching), pairwise dedup, and the
 | What runs where                  | A1 — Standard + BM25                                | A2 — Standard + Hybrid                                  | A3 — Qdrant Native                                                       |
 | ---------------------------------- | ----------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Requires Qdrant                  | ❌ No                                               | ❌ No                                                   | ✅ Yes (free, open-source)                                                |
-| **Keyword search scope**         | Scores top ~100 dense candidates only               | Scores top ~300 dense candidates only                   | **Searches every event in the collection by keywords** (sparse index)    |
+| **Keyword search scope**         | Scores top ~100 dense candidates only (`topK × 2`, cap 100) | Scores top ~100 dense candidates only (`topK × 3`, cap 100) | **Searches every event in the collection by keywords** (sparse index)    |
 | BM25 IDF weights                 | Corpus-wide (default on)                            | Corpus-wide (default on)                                | Corpus-wide (server-side, always)                                        |
 | Recall ceiling                   | Bounded by dense vector top-K                       | Bounded by dense vector top-K                           | **Union of dense + sparse results** — keyword-only matches still surface |
-| Dense + sparse fusion            | Weighted blend, browser                             | RRF + dual-signal bonus, browser                        | **Server-side RRF, 1 call**                                              |
+| Vector + BM25 score fusion       | Weighted-sum `0.5·v + 0.5·bm25`, browser            | RRF + dual-signal bonus (+0–8%) + single-signal penalty (×0.55 / ×0.60), browser | **Server-side native RRF over dense + sparse vectors, 1 call**           |
 | Importance / recency re-ranking  | Browser JS                                          | Browser JS                                              | **Server-side formula** (Qdrant ≥ 1.13)                                  |
 | Minimum importance filter        | Browser JS                                          | Browser JS                                              | **Server-side**                                                          |
 | Context dedup filter             | Browser JS                                          | Browser JS                                              | **Server-side**                                                          |
 | AgentMode semantic pre-filtering | ❌ Not supported                                    | ❌ Not supported                                        | **Server-side** (characters, locations, factions, concepts, event type)  |
 | Network calls per query          | 1                                                   | 1                                                       | **1** (hybrid + rerank + filter, all in one)                             |
-| Scale ceiling                    | ~500 events                                         | ~500 events                                             | **10,000+ events**                                                       |
+| Scale ceiling                    | Hundreds of events (sub-second BM25 over ANN top-K) | Hundreds of events (sub-second BM25 over ANN top-K)     | **Thousands+ events** (sparse index, server-side rerank)                 |
 
 
 | Backend setting                                                 | Path you get |
