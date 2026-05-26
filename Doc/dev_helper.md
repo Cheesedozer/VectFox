@@ -805,17 +805,55 @@ EventBase-only users (the typical case) hit gate 1 and short-circuit — debug l
 
 ---
 
-### 16.2 Pre-existing test failures (18 tests across 4 files)
+### 16.2 ~~Pre-existing test failures~~ — RESOLVED 2026-05-26
 
-**Status**: Deferred — confirmed pre-existing on `main` before the lorebook WI branch. Not introduced by our changes.
+**Status**: Fully resolved. `npm test` now shows **594 passed | 0 failed | 13 test files passed**.
 
-**Bucket 1 — `tests/backends.test.js` (18 tests)**
+Documented here for historical reference — the original problem and the fix had broader implications than just "make the tests pass."
 
-`vi.mock('../core/providers.js')` in that file doesn't include `getModelFromSettings` in its factory. The function was added to `providers.js` after the mock was written, so any test path that reaches `getModelFromSettings(settings)` throws `[vitest] No "getModelFromSettings" export is defined on the mock`. Fix: add `getModelFromSettings: vi.fn(() => 'mock-model')` to the mock factory.
+#### Original state (before fix)
 
-**Bucket 2 — `tests/backend-manager.test.js`, `tests/hybrid-search.test.js`, `tests/world-info-integration.test.js`**
+```
+Test Files  4 failed | 9 passed (13)
+Tests       20 failed | 443 passed (463)
+```
 
-Vitest tries to resolve ST relative paths (e.g. `../../../../extensions.js`) that live outside the project root, causing module-load failures. Fix options: (a) add `resolve.alias` entries in `vitest.config.js` pointing to stub files, or (b) extract tested logic into ST-free modules the way `lorebook-content-preparer.js` was extracted for the `content-vectorization` tests.
+Two distinct buckets of failure:
+
+- **Bucket 1 — `tests/backends.test.js` (20 individual test failures)**
+  `vi.mock('../core/providers.js')` factory was missing `getModelFromSettings`. Function was added to `providers.js` after the mock was written; every test path that reached `getModelFromSettings(settings)` threw `[vitest] No "getModelFromSettings" export is defined on the mock`.
+
+- **Bucket 2 — `tests/backend-manager.test.js`, `tests/hybrid-search.test.js`, `tests/world-info-integration.test.js` (file-load failures)**
+  Vitest tries to resolve ST relative paths (e.g. `../../../../extensions.js`) that live outside the project root. The test files didn't mock all the SillyTavern host modules their transitive imports needed → module-load fails → file fails to load → tests inside never run (silently hidden in the failing test-file count).
+
+#### Fix summary
+
+| Action | Where | Effect |
+|---|---|---|
+| Added `getModelFromSettings: vi.fn(() => 'test-model')` to providers mock | [tests/backends.test.js:54](../tests/backends.test.js#L54) | Resolved Bucket 1 (20 → 0 test failures) |
+| Removed `@vitest-environment jsdom` directive | [tests/backend-manager.test.js](../tests/backend-manager.test.js) | The jsdom env broke vite's import-analysis pre-pass for the SillyTavern mocks; removing it fixed 21 tests |
+| Added SillyTavern + transitive mocks (extensions.js, script.js, plus `porterStemmer`, `getBackendForCollection`) | [tests/hybrid-search.test.js](../tests/hybrid-search.test.js) | File loads; 56/56 tests pass |
+| Added SillyTavern + transitive mocks, `vi.hoisted` shared state for registry/sourceName/disabled flags, vf_ prefix + _T0 suffix on test collection IDs to match production format | [tests/world-info-integration.test.js](../tests/world-info-integration.test.js) | File loads; 37/37 tests pass |
+| 2 assertion updates for API drift | hybrid-search.test.js (6th `filters` arg added to `backend.hybridQuery`), world-info-integration.test.js (`scope` default changed `'global'` → `'character'`, `isLorebookVectorized` no longer calls `buildLorebookCollectionId`) | Test assertions match shipped behavior |
+
+#### **2 real source bugs uncovered and fixed**
+
+The restoration surfaced two pre-existing latent bugs in `core/world-info-integration.js` that would crash any caller of `window.VectFox_WorldInfo.*` helpers from the browser console:
+
+1. **[core/world-info-integration.js:16](../core/world-info-integration.js#L16)** — `getCollectionRegistry` was called at line 275 but was not imported. Anyone calling `isLorebookVectorized()` or `getLorebookVectorStats()` would have hit `ReferenceError: getCollectionRegistry is not defined`. Fixed by adding to the import.
+2. **[core/world-info-integration.js:17](../core/world-info-integration.js#L17)** — `isCollectionEnabled` was called at line 337 in `getLorebookVectorStats` but was not imported. Same `ReferenceError` failure mode. Fixed by adding to the import.
+
+Both bugs were invisible in production because the affected helpers are exposed on `window.VectFox_WorldInfo` for debugging — they're never called from VectFox's own code paths. The tests were the only callers that exercised them. **Without test restoration, these stayed latent indefinitely.**
+
+#### **1 dead-code refactor** (test surfaced it)
+
+- **[core/world-info-integration.js:277](../core/world-info-integration.js#L277)** — `_findLorebookRegistryEntry`'s `settings` parameter was effectively dead (function read from module-global `getCollectionRegistry()`, ignored the argument). Updated to honor `settings.vectfox_collection_registry` when caller supplies it; falls back to the global otherwise. Removes hidden dead code and aligns with test expectations.
+
+#### Lesson
+
+The test restoration discovered 2 production source bugs and 1 dead-code path that no other code path would have caught. Restoring tests when their assertions still look reasonable is a high-yield activity even when "just deleting them and trusting Playwright" feels easier — the Playwright suite only exercises the main flows, not the low-traffic helpers exposed for browser-console debugging.
+
+If a future contributor sees broken-looking tests in the suite, the playbook is: (1) make them load by adding the missing mocks, (2) check whether failing assertions reveal real source bugs or stale test expectations, (3) only delete if the tested code has been removed.
 
 ---
 

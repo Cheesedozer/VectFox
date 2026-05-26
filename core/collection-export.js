@@ -662,6 +662,13 @@ export async function importCollection(exportData, settings, options = {}) {
     // if any vector contains one — better than silently storing broken
     // vectors and watching retrieval scores come back as NaN. No magnitude
     // bound — providers vary, normalization is provider-specific.
+    //
+    // Also enforce vector-dimension consistency across all chunks: Qdrant
+    // rejects dim-mismatch at insert time (reactive), but Standard/Vectra
+    // accepts whatever it's given, so a mixed-dim import would silently
+    // corrupt every subsequent cosine query with no clear error pointing
+    // at the cause. Catch it here once, with an actionable message.
+    let importDim = null;
     for (let i = 0; i < validChunks.length; i++) {
         const v = validChunks[i].vector;
         if (!v || !Array.isArray(v)) continue; // skip — will be re-embedded
@@ -669,6 +676,15 @@ export async function importCollection(exportData, settings, options = {}) {
             if (!Number.isFinite(v[j])) {
                 throw new Error(`Chunk ${i} vector has non-finite component at index ${j} (value: ${v[j]}). Refusing to import.`);
             }
+        }
+        if (importDim === null) {
+            importDim = v.length;
+        } else if (v.length !== importDim) {
+            throw new Error(
+                `Vector dimension mismatch: chunk 0 has dim=${importDim}, ` +
+                `chunk ${i} has dim=${v.length}. All vectors in an import must share one dimension. ` +
+                `Refusing to import.`
+            );
         }
     }
     // ─── end H-3 mitigations ──────────────────────────────────────────────
@@ -933,6 +949,30 @@ async function importCollectionSilent(exportData, settings, options = {}) {
         throw new Error('No valid chunks to import');
     }
 
+    // Mirror importCollection's vector validation: NaN/Infinity guard +
+    // dimension consistency check. Standard/Vectra silently accepts bad
+    // dims; Qdrant catches it reactively. Catching it here once per import
+    // gives a clear actionable error regardless of target backend.
+    let importDim = null;
+    for (let i = 0; i < validChunks.length; i++) {
+        const v = validChunks[i].vector;
+        if (!v || !Array.isArray(v)) continue;
+        for (let j = 0; j < v.length; j++) {
+            if (!Number.isFinite(v[j])) {
+                throw new Error(`Chunk ${i} vector has non-finite component at index ${j} (value: ${v[j]}). Refusing to import.`);
+            }
+        }
+        if (importDim === null) {
+            importDim = v.length;
+        } else if (v.length !== importDim) {
+            throw new Error(
+                `Vector dimension mismatch: chunk 0 has dim=${importDim}, ` +
+                `chunk ${i} has dim=${v.length}. All vectors in an import must share one dimension. ` +
+                `Refusing to import.`
+            );
+        }
+    }
+
     // Check if we can use pre-computed vectors
     const embeddingInfo = exportData.embedding || {};
     const chunksWithVectors = validChunks.filter(c => c.vector && Array.isArray(c.vector));
@@ -1052,12 +1092,26 @@ function detectContentType(collectionId) {
     return 'unknown';
 }
 
+/** Upload size cap — generous enough for typical chat-history exports
+ * (the largest collections we've seen in production are well under 100 MB
+ * with vectors included). Caps the FileReader.readAsText() memory cost +
+ * the subsequent JSON.parse() main-thread block. */
+export const MAX_IMPORT_FILE_BYTES = 400 * 1024 * 1024; // 400 MB
+
 /**
  * Reads and parses an import file
  * @param {File} file - File object from input
  * @returns {Promise<object>} Parsed JSON data
  */
 export async function readImportFile(file) {
+    if (file?.size > MAX_IMPORT_FILE_BYTES) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        const capMB = MAX_IMPORT_FILE_BYTES / 1024 / 1024;
+        throw new Error(
+            `Import file too large: ${sizeMB} MB exceeds ${capMB} MB limit. ` +
+            `Split the export into smaller batches.`
+        );
+    }
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
 
