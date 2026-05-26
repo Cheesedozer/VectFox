@@ -324,6 +324,15 @@ function bindEvents() {
                         toastr.success(`Imported ${result.count} patterns`, 'VectFox');
                     }
 
+                    // Surface ReDoS-guard / length-cap skips so the user knows
+                    // not every pattern in the file landed (see importPatterns
+                    // in core/text-cleaning.js for the skip rules).
+                    if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+                        for (const w of result.warnings) {
+                            toastr.warning(w, 'VectFox: Pattern skipped', { timeOut: 8000 });
+                        }
+                    }
+
                     // Update custom patterns list
                     $('#VectFox_tcm_custom_patterns').html(renderCustomPatterns(settings.customPatterns));
                     rebindDeleteHandlers();

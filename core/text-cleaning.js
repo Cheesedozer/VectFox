@@ -429,16 +429,48 @@ export function exportPatterns() {
     return JSON.stringify(settings.customPatterns || [], null, 2);
 }
 
+/** Length cap on imported regex patterns. Legitimate patterns are well
+ * under 200 chars; 300 leaves headroom without restricting normal use. */
+const MAX_IMPORTED_PATTERN_LEN = 300;
+
+/** Catastrophic-backtracking motifs commonly found in ReDoS payloads:
+ *  - nested quantifier: (X+)+ or (X*)* — exponential on inputs that
+ *    can be split multiple ways
+ *  - quantified alternation with overlapping branches: (X|X)+ — same
+ *    class of exponential ambiguity
+ * These heuristics intentionally don't sweep up legitimate patterns
+ * like `(foo)+` (single non-quantified group, then quantifier). */
+const REDOS_MOTIF_RE = /\([^)]*[+*][^)]*\)\s*[+*]|\([^)]*\|[^)]*\)\s*[+*]/;
+
+/**
+ * Validate an imported pattern string for length + ReDoS shape before
+ * it reaches `new RegExp(...)`. Returns { ok: true } if safe to import,
+ * or { ok: false, reason: string } if it should be skipped.
+ */
+function _validateImportedPattern(pattern) {
+    if (typeof pattern !== 'string') {
+        return { ok: false, reason: 'pattern is not a string' };
+    }
+    if (pattern.length > MAX_IMPORTED_PATTERN_LEN) {
+        return { ok: false, reason: `exceeds ${MAX_IMPORTED_PATTERN_LEN} char limit (got ${pattern.length})` };
+    }
+    if (REDOS_MOTIF_RE.test(pattern)) {
+        return { ok: false, reason: 'matches a catastrophic-backtracking motif (nested quantifier or quantified alternation) — add manually if intended' };
+    }
+    return { ok: true };
+}
+
 /**
  * Imports patterns from JSON (supports both pattern arrays and full templates)
  * @param {string} json - JSON string of patterns or template
- * @returns {{success: boolean, count: number, isTemplate?: boolean, templateName?: string, error?: string}}
+ * @returns {{success: boolean, count: number, isTemplate?: boolean, templateName?: string, error?: string, warnings?: string[]}}
  */
 export function importPatterns(json) {
     try {
         const data = JSON.parse(json);
         const settings = getCleaningSettings();
         settings.customPatterns = settings.customPatterns || [];
+        const warnings = [];
 
         // Check if this is a full template (has preset/enabledBuiltins/customPatterns)
         if (data.customPatterns && !Array.isArray(data)) {
@@ -453,6 +485,12 @@ export function importPatterns(json) {
             let count = 0;
             for (const pattern of (data.customPatterns || [])) {
                 if (!pattern.pattern) continue;
+
+                const validation = _validateImportedPattern(pattern.pattern);
+                if (!validation.ok) {
+                    warnings.push(`Pattern "${pattern.name || '(unnamed)'}" skipped: ${validation.reason}`);
+                    continue;
+                }
 
                 const exists = settings.customPatterns.some(p => p.pattern === pattern.pattern);
                 if (!exists) {
@@ -470,7 +508,7 @@ export function importPatterns(json) {
             }
 
             saveCleaningSettings(settings);
-            return { success: true, count, isTemplate: true, templateName: data.name || 'Unnamed Template' };
+            return { success: true, count, warnings, isTemplate: true, templateName: data.name || 'Unnamed Template' };
         }
 
         // Array format (just patterns)
@@ -481,6 +519,12 @@ export function importPatterns(json) {
         let count = 0;
         for (const pattern of data) {
             if (!pattern.pattern) continue;
+
+            const validation = _validateImportedPattern(pattern.pattern);
+            if (!validation.ok) {
+                warnings.push(`Pattern "${pattern.name || '(unnamed)'}" skipped: ${validation.reason}`);
+                continue;
+            }
 
             // Check for duplicates by pattern string
             const exists = settings.customPatterns.some(p => p.pattern === pattern.pattern);
@@ -499,7 +543,7 @@ export function importPatterns(json) {
         }
 
         saveCleaningSettings(settings);
-        return { success: true, count };
+        return { success: true, count, warnings };
 
     } catch (e) {
         return { success: false, count: 0, error: e.message };

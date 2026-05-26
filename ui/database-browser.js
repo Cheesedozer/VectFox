@@ -73,6 +73,7 @@ import {
   readImportFile,
   validateImportData,
   getExportInfo,
+  MAX_IMPORT_FILE_BYTES,
 } from "../core/collection-export.js";
 import {
   embedDataInPNG,
@@ -585,16 +586,14 @@ function bindBrowserEvents() {
     $(this).val("");
 
     // H-3 mitigation: reject oversized files at the picker before any read
-    // commitment. 400 MB is well above any realistic export (the largest
-    // EventBase exports with thousands of 1536-dim vectors run ~40-60 MB),
-    // but well below browser memory limits — modern desktop browsers handle
-    // a 400 MB file read without crashing. The cap exists to stop a multi-GB
-    // PNG from OOM-ing the tab before parse can fail gracefully.
-    const MAX_IMPORT_BYTES = 400 * 1024 * 1024;
-    if (file.size > MAX_IMPORT_BYTES) {
+    // commitment. Cap (MAX_IMPORT_FILE_BYTES) is defined once in
+    // core/collection-export.js and shared between this PNG picker and the
+    // JSON file-reader path — keeps the two import paths in sync if the
+    // cap is ever retuned.
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
       const mb = (file.size / 1024 / 1024).toFixed(1);
       toastr.error(
-        `File too large: ${mb} MB (max ${MAX_IMPORT_BYTES / 1024 / 1024} MB).`,
+        `File too large: ${mb} MB (max ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB).`,
         "VECTFOX Import",
       );
       return;
