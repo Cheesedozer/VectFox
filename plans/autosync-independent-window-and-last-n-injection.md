@@ -27,7 +27,7 @@ Before changing code, confirm the surface area is what was read while planning. 
 |---|---|
 | `Grep` `eventbase_window_size\|eventbase_window_overlap` across the repo | Reads in workflow: [`core/eventbase-workflow.js:95-96`](core/eventbase-workflow.js#L95-L96) (runEventBaseIngestion) and [`:726-727`](core/eventbase-workflow.js#L726-L727) (isChatFullyVectorized). Writes: [`index.js:179-180`](index.js#L179-L180) (defaults `window_size=2`, `window_overlap=0`). UI slider inputs: [`ui/ui-manager.js:869-876`](ui/ui-manager.js#L869) (lifted in §4.2) with bindings at [`:3413-3414`](ui/ui-manager.js#L3413). One-off vectorize sends them: [`ui/content-vectorizer.js:2598-2599`](ui/content-vectorizer.js#L2598-L2599). If any extra hits appear, audit before changing. |
 | `Grep` `runEventBaseIngestion` call sites | 3 callers: auto-sync at [`core/chat-vectorization.js:370`](core/chat-vectorization.js#L370), backfill at [`core/chat-vectorization.js:1572`](core/chat-vectorization.js#L1572), and one-off vectorize at [`ui/content-vectorizer.js:2642`](ui/content-vectorizer.js#L2642). Only the first is "auto-sync"; the other two are user-triggered. |
-| `Grep` `findEventBaseCollectionIdsForChat\|stampAutoSyncMarker` | Helpers already exist post-C3 at [`core/eventbase-store.js:254`](core/eventbase-store.js#L254) (stamp) and [`:455`](core/eventbase-store.js#L455) (collection-id resolver). Both will be re-used by the migration hook in §4.1. |
+| `Grep` `findEventBaseCollectionIdsForChat\|stampAutoSyncMarker` | Helpers already exist post-C3 at [`core/eventbase-store.js:321`](core/eventbase-store.js#L321) (stamp) and [`:522`](core/eventbase-store.js#L522) (collection-id resolver). Both will be re-used by the migration hook in §4.1. |
 | Verify EventBase event metadata carries `source_window_end` | See [`core/eventbase-store.js:75`](core/eventbase-store.js#L75) — `index` field is set from `source_window_end`, and the full event is spread into `metadata`. Already exposed via `listChunks` (used by §3.1 and by the C3 marker stamper). |
 | Verify EventBase prompt tag | [`core/eventbase-workflow.js:31`](core/eventbase-workflow.js#L31) — `EVENTBASE_PROMPT_TAG`. Feature B (§3) uses a **separate** tag (`_eventbase_lastn`) so the two injections don't collide. |
 
@@ -40,15 +40,104 @@ When this plan was first written, several pieces of mechanism were proposed as p
 | Mechanism | Status | Where to find it |
 |---|---|---|
 | Per-chat auto-sync marker storage | ✅ shipped | `extension_settings.vectfox.eventbase_autosync_start_marker` ([`index.js:181-186`](index.js#L181-L186)) |
-| `stampAutoSyncMarker(uuid, settings)` — smart-placement helper | ✅ shipped | [`core/eventbase-store.js:254`](core/eventbase-store.js#L254) |
-| `getAutoSyncMarker` / `clearAutoSyncMarker` accessors | ✅ shipped | [`core/eventbase-store.js:219, 229`](core/eventbase-store.js#L219) |
-| `getLastUsedWindowSize` / `setLastUsedWindowSize` | ✅ shipped | [`core/eventbase-store.js:300, 310`](core/eventbase-store.js#L300) |
-| Marker filter in `runEventBaseIngestion` (auto-sync only) | ✅ shipped | [`core/eventbase-workflow.js:170-180`](core/eventbase-workflow.js#L170-L180) |
-| `lastUsedWindowSize` stamp on successful run | ✅ shipped | [`core/eventbase-workflow.js:370-376`](core/eventbase-workflow.js#L370-L376) |
-| Stamp on auto-sync enable + clear on disable | ✅ shipped | [`ui/ui-manager.js:2063-2103`](ui/ui-manager.js#L2063-L2103) |
+| `stampAutoSyncMarker(uuid, settings)` — smart-placement helper | ✅ shipped | [`core/eventbase-store.js:321`](core/eventbase-store.js#L321) |
+| `getAutoSyncMarker` / `clearAutoSyncMarker` accessors | ✅ shipped | [`core/eventbase-store.js:286, 296`](core/eventbase-store.js#L286) |
+| `getLastUsedWindowSize` / `setLastUsedWindowSize` | ✅ shipped | [`core/eventbase-store.js:367, 377`](core/eventbase-store.js#L367) |
+| Marker filter in `runEventBaseIngestion` (auto-sync only) | ✅ shipped | [`core/eventbase-workflow.js:180-192`](core/eventbase-workflow.js#L180-L192) |
+| `lastUsedWindowSize` stamp on successful run | ✅ shipped | [`core/eventbase-workflow.js:457-459`](core/eventbase-workflow.js#L457-L459) |
+| Stamp on auto-sync enable + clear on disable | ✅ shipped | [`ui/ui-manager.js:2073-2139`](ui/ui-manager.js#L2073-L2139) |
+| Vectorization tip cache (`getVectorizationTip`, `setVectorizationTip`, `clearVectorizationTip`, `ensureVectorizationTip`) | ✅ shipped | [`core/eventbase-store.js:47-101`](core/eventbase-store.js#L47) |
 | Window-size-change warn modal on Continue path | ✅ shipped | [`ui/content-vectorizer.js:2584-2620`](ui/content-vectorizer.js#L2584-L2620) |
 
 **Practical impact on this plan**: Feature A is now essentially "add a slider, plumb an override, call the existing stamper when the slider changes." See §6 for the post-C3 effort estimate.
+
+---
+
+## 0.6 Pre-implementation fix: vectorization tip persistence
+
+**Do this before starting §1.** It is a self-contained cleanup (~20 lines net) that removes async complexity from a hot code path and makes the "vectorization: N msgs" display correct for all backends.
+
+### Why the current approach is wrong
+
+The 2026-05-26 "auto sync number display fix" commit (SHA `8962838`) added `ensureVectorizationTip` to fix the UI showing the frozen auto-sync start marker instead of the live extraction progress. The fix works by probing the backend via `listChunks` on a cold in-memory cache (after page reload) to recompute `max(source_window_end) + 1`.
+
+**The problem**: the Standard backend's `listChunks` falls back to SillyTavern's native `/api/vector/list` when the similharity plugin is not available. That native endpoint returns **hashes only** — `metadata: {}` for every item. `ensureVectorizationTip` therefore returns `null` for Standard-without-plugin users on every page reload, and the UI silently falls back to the stale marker value. The backend probe also makes `getChatAutoSyncStatus` unnecessarily `async`, which complicates two callers in `ui-manager.js` that were previously simple sync calls.
+
+### What the existing code does (shipped in `8962838`)
+
+| Function | Role |
+|---|---|
+| `ensureVectorizationTip(chatUUID, collectionId, settings)` at [`:74`](core/eventbase-store.js#L74) | Async. On in-memory cache miss, calls `getBackend(settings)` → `listChunks(collectionId, settings, { limit: 10000 })`, scans items for `max(metadata.source_window_end)`, populates `_vectorizationTipByUuid`, returns the tip. Returns `null` if the backend probe fails or returns no metadata. |
+| `getChatAutoSyncStatus(settings)` at [`eventbase-workflow.js:852`](core/eventbase-workflow.js#L852) | Made `async` solely to `await ensureVectorizationTip(...)`. Returns `vectorizationTip` in the status object. |
+| `refreshAutoSyncCheckbox` and the auto-sync change handler in `ui-manager.js` | Changed to `await getChatAutoSyncStatus(settings)` (were simple sync calls before `8962838`). |
+
+The in-memory setter (`setVectorizationTip`) is called correctly by the ingestion loop after every successful window — so the display is accurate **during the session**. The backend probe only matters on a **cold reload before the next ingestion fires**.
+
+### The fix: persist the tip in `extension_settings`
+
+The tip is already being written by `setVectorizationTip` after every successful window. If that same call also writes to `extension_settings.vectfox.eventbase_vectorization_tip[chatUUID]`, then `getVectorizationTip` can read it back on a cold reload without any backend involvement — making the whole stack synchronous and backend-agnostic.
+
+### Implementation
+
+**Step 1 — Add the default key to [`index.js`](index.js)** near the existing `eventbase_autosync_start_marker` block:
+
+```js
+eventbase_vectorization_tip: {},   // chatUUID → number (max source_window_end + 1)
+```
+
+**Step 2 — Rewrite `setVectorizationTip` in [`core/eventbase-store.js:52`](core/eventbase-store.js#L52)** to also persist:
+
+```js
+export function setVectorizationTip(chatUUID, tip) {
+    if (!chatUUID || typeof tip !== 'number' || !Number.isFinite(tip)) return;
+    const current = _vectorizationTipByUuid.get(chatUUID) ?? -1;
+    if (tip > current) {
+        _vectorizationTipByUuid.set(chatUUID, tip);
+        const stored = extension_settings.vectfox;
+        if (tip > (stored.eventbase_vectorization_tip?.[chatUUID] ?? -1)) {
+            if (!stored.eventbase_vectorization_tip) stored.eventbase_vectorization_tip = {};
+            stored.eventbase_vectorization_tip[chatUUID] = tip;
+            saveSettingsDebounced();
+        }
+    }
+}
+```
+
+**Step 3 — Rewrite `getVectorizationTip` in [`core/eventbase-store.js:47`](core/eventbase-store.js#L47)** to warm the in-memory cache from `extension_settings` on cold read:
+
+```js
+export function getVectorizationTip(chatUUID) {
+    if (!chatUUID) return undefined;
+    const cached = _vectorizationTipByUuid.get(chatUUID);
+    if (typeof cached === 'number') return cached;
+    const persisted = extension_settings.vectfox?.eventbase_vectorization_tip?.[chatUUID];
+    if (typeof persisted === 'number') {
+        _vectorizationTipByUuid.set(chatUUID, persisted);
+        return persisted;
+    }
+    return undefined;
+}
+```
+
+**Step 4 — Delete `ensureVectorizationTip`** ([`core/eventbase-store.js:74`](core/eventbase-store.js#L74)) entirely. It is no longer called by anything after Step 5.
+
+**Step 5 — Revert `getChatAutoSyncStatus` to sync** ([`core/eventbase-workflow.js:852`](core/eventbase-workflow.js#L852)):
+- Remove `async` from the function signature.
+- Replace `const vectorizationTip = await ensureVectorizationTip(uuid, match.collectionId, settings);` with `const vectorizationTip = getVectorizationTip(uuid);` (import `getVectorizationTip` instead of `ensureVectorizationTip`).
+
+**Step 6 — Revert the two `await` calls in [`ui/ui-manager.js`](ui/ui-manager.js)**:
+- [`refreshAutoSyncCheckbox` (~line 1726)](ui/ui-manager.js#L1726): `const status = await getChatAutoSyncStatus(settings);` → `const status = getChatAutoSyncStatus(settings);`
+- [Auto-sync change handler (~line 2081)](ui/ui-manager.js#L2081): same one-word revert.
+
+### What this does NOT change
+
+- `clearVectorizationTip` stays — it should also clear `extension_settings.vectfox.eventbase_vectorization_tip[chatUUID]` (add that one line to its body).
+- `setVectorizationTip` is already called in the right place (`runEventBaseIngestion` after each successful window). No ingestion-loop changes needed.
+- The `vectorizationTip` field in the `getChatAutoSyncStatus` return object stays — callers (`refreshAutoSyncCheckbox`) already consume it.
+
+### Edge case: existing users with no persisted tip
+
+First session after this ships, `getVectorizationTip` returns `undefined` (nothing in `extension_settings` yet) → UI falls back to `markerValue`. This is the exact same behavior as before `8962838` — not a regression. The persisted tip populates correctly on the next ingestion run and is accurate from that point forward.
 
 ---
 
@@ -680,7 +769,7 @@ Status legend: ✅ = verified on Dev against the user's live chat (see §9.9 for
 
 C3 was promoted to prod on 2026-05-20. Integrating with this plan requires **one binding hook** in `ui/ui-manager.js`: when the new `eventbase_autosync_window_turns` slider value changes, re-stamp the marker so the new window size doesn't appear to need a re-extraction.
 
-The hook is fully written out inline as part of §4.1's binding code — implementers should just follow §4.1 and the migration happens naturally. The hook re-uses helpers (`stampAutoSyncMarker` from [`core/eventbase-store.js:254`](core/eventbase-store.js#L254), `getChatUUID` from [`core/collection-ids.js`](core/collection-ids.js)) that already exist on prod, so the migration is a pure addition with no new mechanism.
+The hook is fully written out inline as part of §4.1's binding code — implementers should just follow §4.1 and the migration happens naturally. The hook re-uses helpers (`stampAutoSyncMarker` from [`core/eventbase-store.js:321`](core/eventbase-store.js#L321), `getChatUUID` from [`core/collection-ids.js`](core/collection-ids.js)) that already exist on prod, so the migration is a pure addition with no new mechanism.
 
 That's the entire migration. The plan's UI lock (which silently changes `eventbase_autosync_window_turns` to 1 when "Inject Last N" is enabled) triggers this binding, which re-stamps the marker to `max(source_window_end) + 1`, which prevents the re-extraction storm. No other plan changes needed — `windowSizeOverride` plumbing stays, the rest of §1-§8 is unaffected.
 

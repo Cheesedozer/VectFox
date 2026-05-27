@@ -226,6 +226,32 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
         if (!isDone) break;
         fastForwardSkipped++;
     }
+    // Tip-based fallback: if the fingerprint cache gave 0 skips (cache is empty or stale),
+    // probe Qdrant for the highest source_window_end stored in the collection and use that
+    // as a fast-forward boundary. This handles the case where the local fingerprint cache
+    // was lost (e.g. page reload after re-importing an exported Qdrant collection).
+    // Retroactively marks the skipped windows so future runs use the normal cache path.
+    if (fastForwardSkipped === 0 && collectionId) {
+        try {
+            const tip = await ensureVectorizationTip(uuid, collectionId, settings);
+            if (typeof tip === 'number' && tip > 0) {
+                let i = 0;
+                while (i < windows.length && windows[i].end < tip) {
+                    const win = windows[i];
+                    const hashes = win.msgs.map(_msgHash);
+                    markWindowExtracted(hashes, uuid);
+                    i++;
+                }
+                if (i > 0) {
+                    fastForwardSkipped = i;
+                    console.log(`[EventBase] Tip-based fast-forward: skipped ${i} window(s) already in collection (tip=${tip}), starting at window ${i}`);
+                }
+            }
+        } catch (e) {
+            console.warn('[EventBase] Tip-based fast-forward probe failed, will re-extract from start:', e?.message || e);
+        }
+    }
+
     if (fastForwardSkipped > 0) {
         windowsSkipped = fastForwardSkipped;
         if (debugLog) {
