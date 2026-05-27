@@ -636,7 +636,6 @@ jQuery(async () => {
     // currently only used to suppress the auto-sync popup on MESSAGE_SENT.
     const trigger = (name) => () => { _lastChatTriggerEvent = name; onChatEvent(); };
     eventSource.on(event_types.MESSAGE_DELETED, trigger('MESSAGE_DELETED'));
-    eventSource.on(event_types.MESSAGE_EDITED, trigger('MESSAGE_EDITED'));
     // Note: Semantic WI injection happens in the generate_interceptor (rearrangeChat), not here
     eventSource.on(event_types.MESSAGE_SENT, trigger('MESSAGE_SENT'));
     eventSource.on(event_types.MESSAGE_RECEIVED, trigger('MESSAGE_RECEIVED'));
