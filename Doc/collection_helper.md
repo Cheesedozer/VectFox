@@ -426,6 +426,48 @@ User scenario the marker makes safe:
 
 **Test coverage:** TEST 015 in `tests/Eventbase-test.spec.js` is a pure-function exercise of the marker contract — fresh UUID returns `undefined`, stamp/read round-trips through the canonical getter, the `>= marker` filter excludes obsolete pre-marker windows and keeps post-marker windows, the boundary `start === marker` is included, and `clearAutoSyncMarker` removes the entry cleanly.
 
+### Vectorization tip cache — honest "vectorization: N msgs" display
+
+The auto-sync start marker is stamped *once* at enable time and never advances as new windows extract. Using it for the UI count produces a frozen, misleading number. The vectorization tip is the live truth source. Not persisted — `setVectorizationTip` keeps it current during the session (backend-agnostic). On a cold cache after page reload, `ensureVectorizationTip` probes the backend via `listChunks` to backfill it; this works for Qdrant and Standard+plugin. For Standard without the similharity plugin the probe returns `null` (native fallback only returns hashes, no metadata), so the UI falls back to `markerValue` until the next ingestion run refreshes the in-memory cache.
+
+| Function | File:Line | Notes |
+|---|---|---|
+| `getVectorizationTip(chatUUID)` | [eventbase-store.js:47](../core/eventbase-store.js#L47) | Sync; returns cached tip or `undefined`. UI falls back to `markerValue` when undefined. |
+| `setVectorizationTip(chatUUID, tip)` | [eventbase-store.js:52](../core/eventbase-store.js#L52) | Sync, monotonic max — out-of-order calls won't regress. Called by `runEventBaseIngestion` after every successful window via `setVectorizationTip(uuid, win.end + 1)`. |
+| `clearVectorizationTip(chatUUID)` | [eventbase-store.js:59](../core/eventbase-store.js#L59) | Call when deleting or clearing EventBase for a chat (parity with `clearAutoSyncMarker`). |
+| `ensureVectorizationTip(chatUUID, collectionId, settings)` | [eventbase-store.js:74](../core/eventbase-store.js#L74) | Async. Returns cached tip immediately on hit; probes backend once on session-cold miss, populates cache, returns value. Returns `null` when collection has no events. Called by `getChatAutoSyncStatus`. |
+
+### Last-used window size — window-size-change detection for Continue
+
+Persists the `windowSize` that was in effect when auto-sync last ran successfully. Used by the Continue modal to detect a window-size change since the last extraction (the modal is planned for deletion by §10 / C4 of the autosync plan, but `getLastUsedWindowSize` will remain as a diagnostic).
+
+| Function | File:Line | Notes |
+|---|---|---|
+| `getLastUsedWindowSize(chatUUID)` | [eventbase-store.js:367](../core/eventbase-store.js#L367) | Reads from `extension_settings.vectfox.eventbase_last_used_window_size[chatUUID]`. Returns `undefined` when no prior run. |
+| `setLastUsedWindowSize(chatUUID, windowSize)` | [eventbase-store.js:377](../core/eventbase-store.js#L377) | Stamped by `runEventBaseIngestion` after a successful run with `windowsProcessed > 0`. Do not call from application code. |
+
+### Collection resolver — find the EventBase collection for a chat
+
+| Function | File:Line | Use when |
+|---|---|---|
+| `findEventBaseCollectionIdsForChat(uuid, preferredBackend)` | [eventbase-store.js:522](../core/eventbase-store.js#L522) | Resolve which EventBase collection belongs to the current chat UUID. Returns `Array<{ collectionId, registryKey }>`. Use `[0]` for single-collection access — in practice each chat has at most one EventBase collection per backend. Pass `getRegistryBackend(settings.vector_backend)` as `preferredBackend`. Returns `[]` when no collection exists for the chat yet. |
+
+### Low-level fingerprint cache management
+
+Called internally by the ingestion loop. Do not call from application code — reimplementing these inline is the historical source of dedup bugs.
+
+| Function | File:Line | Notes |
+|---|---|---|
+| `windowFingerprint(sourceHashes)` | [eventbase-store.js:396](../core/eventbase-store.js#L396) | Deterministic sorted-join of message hashes. **Window-size dependent** — a fingerprint from `windowSize=2` never collides with one from `windowSize=4`, which is why the start marker is needed as a second safety layer. |
+| `clearWindowCacheForChat(chatUUID)` | [eventbase-store.js:436](../core/eventbase-store.js#L436) | Evicts the in-memory fingerprint Set for a chat. Use when a collection is deleted. Do NOT call on window-size change — that would force full re-extraction; use `stampAutoSyncMarker` instead. |
+
+### Auto-sync entry points
+
+| Function | File:Line | Role |
+|---|---|---|
+| `synchronizeChat(settings, batchSize, triggerEvent)` | [chat-vectorization.js:327](../core/chat-vectorization.js#L327) | The auto-sync coordinator. Checks whether the chat's EventBase collection has `autoSync=true` (via `findEventBaseCollectionIdsForChat` + `isCollectionAutoSyncEnabled`), then calls `runEventBaseIngestion({ isAutoSync: true })`. Called from ST event hooks (MESSAGE_SENT, MESSAGE_RECEIVED, etc.). Pass `triggerEvent` so it can suppress the popup on MESSAGE_SENT mid-generation. |
+| `rearrangeChat(chat, settings, type, { dryRun, testMessage })` | [chat-vectorization.js:1198](../core/chat-vectorization.js#L1198) | ST generation interceptor (`CHAT_COMPLETION_PROMPT_READY`). Handles semantic retrieval and prompt injection. **Separate concern from `synchronizeChat`** — retrieval does not trigger auto-sync extraction. The `dryRun` / `testMessage` params support the debug query tester. |
+
 ### Key-form parity
 
 **Key-form parity is load-bearing.** Four sites read or write the per-collection autoSync flag: `refreshAutoSyncCheckbox` (UI mirror), `getChatAutoSyncStatus` (state evaluator), the change handler (writer), and `synchronizeChat` (the engine that actually fires extraction). All four must use the **registry-key form** (`backend:id`) — built via `buildRegistryKey(collectionId, settings)` or pulled from `entry.registryKey`. The 2026-05-17 regression where the popup never fired and extraction never ran was a single site (`synchronizeChat`) reading with the bare collection ID while everyone else wrote with the registry key. The flag was saved correctly; the reader looked in the wrong bucket and saw `undefined`.
