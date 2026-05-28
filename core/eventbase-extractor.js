@@ -13,6 +13,7 @@
 
 import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { getRequestHeaders } from '../../../../../script.js';
+import { getEventBaseModelConfigErrorMessage } from './eventbase-http-errors.js';
 import {
     EVENT_TYPES,
     EventBaseExtractionError,
@@ -346,6 +347,15 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
                 'invalid_api_key',
             );
         }
+        const modelConfigError = getEventBaseModelConfigErrorMessage({
+            provider: 'OpenRouter',
+            model,
+            status: response.status,
+            responseText: errText,
+        });
+        if (modelConfigError) {
+            throw new EventBaseFatalError(modelConfigError, 'invalid_model_config');
+        }
         throw new EventBaseExtractionError(
             `EventBase: OpenRouter HTTP ${response.status}: ${errText}`,
             windowIndex,
@@ -412,6 +422,15 @@ async function _callVLLM(prompt, settings, windowIndex) {
                 `EventBase: vLLM authentication failed (${response.status}). Check your API key in Core → LLM Summarization settings.`,
                 'invalid_api_key',
             );
+        }
+        const modelConfigError = getEventBaseModelConfigErrorMessage({
+            provider: 'vLLM',
+            model,
+            status: response.status,
+            responseText: errText,
+        });
+        if (modelConfigError) {
+            throw new EventBaseFatalError(modelConfigError, 'invalid_model_config');
         }
         throw new EventBaseExtractionError(
             `EventBase: vLLM HTTP ${response.status}: ${errText}`,
