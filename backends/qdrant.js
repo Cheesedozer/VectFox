@@ -31,6 +31,7 @@
 import { getRequestHeaders } from '../../../../../script.js';
 import { VectorBackend } from './backend-interface.js';
 import { getModelFromSettings } from '../core/providers.js';
+import { throwIfModelConfigError } from '../core/model-http-errors.js';
 import { VECTOR_LIST_LIMIT } from '../core/constants.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 import { getQdrantApiKey } from '../core/api-keys.js';
@@ -384,6 +385,14 @@ export class QdrantBackend extends VectorBackend {
                     );
                 }
 
+                throwIfModelConfigError({
+                    contextLabel: 'Embedding',
+                    provider: settings.source,
+                    model: getModelFromSettings(settings),
+                    status: response.status,
+                    responseText: errorBody,
+                    enforceStatusGate: false,
+                });
                 throw new Error(`[Qdrant] Failed to insert ${items.length} vectors into ${actualCollectionId}: ${response.status} ${response.statusText} - ${errorBody}`);
             }
 
@@ -494,6 +503,14 @@ export class QdrantBackend extends VectorBackend {
             const errorBody = await response.text().catch(() => 'No response body');
             const failMs = (performance.now() - tNetStart).toFixed(1);
             console.warn(`[Qdrant timing] queryCollection FAILED after ${failMs}ms (HTTP ${response.status}). ${_embedTimeoutHint(settings)} Server said: ${errorBody.slice(0, 300)}`);
+            throwIfModelConfigError({
+                contextLabel: 'Embedding',
+                provider: settings.source,
+                model: getModelFromSettings(settings),
+                status: response.status,
+                responseText: errorBody,
+                enforceStatusGate: false,
+            });
             throw new Error(`[Qdrant] Failed to query collection ${collectionId}: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 

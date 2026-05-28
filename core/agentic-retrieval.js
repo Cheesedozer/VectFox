@@ -24,6 +24,7 @@ import { retrieveEvents } from './eventbase-retrieval.js';
 import { queryCollection } from './core-vector-api.js';
 import { buildPlannerUserMessage, getAgenticPlannerPrompt } from './prompts-i18n.js';
 import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
+import { getModelConfigErrorMessage } from './model-http-errors.js';
 import { getRequestHeaders } from '../../../../../script.js';
 
 // ============================================================================
@@ -120,6 +121,13 @@ export async function retrieveEventsWithAgent(params) {
         });
     } catch (err) {
         const tLlmMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tLlmStart));
+        // A retired/unknown Agent Mode model would otherwise silently degrade to
+        // pre-search forever. Warn the user (once) so they know to fix it; we still
+        // fall back to pre-search below so retrieval keeps working in the meantime.
+        const { isInvalidModelConfigError, notifyInvalidModel } = await import('./model-config-notifier.js');
+        if (isInvalidModelConfigError(err)) {
+            notifyInvalidModel(err.message);
+        }
         // AbortSignal.timeout() throws either a TimeoutError or a generic
         // "user aborted a request" message depending on the runtime. Detect both
         // and surface a clearer log line so timeout vs. real error is obvious.
@@ -360,6 +368,18 @@ async function _callPlanner({ systemPrompt, userMessage, llmCfg, timeoutMs }) {
 
     if (!response.ok) {
         const errText = await response.text().catch(() => response.statusText);
+        const modelConfigError = getModelConfigErrorMessage({
+            contextLabel: 'Agent Mode',
+            provider: llmCfg.provider,
+            model: llmCfg.model,
+            status: response.status,
+            responseText: errText,
+        });
+        if (modelConfigError) {
+            const err = new Error(modelConfigError);
+            err.code = 'invalid_model_config';
+            throw err;
+        }
         throw new Error(`HTTP ${response.status}: ${String(errText).slice(0, 200)}`);
     }
 

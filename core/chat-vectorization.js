@@ -367,16 +367,30 @@ export async function synchronizeChat(settings, batchSize = 5, triggerEvent = nu
     const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
     const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
     if (debugLog) console.log(`[AutoSync] calling runEventBaseIngestion: messages=${messages.length}`);
-    const result = await runEventBaseIngestion({
-        messages,
-        chatUUID: uuid,
-        settings,
-        isAutoSync: true,
-        // Suppress the popup when the trigger was the user sending a message —
-        // the popup should only appear after the AI's reply, not mid-generation.
-        // MESSAGE_RECEIVED (and edits/swipes/deletes) still get the popup.
-        suppressAutoSyncPopup: triggerEvent === 'MESSAGE_SENT',
-    });
+    let result;
+    try {
+        result = await runEventBaseIngestion({
+            messages,
+            chatUUID: uuid,
+            settings,
+            isAutoSync: true,
+            // Suppress the popup when the trigger was the user sending a message —
+            // the popup should only appear after the AI's reply, not mid-generation.
+            // MESSAGE_RECEIVED (and edits/swipes/deletes) still get the popup.
+            suppressAutoSyncPopup: triggerEvent === 'MESSAGE_SENT',
+        });
+    } catch (err) {
+        // A retired/unknown model (extraction OR embedding) would otherwise be
+        // swallowed by ST's ModuleWorkerWrapper and silently re-fail every message.
+        // Warn the user once and pause auto-sync so the loop stops until they fix it.
+        const { isInvalidModelConfigError, notifyInvalidModel, pauseAutoSyncForChat } = await import('./model-config-notifier.js');
+        if (isInvalidModelConfigError(err)) {
+            notifyInvalidModel(err.message);
+            await pauseAutoSyncForChat(uuid, backend);
+            return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
+        }
+        throw err;
+    }
     if (debugLog) console.log(`[AutoSync] runEventBaseIngestion result:`, result);
 
     return {
@@ -1606,7 +1620,12 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null, {
         console.error('VectFox: Failed to vectorize all', error);
         progressTracker.addError(error.message);
         progressTracker.complete(false, 'Vectorization failed');
-        toastr.error(`Vectorization failed: ${error.message}`, 'VectFox');
+        const { isInvalidModelConfigError, notifyInvalidModel } = await import('./model-config-notifier.js');
+        if (isInvalidModelConfigError(error)) {
+            notifyInvalidModel(error.message);
+        } else {
+            toastr.error(`Vectorization failed: ${error.message}`, 'VectFox');
+        }
     }
 }
 

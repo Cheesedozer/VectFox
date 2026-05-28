@@ -28,6 +28,7 @@
 import { getRequestHeaders } from '../../../../../script.js';
 import { VectorBackend } from './backend-interface.js';
 import { getModelFromSettings } from '../core/providers.js';
+import { throwIfModelConfigError } from '../core/model-http-errors.js';
 import { VECTOR_LIST_LIMIT } from '../core/constants.js';
 import { INTERNAL_COLLECTION_IDS } from '../core/collection-ids.js';
 import { extension_settings } from '../../../../extensions.js';
@@ -340,6 +341,17 @@ export class StandardBackend extends VectorBackend {
 
             if (!response.ok) {
                 const errorBody = await response.text().catch(() => 'No response body');
+                // The plugin embeds server-side, so a retired/unknown embedding model
+                // surfaces here in the forwarded body — often wrapped as 500, hence
+                // enforceStatusGate:false. Surface it instead of silently failing ingestion.
+                throwIfModelConfigError({
+                    contextLabel: 'Embedding',
+                    provider: settings.source,
+                    model,
+                    status: response.status,
+                    responseText: errorBody,
+                    enforceStatusGate: false,
+                });
                 throw new Error(`Failed to insert vectors: ${response.status} - ${errorBody} (sent body size: ${sizeKB} KB)`);
             }
 
@@ -474,6 +486,14 @@ export class StandardBackend extends VectorBackend {
             if (!response.ok) {
                 const errorBody = await response.text().catch(() => 'No response body');
                 console.error(`[VectFox] plugin query failed: ${errorBody}`);
+                throwIfModelConfigError({
+                    contextLabel: 'Embedding',
+                    provider: settings.source,
+                    model,
+                    status: response.status,
+                    responseText: errorBody,
+                    enforceStatusGate: false,
+                });
                 throw new Error(`Failed to query collection (plugin): ${response.status} ${response.statusText} - ${errorBody}`);
             }
 
@@ -519,6 +539,14 @@ export class StandardBackend extends VectorBackend {
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => 'No response body');
+            throwIfModelConfigError({
+                contextLabel: 'Embedding',
+                provider: settings.source,
+                model,
+                status: response.status,
+                responseText: errorBody,
+                enforceStatusGate: false,
+            });
             throw new Error(`Failed to query collection: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 

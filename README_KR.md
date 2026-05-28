@@ -401,7 +401,7 @@ SillyTavern 재시작.
 3. 임베딩 제공자 선택 (Transformers, vLLM, Ollama, OpenRouter, etc.).
    - 💡 **권장:** **OpenRouter**를 통해 `qwen/qwen3-embedding-8b`를 사용하세요. 매우 저렴하고 다국어 지원이 뛰어나며 (CJK 및 라틴 문자 모두 우수) VectFox가 대상으로 하는 코퍼스 규모에 대해 고품질 밀집 벡터를 생성합니다.
 4. 요약 LLM 선택 (OpenRouter 또는 vLLM) — 벡터화 중 EventBase 추출에 사용됩니다.
-   - 💡 **추천하는 저렴하고 빠른 모델:** OpenRouter를 통한 `openai/gpt-4o-mini` 또는 `x-ai/grok-4.1-fast`. 둘 다 매우 저렴하고, 수집 지연을 낮게 유지할 만큼 빠릅니다. **Agent Mode LLM** (AgentMode 탭에서 별도 설정)에도 같은 권장이 적용됩니다 — AgentMode의 모델 필드를 비워두면 이 요약기 설정을 상속합니다.
+   - 💡 **추천 OpenRouter 모델:** 가장 저렴한 경량 추출 경로로는 `openai/gpt-4o-mini`를 사용하고, xAI/Grok을 선호한다면 `x-ai/grok-4.3`을 사용하세요. OpenRouter가 오래된 모델 ID(예: `x-ai/grok-4.1-fast`)에 대해 404 또는 사용 중단 오류를 반환한다면 해당 ID는 피하세요. 모델 가용성은 시간이 지나며 바뀔 수 있으므로, 긴 수집 작업을 실행하기 전에 OpenRouter에서 정확한 모델 ID를 확인하세요. **Agent Mode LLM** (AgentMode 탭에서 별도 설정)에도 같은 권장이 적용됩니다 — AgentMode의 모델 필드를 비워두면 이 요약기 설정을 상속합니다.
 5. 클라우드 제공자(OpenRouter / vLLM )를 사용한다면 API 키를 구성합니다.
 6. **Keyword Extraction**에서 스토리의 언어를 선택합니다.
 7. 대부분의 설정은 기본값으로 두면 됩니다 — 자유롭게 조정하세요.

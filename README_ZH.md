@@ -402,7 +402,7 @@ enableServerPlugins: true
 3. 選擇你的嵌入供應商 (Transformers, vLLM, Ollama, OpenRouter, etc.).
    - 💡 **推薦：** 透過 **OpenRouter** 使用 `qwen/qwen3-embedding-8b`。這個模型非常便宜，多語支援優秀（CJK 與拉丁語系都好），對 VectFox 這種規模的語料庫能產出高品質的密集向量。
 4. 選擇你的摘要 LLM（OpenRouter 或 vLLM）—— 向量化時 EventBase 萃取會用到。
-   - 💡 **推薦的便宜快速模型：** 透過 OpenRouter 使用 `openai/gpt-4o-mini` 或 `x-ai/grok-4.1-fast`。兩者都非常便宜，速度也快到能讓向量化延遲維持低點。**Agent Mode LLM**（在 AgentMode 分頁另外設定）也適用同樣的推薦——如果你把 AgentMode 的模型欄位留空，它會自動繼承這個摘要器設定。
+   - 💡 **推薦的 OpenRouter 模型：** 如果想要最便宜的輕量萃取路徑，使用 `openai/gpt-4o-mini`；如果偏好 xAI/Grok，使用 `x-ai/grok-4.3`。如果 OpenRouter 對較舊的模型 ID（例如 `x-ai/grok-4.1-fast`）回傳 404 或棄用錯誤，請避免使用它；模型可用性會隨時間改變，因此在長時間向量化之前，請先在 OpenRouter 確認確切的模型 ID。**Agent Mode LLM**（在 AgentMode 分頁另外設定）也適用同樣的推薦——如果你把 AgentMode 的模型欄位留空，它會自動繼承這個摘要器設定。
 5. 如果使用雲端供應商（OpenRouter / vLLM ），請設定 API 金鑰。
 6. 在 **Keyword Extraction** 中選擇你故事使用的語言。
 7. 大多數設定維持預設值即可，但你也可以依需求調整。

@@ -427,7 +427,7 @@ Restart SillyTavern.
 3. Select your embedding provider (Transformers, vLLM, Ollama, OpenRouter, etc.).
    - 💡 **Recommended:** use `qwen/qwen3-embedding-8b` through **OpenRouter**. It's extremely cheap ($0.00000015/run), multilingual (excellent CJK + Latin), and produces high-quality dense vectors for the corpus size VectFox targets.
 4. Select your Summarization LLM (OpenRouter or vLLM) — used by EventBase extraction during vectorization.
-   - 💡 **Recommended cheap & fast models:** `openai/gpt-4o-mini` or `x-ai/grok-4.1-fast` ($0.0004/run) through OpenRouter. Both are very cheap and fast enough to keep ingestion latency low. Same recommendation applies to the **Agent Mode LLM** (configured separately in the AgentMode tab) — if you leave the AgentMode model field blank it inherits this summarizer setting.
+   - 💡 **Recommended OpenRouter models:** `openai/gpt-4o-mini` for the cheapest lightweight extraction path, or `x-ai/grok-4.3` if you prefer xAI/Grok. Avoid older model IDs such as `x-ai/grok-4.1-fast` if OpenRouter returns a 404/deprecation error; model availability changes over time, so verify the exact ID on OpenRouter before long ingestion runs. The same recommendation applies to the **Agent Mode LLM** (configured separately in the AgentMode tab) — if you leave the AgentMode model field blank it inherits this summarizer setting.
 5. Configure API keys if using cloud providers (OpenRouter / vLLM ).
 6. Under **Keyword Extraction**, choose the language of your story.
 7. Most settings work fine on default — feel free to tweak.

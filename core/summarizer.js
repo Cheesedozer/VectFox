@@ -9,14 +9,16 @@
  *   - openrouter : Uses the OpenRouter chat completions API
  *   - vllm       : Uses a local vLLM server (OpenAI-compatible endpoint)
  *
- * Non-fatal summarization failures fall back to original text.
- * Fatal configuration/auth failures (missing/invalid key, missing URL) throw
- * SummarizationFatalError so callers can abort vectorization with clear UX.
+ * All failures throw — summaries are never silently replaced with raw text (a raw
+ * chunk is useless in the vector store, and the chunk path no longer calls this).
+ * Config/auth/invalid-model failures throw SummarizationFatalError; transient
+ * provider failures throw a plain Error. Callers abort with clear UX either way.
  * ============================================================================
  */
 
 import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { getDefaultSummarizePrompt } from './prompts-i18n.js';
+import { getModelConfigErrorMessage } from './model-http-errors.js';
 import { getRequestHeaders } from '../../../../../script.js';
 
 /**
@@ -120,15 +122,22 @@ const DEFAULT_TIMEOUT_MS = 30000;
 /**
  * Summarize a chunk of text using the configured provider.
  *
+ * Failures throw — they are never swallowed into raw text. A raw chunk in the
+ * vector store is useless for EventBase retrieval, and the chunk path (lorebook /
+ * document / etc.) no longer routes through the summarizer, so there is no caller
+ * that wants the un-summarized text back.
+ *
  * @param {string} text - Raw message/chunk text to summarize
  * @param {object} settings - VectFox settings object
- * @returns {Promise<string>} Summary text, or original text on non-fatal failure
+ * @returns {Promise<string>} Summary text
+ * @throws {SummarizationFatalError} on config/auth/invalid-model failures
+ * @throws {Error} on transient provider failures (HTTP 5xx, empty response)
  */
 export async function summarizeText(text, settings) {
     if (!text || typeof text !== 'string') return text;
 
     const provider = settings?.summarize_provider || 'openrouter';
-    // don't remove 
+    // don't remove
     //console.log(`[VectFox Summarizer] summarizeText called — provider=${provider}, textLen=${text.length}`);
     const model = (settings?.summarize_model || '').trim();
     if (!model) {
@@ -141,21 +150,17 @@ export async function summarizeText(text, settings) {
     const promptTemplate = settings?.summarize_prompt || getDefaultSummarizePrompt(settings?.cjk_tokenizer_mode);
     const prompt = promptTemplate.replace('{{text}}', text);
 
-    try {
-        if (provider === 'openrouter') {
-            return await _callOpenRouter(prompt, model, settings, text.length, _estimateSummaryTokenBudget(text));
-        } else if (provider === 'vllm') {
-            return await _callVLLM(prompt, model, settings, _estimateSummaryTokenBudget(text));
-        }
-    } catch (err) {
-        if (isSummarizationFatalError(err)) {
-            throw err;
-        }
-        // don't remove 
-        //console.warn(`[VectFox Summarizer] ${provider} call failed, using original text:`, err?.message || err);
+    if (provider === 'openrouter') {
+        return await _callOpenRouter(prompt, model, settings, text.length, _estimateSummaryTokenBudget(text));
     }
-
-    return text;
+    if (provider === 'vllm') {
+        return await _callVLLM(prompt, model, settings, _estimateSummaryTokenBudget(text));
+    }
+    throw new SummarizationFatalError(
+        `Unsupported summarization provider: ${provider}`,
+        provider,
+        'unknown_provider'
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +247,16 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
                 'invalid_api_key'
             );
         }
+        const modelConfigError = getModelConfigErrorMessage({
+            contextLabel: 'Summarizer',
+            provider: 'OpenRouter',
+            model,
+            status: response.status,
+            responseText: errText,
+        });
+        if (modelConfigError) {
+            throw new SummarizationFatalError(modelConfigError, 'openrouter', 'invalid_model_config');
+        }
         throw new Error(`OpenRouter HTTP ${response.status}: ${errText}`);
     }
 
@@ -324,6 +339,16 @@ async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS
                 'vllm',
                 'invalid_api_key'
             );
+        }
+        const modelConfigError = getModelConfigErrorMessage({
+            contextLabel: 'Summarizer',
+            provider: 'vLLM',
+            model,
+            status: response.status,
+            responseText: errText,
+        });
+        if (modelConfigError) {
+            throw new SummarizationFatalError(modelConfigError, 'vllm', 'invalid_model_config');
         }
         throw new Error(`vLLM HTTP ${response.status}: ${errText}`);
     }
