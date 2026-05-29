@@ -1,25 +1,9 @@
-// Mirrors similharity/index.js extractQueryKeywords — keep in sync when algorithm changes.
+// Source of truth for query-time keyword extraction (runs client-side; the
+// similharity server only receives the pre-computed sparse vector). Shares its
+// script/locale/Latin primitives with the ingest path via script-segmentation.js.
 
 import { DEFAULT_STOP_WORD_SET as STOP_WORDS } from './stop-words.js';
-
-// Matches script spans requiring segmentation (no inter-word spaces).
-const _CJK_SPAN_RE = /[㐀-鿿豈-﫿぀-ヿ가-힯฀-໿က-႟ក-៿]+/g;
-// Non-global variant for isCJKToken() (avoids stateful lastIndex with .test()).
-const _CJK_CHAR_RE = /[㐀-鿿豈-﫿぀-ヿ가-힯฀-໿က-႟ក-៿]/;
-
-// Maps Unicode range to BCP-47 locale for Intl.Segmenter. Add new scripts here.
-const _SCRIPT_LOCALE_MAP = [
-    [/[぀-ゟ゠-ヿ]/, 'ja'],  // Japanese Kana
-    [/[가-힯]/, 'ko'],                // Korean Hangul
-    [/[฀-๿]/, 'th'],                // Thai
-    [/[຀-໿]/, 'lo'],                // Lao
-    [/[က-႟]/, 'my'],                // Myanmar
-    [/[ក-៿]/, 'km'],                // Khmer
-    [/[㐀-鿿豈-﫿]/, 'zh'],  // CJK Han
-];
-function _localeForSpan(span) {
-    return _SCRIPT_LOCALE_MAP.find(([re]) => re.test(span))?.[1] ?? 'und';
-}
+import { CJK_SPAN_RE, CJK_CHAR_RE, LATIN_TOKEN_RE, getSegmenter } from './script-segmentation.js';
 
 export const RETRIEVAL_KEYWORD_LEVELS = {
     minimal: { label: 'Minimal — 30 keywords', maxKeywords: 30 },
@@ -47,13 +31,14 @@ export function extractQueryKeywords(searchText, maxKeywords = 50) {
         const cjkFreq = new Map();
         const latinFreq = new Map();
 
-        const spans = sourceText.match(_CJK_SPAN_RE) || [];
+        const spans = sourceText.match(CJK_SPAN_RE) || [];
         for (const span of spans) {
             let usedSegmenter = false;
 
             if (typeof Intl !== 'undefined' && Intl.Segmenter) {
                 try {
-                    const seg = new Intl.Segmenter(_localeForSpan(span), { granularity: 'word' });
+                    const seg = getSegmenter(span);
+                    if (!seg) throw new Error('no segmenter');
                     const segs = Array.from(seg.segment(span));
                     const multiChar = segs.filter(s => s.isWordLike && s.segment.length >= 2);
                     if (multiChar.length > 0) {
@@ -77,7 +62,7 @@ export function extractQueryKeywords(searchText, maxKeywords = 50) {
             }
         }
 
-        const latinMatches = sourceText.match(/\p{L}[\p{L}\d'_-]{2,}/gu) || [];
+        const latinMatches = sourceText.match(LATIN_TOKEN_RE) || [];
         for (const tok of latinMatches) {
             if (!STOP_WORDS.has(tok)) {
                 latinFreq.set(tok, (latinFreq.get(tok) || 0) + 1);
@@ -140,5 +125,5 @@ export function extractQueryKeywords(searchText, maxKeywords = 50) {
  * @returns {boolean}
  */
 export function isCJKToken(token) {
-    return _CJK_CHAR_RE.test(token);
+    return CJK_CHAR_RE.test(token);
 }

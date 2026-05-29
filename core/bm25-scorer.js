@@ -18,6 +18,7 @@
 
 import TinySegmenter from './vendor/tiny-segmenter-0.2.0.js';
 import { DEFAULT_STOP_WORD_SET } from './stop-words.js';
+import { CJK_SPAN_RE, KANA_RE, NON_WORD_RE, getSegmenter } from './script-segmentation.js';
 
 /**
  * Default BM25+ parameters
@@ -366,14 +367,15 @@ function tokenize(text, options = {}) {
     // Extract CJK word tokens using Intl.Segmenter (falls back to character-level)
     const cjkTokens = extractCJKTokens(text);
 
-    // Strip CJK chars before Latin tokenization to avoid mixed clumps
-    const _cjkCharRe = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF\uAC00-\uD7AF]/g;
-    const latinText = text.replace(_cjkCharRe, ' ');
+    // Strip segmented-script spans (CJK/Kana/Hangul/Thai/...) before Latin
+    // tokenization; extractCJKTokens already handled them, so removing them
+    // here prevents double-counting and keeps Latin tokens clean.
+    const latinText = text.replace(CJK_SPAN_RE, ' ');
 
     // Normalize and split Latin
     let tokens = latinText
         .toLowerCase()
-        .replace(/[^\w\s]/g, ' ')
+        .replace(NON_WORD_RE, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .split(/\s+/)
@@ -773,47 +775,10 @@ export function applyBM25Scoring(results, query, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Script-aware word segmentation via Intl.Segmenter (browser-native, zero dependencies)
-// Falls back to bigram tokenization if the API is unavailable.
-//
-// LANGUAGE SUPPORT: To add a new script, add its Unicode range(s) to _CJK_SPAN_RE
-// and a [/range/, 'locale'] entry to SCRIPT_LOCALE_MAP below.
-// ---------------------------------------------------------------------------
-
-/** Matches script spans that require segmentation (no inter-word spaces). */
-const _CJK_SPAN_RE = /[一-鿿㐀-䶿豈-﫿぀-ゟ゠-ヿ가-힯฀-๿຀-໿က-႟ក-៿]+/g;
-
-/** Kana presence — used by Jieba/TinySegmenter routing in extractCJKTokens. */
-const _KANA_RE = /[぀-ゟ゠-ヿ]/;
-
-/** Maps Unicode range to BCP-47 locale for Intl.Segmenter. Add new scripts here. */
-const SCRIPT_LOCALE_MAP = [
-    [/[぀-ゟ゠-ヿ]/, 'ja'],  // Japanese Kana
-    [/[가-힯]/, 'ko'],                  // Korean Hangul
-    [/[฀-๿]/, 'th'],                  // Thai
-    [/[຀-໿]/, 'lo'],                  // Lao
-    [/[က-႟]/, 'my'],                  // Myanmar
-    [/[ក-៿]/, 'km'],                  // Khmer
-    [/[一-鿿㐀-䶿豈-﫿]/, 'zh'],  // CJK Han (default)
-];
-
-const _segmenterCache = new Map();
-
-/**
- * Return the best available Intl.Segmenter for the given span.
- * Detects script by Unicode range and maps to the appropriate BCP-47 locale.
- * To add a new language, add one entry to SCRIPT_LOCALE_MAP — no other changes needed.
- * @param {string} span
- * @returns {Intl.Segmenter|null}
- */
-function _getSegmenter(span) {
-    const locale = SCRIPT_LOCALE_MAP.find(([re]) => re.test(span))?.[1] ?? 'und';
-    if (!_segmenterCache.has(locale)) {
-        try { _segmenterCache.set(locale, new Intl.Segmenter(locale, { granularity: 'word' })); }
-        catch (_) { _segmenterCache.set(locale, null); }
-    }
-    return _segmenterCache.get(locale);
-}
+// Script detection, locale mapping and segmenter resolution live in
+// ./script-segmentation.js (shared with query-keyword-extractor.js so the
+// ingest and query paths cannot drift). CJK_SPAN_RE / KANA_RE / getSegmenter
+// are imported above.
 
 /**
  * Tokenize a single segmented span using the run-merging strategy.
@@ -936,22 +901,22 @@ function _segmentWithTinySegmenter(span) {
  * splitting known compound words. Falls back to overlapping bigrams when the
  * Segmenter API is unavailable (older environments / SillyTavern).
  *
- * Handles all scripts in _CJK_SPAN_RE (CJK, Kana, Hangul, Thai, Lao, Myanmar,
- * Khmer). _getSegmenter() routes each span to the right locale via SCRIPT_LOCALE_MAP.
- * To add a new language: add its range to _CJK_SPAN_RE and an entry to SCRIPT_LOCALE_MAP.
+ * Handles all scripts in CJK_SPAN_RE (CJK, Kana, Hangul, Thai, Lao, Myanmar,
+ * Khmer). getSegmenter() routes each span to the right locale. To add a new
+ * language, edit ./script-segmentation.js (CJK_SPAN_RE + SCRIPT_LOCALE_MAP).
  *
  * @param {string} text
  * @returns {string[]}
  */
 function extractCJKTokens(text) {
-    const spans = text.match(_CJK_SPAN_RE);
+    const spans = text.match(CJK_SPAN_RE);
     if (!spans) return [];
 
     const tokens = [];
     for (const span of spans) {
         // jieba mode: Chinese-only spans use Jieba if preloaded.
         // Japanese kana spans intentionally stay on Intl/tiny paths.
-        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.jieba && !_KANA_RE.test(span)) {
+        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.jieba && !KANA_RE.test(span)) {
             const jiebaTokens = _segmentWithJieba(span);
             if (jiebaTokens) {
                 for (const tok of jiebaTokens) tokens.push(tok);
@@ -960,7 +925,7 @@ function extractCJKTokens(text) {
         }
 
         // jieba_tw mode: Traditional Chinese spans use Jieba with TW dictionary if preloaded.
-        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.jieba_tw && !_KANA_RE.test(span)) {
+        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.jieba_tw && !KANA_RE.test(span)) {
             const twTokens = _segmentWithJiebaTw(span);
             if (twTokens) {
                 for (const tok of twTokens) tokens.push(tok);
@@ -969,7 +934,7 @@ function extractCJKTokens(text) {
         }
 
         // tiny-segmenter mode: only route kana-containing spans.
-        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.tiny_segmenter && _KANA_RE.test(span)) {
+        if (cjkTokenizerMode === CJK_TOKENIZER_MODES.tiny_segmenter && KANA_RE.test(span)) {
             const tinyTokens = _segmentWithTinySegmenter(span);
             if (tinyTokens) {
                 for (const tok of tinyTokens) tokens.push(tok);
@@ -977,7 +942,7 @@ function extractCJKTokens(text) {
             }
         }
 
-        const segmenter = _getSegmenter(span);
+        const segmenter = getSegmenter(span);
         if (segmenter) {
             for (const tok of _segmentSpan(segmenter, span)) tokens.push(tok);
         } else {
