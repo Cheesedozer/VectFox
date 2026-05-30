@@ -921,6 +921,14 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="VectFox_hint">Checked: each batch finishes embedding before the next batch starts extracting (well-tested). Uncheck to overlap extract and insert for ~35% faster throughput — experimental.</small>
                             </div>
 
+                            <div class="vectfox-form-group">
+                                <label class="checkbox_label" for="VectFox_vector_group_embedding_call">
+                                    <input type="checkbox" id="VectFox_vector_group_embedding_call" />
+                                    <span>Group embedding calls (cheaper, less robust)</span>
+                                </label>
+                                <small class="VectFox_hint">Default (unchecked): each item becomes its own embedding HTTP call, fired in parallel. One stuck upstream worker only blocks that one item; the rest still succeed. More HTTP calls per batch — scales with batch size. Check to send all items in ONE batched embedding call (legacy production behavior, cheaper): saves API call count but ONE stuck item hangs the whole batch (the 555s-monster failure mode). Affects EventBase ingestion AND document vectorization (lorebook, character cards, etc.). Skipped automatically for local providers (Ollama) and rate-limited setups.</small>
+                            </div>
+
                             <hr style="margin: 16px 0; opacity:0.2;" />
 
                             <!-- Retrieval settings -->
@@ -3598,6 +3606,17 @@ function bindSettingsEvents(settings, callbacks) {
         .prop('checked', settings.eventbase_disable_pipeline ?? true)
         .on('change', function() {
             settings.eventbase_disable_pipeline = $(this).prop('checked');
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    // Group embedding-call toggle (default unchecked = parallel-split per event).
+    // Checked = legacy batched POST. Affects only non-local, non-rate-limited
+    // providers (Ollama already uses batch=1 per item; rate-limit forces serial).
+    $('#VectFox_eventbase_group_embedding_call')
+        .prop('checked', !!settings.eventbase_group_embedding_call)
+        .on('change', function() {
+            settings.eventbase_group_embedding_call = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

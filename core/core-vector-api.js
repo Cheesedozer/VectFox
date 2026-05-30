@@ -664,17 +664,26 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
             const hasExplicitBatchSize = !!settings.insert_batch_size;
             const hasRateLimit = settings.rate_limit_calls > 0;
 
-            // PARALLEL-SPLIT EXPERIMENT — see plans/embedding-resilience-hedge-and-diagnostics.md §5.
-            // Hypothesis: batched embedding POSTs hang ALL items when ONE upstream worker is
-            // stuck (vLLM) or ONE routing decision is bad (OpenRouter). Splitting per-item and
-            // firing in parallel waves contains the blast to the affected item(s) while the
-            // rest finish normally. Hardcoded `true` for now so we can A/B without a UI toggle;
-            // promote to settings.eventbase_parallel_insert + checkbox once data validates it.
-            // Gated to non-local, non-rate-limited providers — Ollama already uses batch=1
-            // sequentially, and rate-limit requires serial execution via dynamicRateLimiter.
-            const PARALLEL_SPLIT_EXPERIMENT = true;
+            // Parallel-split insert — see plans/embedding-resilience-hedge-and-diagnostics.md §5.
+            // Default behavior: each event becomes its own embedding+insert POST, fired in
+            // parallel waves. Contains the blast radius when ONE upstream worker is stuck
+            // (SiliconFlow, vLLM-the-software) or ONE routing decision is bad (OpenRouter) —
+            // the stuck item retries in isolation while the rest finish normally.
+            //
+            // The `vector_group_embedding_call` setting (UI checkbox currently in the
+            // EventBase tab, but the setting itself is path-agnostic and applies to every
+            // caller of insertVectorItems — EventBase ingestion AND content/document
+            // vectorization in content-vectorization.js). Default unchecked. Checking it
+            // opts INTO the legacy production behavior: a single batched POST containing all
+            // items. Cheaper (fewer HTTP calls) but ONE stuck item hangs the WHOLE batch —
+            // see the 555s monster batches observed 2026-05-30.
+            //
+            // Gated to non-local, non-rate-limited providers regardless of the setting —
+            // Ollama already uses batch=1 sequentially, and rate-limit requires serial
+            // execution via dynamicRateLimiter.
+            const groupEmbeddingCall = settings?.vector_group_embedding_call === true;
             const shouldParallelSplit = (
-                PARALLEL_SPLIT_EXPERIMENT
+                !groupEmbeddingCall
                 && !localGpuSources.has(settings.source)
                 && !hasRateLimit
                 && items.length > 1
