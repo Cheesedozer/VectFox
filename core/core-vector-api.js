@@ -662,71 +662,120 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
             const localGpuSources = new Set(['transformers', 'ollama', 'llamacpp', 'koboldcpp']);
             const configuredBatchSize = settings.insert_batch_size || 50;
             const hasExplicitBatchSize = !!settings.insert_batch_size;
+            const hasRateLimit = settings.rate_limit_calls > 0;
+
+            // PARALLEL-SPLIT EXPERIMENT — see plans/embedding-resilience-hedge-and-diagnostics.md §5.
+            // Hypothesis: batched embedding POSTs hang ALL items when ONE upstream worker is
+            // stuck (vLLM) or ONE routing decision is bad (OpenRouter). Splitting per-item and
+            // firing in parallel waves contains the blast to the affected item(s) while the
+            // rest finish normally. Hardcoded `true` for now so we can A/B without a UI toggle;
+            // promote to settings.eventbase_parallel_insert + checkbox once data validates it.
+            // Gated to non-local, non-rate-limited providers — Ollama already uses batch=1
+            // sequentially, and rate-limit requires serial execution via dynamicRateLimiter.
+            const PARALLEL_SPLIT_EXPERIMENT = true;
+            const shouldParallelSplit = (
+                PARALLEL_SPLIT_EXPERIMENT
+                && !localGpuSources.has(settings.source)
+                && !hasRateLimit
+                && items.length > 1
+            );
+
             // Force 1-item batches for local GPU sources unless user overrides explicitly.
-            // The Similharity server embeds items sequentially in one HTTP request, so
-            // N items = N×T on the GPU — large batches 504 with high-dim models.
-            const BATCH_SIZE = (!hasExplicitBatchSize && localGpuSources.has(settings.source)) ? 1 : configuredBatchSize;
+            // Also force 1-item batches when parallel-split experiment is active.
+            const BATCH_SIZE = shouldParallelSplit
+                ? 1
+                : ((!hasExplicitBatchSize && localGpuSources.has(settings.source)) ? 1 : configuredBatchSize);
             const batches = chunkArray(items, BATCH_SIZE);
 
-            const hasRateLimit = settings.rate_limit_calls > 0;
-            console.log(`VectFox: Processing ${items.length} items in ${batches.length} batch(es) of up to ${BATCH_SIZE}${hasRateLimit ? ` with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)` : ''}`);
+            console.log(`VectFox: Processing ${items.length} items in ${batches.length} batch(es) of up to ${BATCH_SIZE}${hasRateLimit ? ` with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)` : ''}${shouldParallelSplit ? ` [parallel-split: ${batches.length} concurrent POSTs in waves of up to 16]` : ''}`);
 
             if (abortSignal?.aborted) throw Object.assign(new Error('Vectorization stopped by user'), { name: 'AbortError' });
 
-            for (let i = 0; i < batches.length; i++) {
-                const batchIdx = i + 1;
-                const batchItemCount = batches[i].length;
-                const processBatch = async () => {
-                    let attemptCount = 0;
-                    await AsyncUtils.retry(async () => {
-                        attemptCount++;
-                        const attemptStart = performance.now();
-                        const debugOn = !!settings?.eventbase_debug_logging;
-                        if (debugOn) {
+            // Factored-out per-batch retry+log closure shared by serial and parallel paths.
+            // Each invocation gets its OWN attempt counter and timing — under parallel-split
+            // the per-item logs interleave but each line carries `batch X/Y` so they remain
+            // attributable.
+            const makeProcessBatch = (batch, batchIdx, batchItemCount) => async () => {
+                let attemptCount = 0;
+                await AsyncUtils.retry(async () => {
+                    attemptCount++;
+                    const attemptStart = performance.now();
+                    const debugOn = !!settings?.eventbase_debug_logging;
+                    if (debugOn) {
+                        console.log(
+                            `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} — POST ${batchItemCount} item(s) via ${settings.source}`,
+                        );
+                    }
+                    try {
+                        if (abortSignal?.aborted) throw Object.assign(new Error('Vectorization stopped by user'), { name: 'AbortError' });
+                        await backend.insertVectorItems(collectionId, batch, settings, abortSignal);
+                        if (debugOn && attemptCount > 1) {
+                            const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
                             console.log(
-                                `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} — POST ${batchItemCount} item(s) via ${settings.source}`,
+                                `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount} succeeded after ${elapsed}s`,
                             );
                         }
-                        try {
-                            if (abortSignal?.aborted) throw Object.assign(new Error('Vectorization stopped by user'), { name: 'AbortError' });
-                            await backend.insertVectorItems(collectionId, batches[i], settings, abortSignal);
-                            if (debugOn && attemptCount > 1) {
-                                const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
-                                console.log(
-                                    `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount} succeeded after ${elapsed}s`,
-                                );
-                            }
-                        } catch (err) {
-                            // Per-attempt failure log with elapsed time + provider + batch size.
-                            // Without elapsed, "TimeoutError: signal timed out" tells you
-                            // nothing — was it a fast connection refusal or a 120s upstream
-                            // stall? Knowing the duration distinguishes "vLLM is down" (fails
-                            // in <1s) from "OpenRouter routing storm" (fails at exactly
-                            // ST's ~120s HTTP timeout). The provider/items context narrows
-                            // where in the call chain it died: ST request → embedding
-                            // provider call → Qdrant upsert.
-                            if (debugOn) {
-                                const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
-                                console.warn(
-                                    `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} FAILED after ${elapsed}s — ${err?.name || 'Error'}: ${err?.message || err} (provider=${settings.source}, items=${batchItemCount})`,
-                                );
-                            }
-                            throw err;
+                    } catch (err) {
+                        // Per-attempt failure log with elapsed time + provider + batch size.
+                        // Without elapsed, "TimeoutError: signal timed out" tells you
+                        // nothing — was it a fast connection refusal or a 120s upstream
+                        // stall? Knowing the duration distinguishes "vLLM is down" (fails
+                        // in <1s) from "OpenRouter routing storm" (fails at exactly
+                        // ST's ~120s HTTP timeout). The provider/items context narrows
+                        // where in the call chain it died: ST request → embedding
+                        // provider call → Qdrant upsert.
+                        if (debugOn) {
+                            const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
+                            console.warn(
+                                `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} FAILED after ${elapsed}s — ${err?.name || 'Error'}: ${err?.message || err} (provider=${settings.source}, items=${batchItemCount})`,
+                            );
                         }
-                    }, RETRY_CONFIG);
-                };
+                        throw err;
+                    }
+                }, RETRY_CONFIG);
+            };
 
-                // Apply rate limiting if configured, otherwise execute directly
-                if (hasRateLimit) {
-                    await dynamicRateLimiter.execute(processBatch, settings);
-                } else {
-                    await processBatch();
+            if (shouldParallelSplit) {
+                // Parallel waves of up to MAX_PARALLEL concurrent inserts. Each batch is 1
+                // item with its own RETRY_CONFIG budget. Promise.allSettled lets all in-flight
+                // finish even if one fails — successful ones are durable in Qdrant. If any
+                // failed after retries, throw composite so the coordinator marks the WHOLE
+                // batch failed (windows stay unmarked; resume re-extracts and hash-deterministic
+                // upsert idempotently re-inserts the already-durable items).
+                const MAX_PARALLEL = 16;
+                for (let wave = 0; wave < batches.length; wave += MAX_PARALLEL) {
+                    const slice = batches.slice(wave, wave + MAX_PARALLEL);
+                    const results = await Promise.allSettled(
+                        slice.map((batch, idx) => {
+                            const processBatch = makeProcessBatch(batch, wave + idx + 1, batch.length);
+                            return processBatch();
+                        }),
+                    );
+                    const failed = results.filter(r => r.status === 'rejected');
+                    if (failed.length > 0) {
+                        const sample = failed[0].reason;
+                        throw new Error(
+                            `VectFox: ${failed.length}/${slice.length} parallel inserts in wave failed — first failure: ${sample?.name || 'Error'}: ${sample?.message || sample}`,
+                        );
+                    }
+                    if (onProgress) {
+                        onProgress(Math.min(wave + slice.length, items.length), items.length);
+                    }
                 }
-
-                if (onProgress) {
-                    const embeddedCount = (i + 1) * BATCH_SIZE;
-                    const actualEmbedded = Math.min(embeddedCount, items.length);
-                    onProgress(actualEmbedded, items.length);
+            } else {
+                // Existing serial path — preserves rate-limited and local-GPU semantics.
+                for (let i = 0; i < batches.length; i++) {
+                    const processBatch = makeProcessBatch(batches[i], i + 1, batches[i].length);
+                    if (hasRateLimit) {
+                        await dynamicRateLimiter.execute(processBatch, settings);
+                    } else {
+                        await processBatch();
+                    }
+                    if (onProgress) {
+                        const embeddedCount = (i + 1) * BATCH_SIZE;
+                        const actualEmbedded = Math.min(embeddedCount, items.length);
+                        onProgress(actualEmbedded, items.length);
+                    }
                 }
             }
         }
