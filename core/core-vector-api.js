@@ -675,27 +675,45 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
 
             for (let i = 0; i < batches.length; i++) {
                 const batchIdx = i + 1;
+                const batchItemCount = batches[i].length;
                 const processBatch = async () => {
+                    let attemptCount = 0;
                     await AsyncUtils.retry(async () => {
-                        if (abortSignal?.aborted) throw Object.assign(new Error('Vectorization stopped by user'), { name: 'AbortError' });
-                        await backend.insertVectorItems(collectionId, batches[i], settings, abortSignal);
-                    }, {
-                        ...RETRY_CONFIG,
-                        // Surface attempts in console when debug logging is on.
-                        // Without this the inner retry is silent and a TimeoutError
-                        // loop looks identical to a stall — the very ambiguity that
-                        // wasted hours diagnosing the OpenRouter embedding spike.
-                        // Gated behind eventbase_debug_logging so normal users
-                        // don't see noise during routine spike-and-recover; toast on
-                        // the OUTER _insertWithRetry still surfaces it visually.
-                        onRetry: (attempt, error) => {
-                            if (settings?.eventbase_debug_logging) {
-                                console.warn(
-                                    `VectFox: insert batch ${batchIdx}/${batches.length} retry ${attempt}/${RETRY_CONFIG.maxAttempts} — ${error?.name || 'Error'}: ${error?.message || error}`,
+                        attemptCount++;
+                        const attemptStart = performance.now();
+                        const debugOn = !!settings?.eventbase_debug_logging;
+                        if (debugOn) {
+                            console.log(
+                                `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} — POST ${batchItemCount} item(s) via ${settings.source}`,
+                            );
+                        }
+                        try {
+                            if (abortSignal?.aborted) throw Object.assign(new Error('Vectorization stopped by user'), { name: 'AbortError' });
+                            await backend.insertVectorItems(collectionId, batches[i], settings, abortSignal);
+                            if (debugOn && attemptCount > 1) {
+                                const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
+                                console.log(
+                                    `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount} succeeded after ${elapsed}s`,
                                 );
                             }
-                        },
-                    });
+                        } catch (err) {
+                            // Per-attempt failure log with elapsed time + provider + batch size.
+                            // Without elapsed, "TimeoutError: signal timed out" tells you
+                            // nothing — was it a fast connection refusal or a 120s upstream
+                            // stall? Knowing the duration distinguishes "vLLM is down" (fails
+                            // in <1s) from "OpenRouter routing storm" (fails at exactly
+                            // ST's ~120s HTTP timeout). The provider/items context narrows
+                            // where in the call chain it died: ST request → embedding
+                            // provider call → Qdrant upsert.
+                            if (debugOn) {
+                                const elapsed = ((performance.now() - attemptStart) / 1000).toFixed(1);
+                                console.warn(
+                                    `VectFox: insert batch ${batchIdx}/${batches.length} attempt ${attemptCount}/${RETRY_CONFIG.maxAttempts} FAILED after ${elapsed}s — ${err?.name || 'Error'}: ${err?.message || err} (provider=${settings.source}, items=${batchItemCount})`,
+                                );
+                            }
+                            throw err;
+                        }
+                    }, RETRY_CONFIG);
                 };
 
                 // Apply rate limiting if configured, otherwise execute directly
