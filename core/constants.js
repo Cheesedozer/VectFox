@@ -47,13 +47,18 @@ export const API_TIMEOUT_MS = 30000;
 // =============================================================================
 
 /** Maximum retry attempts for failed API calls */
-export const RETRY_MAX_ATTEMPTS = 5;
+export const RETRY_MAX_ATTEMPTS = 4;
 
-/** Initial delay between retries in ms */
-export const RETRY_INITIAL_DELAY_MS = 2000;
+/** Initial delay between retries in ms.
+ *  Backoff schedule with maxDelay=8000 and multiplier=2 produces 5s, 8s, 8s
+ *  (3 backoffs between 4 attempts). Worst-case wait under T-per-attempt is
+ *  4T + 21s — chosen to fit inside the ~150s pair-spike window observed on
+ *  OpenRouter embedding routing so a retry has a real chance of landing on a
+ *  rotated upstream. See conversation 2026-05-30 — Doc/log.txt analysis. */
+export const RETRY_INITIAL_DELAY_MS = 5000;
 
-/** Maximum delay between retries in ms */
-export const RETRY_MAX_DELAY_MS = 30000;
+/** Maximum delay between retries in ms (caps the exponential growth at 8s) */
+export const RETRY_MAX_DELAY_MS = 8000;
 
 /** Backoff multiplier for exponential retry */
 export const RETRY_BACKOFF_MULTIPLIER = 2;
