@@ -2568,6 +2568,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
     activeVectorizeAbortController = new AbortController();
     updateVectorizeButtonState(true);
     progressTracker.setCancelHandler(() => stopActiveVectorization());
+    if (window.innerWidth <= 768) progressTracker.show('EventBase Extraction', 0, 'Windows');
 
     try {
         const { runEventBaseIngestion } = await import('../core/eventbase-workflow.js');
