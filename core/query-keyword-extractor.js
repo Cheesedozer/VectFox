@@ -5,6 +5,7 @@
 import { isStopWord } from './stop-words.js';
 import { CJK_SPAN_RE, CJK_CHAR_RE, LATIN_TOKEN_RE, getSegmenter } from './script-segmentation.js';
 import { stopLocalesForMode } from './language-modes.js';
+import { log } from './log.js';
 
 export const RETRIEVAL_KEYWORD_LEVELS = {
     minimal: { label: 'Minimal — 30 keywords', maxKeywords: 30 },
@@ -113,10 +114,10 @@ export function extractQueryKeywords(searchText, maxKeywords = 50, mode = null) 
 
     const result = [...cjkTokens, ...latinTokens];
 
-    console.log(`[VectFox] extractQueryKeywords anchor CJK -> ${sortedAnchorCJK.length} unique (top ${anchorCJKTokens.length}): ${anchorCJKTokens.join(', ') || '(none)'}`);
-    console.log(`[VectFox] extractQueryKeywords context CJK -> ${sortedFullCJK.length} unique (top ${contextCJKTokens.length}): ${contextCJKTokens.join(', ') || '(none)'}`);
-    console.log(`[VectFox] extractQueryKeywords Latin -> ${sortedLatin.length} unique (top ${latinTokens.length}): ${latinTokens.join(', ') || '(none)'}`);
-    console.log(`[VectFox] extractQueryKeywords final -> ${result.length} tokens (fullCJK=${fullCJK}): ${result.join(', ')}`);
+    log.trace(`[VectFox] extractQueryKeywords anchor CJK -> ${sortedAnchorCJK.length} unique (top ${anchorCJKTokens.length}): ${anchorCJKTokens.join(', ') || '(none)'}`);
+    log.trace(`[VectFox] extractQueryKeywords context CJK -> ${sortedFullCJK.length} unique (top ${contextCJKTokens.length}): ${contextCJKTokens.join(', ') || '(none)'}`);
+    log.trace(`[VectFox] extractQueryKeywords Latin -> ${sortedLatin.length} unique (top ${latinTokens.length}): ${latinTokens.join(', ') || '(none)'}`);
+    log.trace(`[VectFox] extractQueryKeywords final -> ${result.length} tokens (fullCJK=${fullCJK}): ${result.join(', ')}`);
 
     return result;
 }

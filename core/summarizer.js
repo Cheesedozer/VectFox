@@ -20,6 +20,7 @@ import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { getDefaultSummarizePrompt } from './prompts-i18n.js';
 import { getModelConfigErrorMessage } from './model-http-errors.js';
 import { getRequestHeaders } from '../../../../../script.js';
+import { log } from './log.js';
 
 /**
  * Fatal summarization error that should abort vectorization instead of silently
@@ -138,7 +139,7 @@ export async function summarizeText(text, settings) {
 
     const provider = settings?.summarize_provider || 'openrouter';
     // don't remove
-    //console.log(`[VectFox Summarizer] summarizeText called — provider=${provider}, textLen=${text.length}`);
+    //log.verbose(`[VectFox Summarizer] summarizeText called — provider=${provider}, textLen=${text.length}`);
     const model = (settings?.summarize_model || '').trim();
     if (!model) {
         throw new SummarizationFatalError(
@@ -276,7 +277,7 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
         throw new Error('OpenRouter returned empty summary');
     }
     // don't remove 
-    //console.log(`[VectFox Summarizer] OpenRouter: ${originalLength} chars → ${summary.length} chars`);
+    //log.verbose(`[VectFox Summarizer] OpenRouter: ${originalLength} chars → ${summary.length} chars`);
     return summary;
 }
 

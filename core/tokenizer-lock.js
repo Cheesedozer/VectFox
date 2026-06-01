@@ -19,6 +19,7 @@
  */
 
 import StringUtils from '../utils/string-utils.js';
+import { log } from './log.js';
 
 const metadataCache = new Map();
 
@@ -52,7 +53,7 @@ export async function fetchCollectionMetadata(actualCollectionId) {
         metadataCache.set(actualCollectionId, payload);
         return payload;
     } catch (error) {
-        console.warn('[TokenizerLock] Failed to fetch collection metadata:', error.message);
+        log.warn('[TokenizerLock] Failed to fetch collection metadata:', error.message);
         metadataCache.set(actualCollectionId, null);
         return null;
     }
@@ -222,14 +223,14 @@ async function waitForPopupsClosed(maxWaitMs = 1500) {
             d.remove();
         });
     } catch (e) {
-        console.warn('[TokenizerLock] force-close fallback failed:', e?.message);
+        log.warn('[TokenizerLock] force-close fallback failed:', e?.message);
     }
 }
 
 export async function openCjkTokenizerSetting() {
     try {
         if (typeof $ === 'undefined') {
-            console.warn('[TokenizerLock] jQuery ($) is undefined — cannot navigate');
+            log.warn('[TokenizerLock] jQuery ($) is undefined — cannot navigate');
             return;
         }
 
@@ -281,6 +282,6 @@ export async function openCjkTokenizerSetting() {
             }
         }, 150);
     } catch (error) {
-        console.warn('[TokenizerLock] Failed to navigate to settings:', error?.message);
+        log.warn('[TokenizerLock] Failed to navigate to settings:', error?.message);
     }
 }

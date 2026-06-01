@@ -44,6 +44,22 @@ hybrid-search.js
 keyword-boost.js
 standard.js
 agentic-retrieval.js
+api-keys.js
+collection-export.js
+collection-metadata.js
+conditional-activation.js
+content-vectorization.js
+core-vector-api.js
+corpus-stats.js
+emotion-classifier.js
+png-export.js
+world-info-integration.js
+collection-ids.js
+lorebook-rename-detector.js
+query-keyword-extractor.js
+summarizer.js
+text-cleaning.js
+tokenizer-lock.js
 
 
 """

@@ -11,6 +11,7 @@
  */
 
 import StringUtils from '../utils/string-utils.js';
+import { log } from './log.js';
 
 // ============================================================================
 // INTERNALS
@@ -49,7 +50,7 @@ async function waitForPopupsClosed(maxWaitMs = 1500) {
             d.remove();
         });
     } catch (e) {
-        console.warn('[LorebookRename] force-close fallback failed:', e?.message);
+        log.warn('[LorebookRename] force-close fallback failed:', e?.message);
     }
 }
 
@@ -127,7 +128,7 @@ export async function openDatabaseBrowserForRename() {
         const { openDatabaseBrowser } = await import('../ui/database-browser.js');
         openDatabaseBrowser();
     } catch (e) {
-        console.warn('[LorebookRename] Could not open Database Browser:', e?.message);
+        log.warn('[LorebookRename] Could not open Database Browser:', e?.message);
         // Fallback: scroll the Database Browser button into view so user can click it.
         try {
             if (typeof $ === 'undefined') return;
@@ -152,7 +153,7 @@ export async function openDatabaseBrowserForRename() {
                 }
             }, 150);
         } catch (navErr) {
-            console.warn('[LorebookRename] Fallback navigation failed:', navErr?.message);
+            log.warn('[LorebookRename] Fallback navigation failed:', navErr?.message);
         }
     }
 }

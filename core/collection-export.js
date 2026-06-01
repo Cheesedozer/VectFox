@@ -38,6 +38,7 @@ import { getModelFromSettings } from './providers.js';
 import { encodeSparseVector } from './sparse-vector-encoder.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { getStringHash } from '../../../../utils.js';
+import { log } from './log.js';
 
 // ============================================================================
 // HELPERS
@@ -344,7 +345,7 @@ export async function exportMultipleCollections(collectionIds, settings) {
                 },
             });
         } catch (error) {
-            console.error(`VectFox Export: Failed to export ${collectionId}:`, error);
+            log.error(`VectFox Export: Failed to export ${collectionId}:`, error);
             errors.push({ collectionId, error: error.message });
         }
     }
@@ -401,7 +402,7 @@ export function downloadExport(exportData, filename = null) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    console.log(`VectFox Export: Downloaded ${finalFilename}`);
+    log.lifecycle(`VectFox Export: Downloaded ${finalFilename}`);
 }
 
 // ============================================================================
@@ -627,7 +628,7 @@ export async function importCollection(exportData, settings, options = {}) {
     const wasRemapped = collectionId !== sourceId;
     if (wasRemapped) {
         const srcLabel = normalizeBackendForId(exportData.embedding?.backend || '?');
-        console.log(`VectFox Import: remapped collection ID ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
+        log.lifecycle(`VectFox Import: remapped collection ID ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
     }
 
     const chunks = exportData.chunks || [];
@@ -714,10 +715,10 @@ export async function importCollection(exportData, settings, options = {}) {
         if (options.overwrite) {
             try {
                 await purgeVectorIndex(collectionId, settings);
-                console.log(`VectFox Import: Purged existing collection ${collectionId}`);
+                log.lifecycle(`VectFox Import: Purged existing collection ${collectionId}`);
             } catch (e) {
                 // Collection might not exist, that's fine - log at debug level
-                console.debug(`VectFox Import: Could not purge ${collectionId} (may not exist):`, e.message);
+                log.trace(`VectFox Import: Could not purge ${collectionId} (may not exist):`, e.message);
             }
         }
 
@@ -745,7 +746,7 @@ export async function importCollection(exportData, settings, options = {}) {
                 await insertChunksWithVectors(collectionId, preparedChunks, settings, (done, total) => {
                     progressTracker.updateEmbeddingProgress(done, total);
                 }, abortController.signal);
-                console.log(`VectFox Import: Inserted ${preparedChunks.length} chunks with pre-computed vectors`);
+                log.lifecycle(`VectFox Import: Inserted ${preparedChunks.length} chunks with pre-computed vectors`);
             } catch (error) {
                 if (error?.name === 'AbortError') throw error;
                 throw new Error(`Failed to insert chunks: ${error.message}`);
@@ -755,7 +756,7 @@ export async function importCollection(exportData, settings, options = {}) {
             progressTracker.updateProgress(3, `Embedding ${preparedChunks.length} chunks...`);
             try {
                 await insertVectorItems(collectionId, preparedChunks, settings, null, abortController.signal);
-                console.log(`VectFox Import: Embedded and inserted ${preparedChunks.length} chunks`);
+                log.lifecycle(`VectFox Import: Embedded and inserted ${preparedChunks.length} chunks`);
             } catch (error) {
                 if (error?.name === 'AbortError') throw error;
                 throw new Error(`Failed to embed chunks: ${error.message}`);
@@ -853,7 +854,7 @@ export async function importCollection(exportData, settings, options = {}) {
             try {
                 await purgeVectorIndex(collectionId, settings);
             } catch (cleanupErr) {
-                console.debug(`VectFox Import: cleanup purge after stop failed:`, cleanupErr?.message);
+                log.trace(`VectFox Import: cleanup purge after stop failed:`, cleanupErr?.message);
             }
             progressTracker.complete(false, 'Import stopped');
         } else {
@@ -899,7 +900,7 @@ export async function importMultipleCollections(multiExportData, settings, optio
             results.push(result);
             imported++;
         } catch (error) {
-            console.error(`VectFox Import: Failed to import ${collectionId}:`, error);
+            log.error(`VectFox Import: Failed to import ${collectionId}:`, error);
             results.push({
                 success: false,
                 collectionId,
@@ -939,7 +940,7 @@ async function importCollectionSilent(exportData, settings, options = {}) {
     const collectionId = remapCollectionIdToBackend(sourceId, targetBackendLabel);
     if (collectionId !== sourceId) {
         const srcLabel = normalizeBackendForId(exportData.embedding?.backend || '?');
-        console.log(`VectFox Import (silent): remapped ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
+        log.lifecycle(`VectFox Import (silent): remapped ${srcLabel} → ${targetBackendLabel}: "${sourceId}" → "${collectionId}"`);
     }
 
     const chunks = exportData.chunks || [];
@@ -987,7 +988,7 @@ async function importCollectionSilent(exportData, settings, options = {}) {
             await purgeVectorIndex(collectionId, settings);
         } catch (e) {
             // Collection might not exist - log at debug level
-            console.debug(`VectFox Import: Could not purge ${collectionId} (may not exist):`, e.message);
+            log.trace(`VectFox Import: Could not purge ${collectionId} (may not exist):`, e.message);
         }
     }
 

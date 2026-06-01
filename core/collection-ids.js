@@ -13,6 +13,7 @@
 
 import { getContext } from '../../../../extensions.js';
 import { getCurrentChatId, chat_metadata } from '../../../../../script.js';
+import { log } from './log.js';
 
 // ============================================================================
 // CONSTANTS
@@ -238,7 +239,7 @@ export function getChatUUID() {
     // Fallback: use chatId (less ideal but works for old chats)
     const chatId = getCurrentChatId();
     if (chatId) {
-        console.warn('VectFox: chat_metadata.integrity not found, falling back to chatId');
+        log.warn('VectFox: chat_metadata.integrity not found, falling back to chatId');
         return chatId;
     }
     return null;

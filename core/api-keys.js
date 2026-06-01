@@ -117,6 +117,7 @@
 import { extension_settings } from '../../../../extensions.js';
 import { SECRET_KEYS, secret_state, writeSecret, readSecretState } from '../../../../secrets.js';
 import { saveSettings } from '../../../../../script.js';
+import { log } from './log.js';
 
 // ─── Internal helpers ───────────────────────────────────────────────────
 
@@ -305,7 +306,7 @@ export async function fetchQdrantApiKeyPresence() {
 export async function migrateLegacyApiKeys() {
     const vf = extension_settings?.vectfox;
     if (!vf) {
-        console.warn('[VectFox migrate] extension_settings.vectfox not initialized — skipping');
+        log.warn('[VectFox migrate] extension_settings.vectfox not initialized — skipping');
         return { summary: 'not-initialized' };
     }
 
@@ -315,10 +316,10 @@ export async function migrateLegacyApiKeys() {
     // listed in the post-migration "deleted" log, something is filtering it
     // out before migration runs (defaults merge, etc.).
     const apiKeyFieldsBefore = Object.keys(vf).filter(k => k.includes('api_key'));
-    console.log(`[VectFox migrate] START. vf has ${apiKeyFieldsBefore.length} *api_key* field(s):`, apiKeyFieldsBefore);
+    log.lifecycle(`[VectFox migrate] START. vf has ${apiKeyFieldsBefore.length} *api_key* field(s):`, apiKeyFieldsBefore);
     if (apiKeyFieldsBefore.length > 0) {
         // Show length only (never log the actual key value)
-        console.log(`[VectFox migrate] *api_key* field details:`, apiKeyFieldsBefore.map(k => {
+        log.lifecycle(`[VectFox migrate] *api_key* field details:`, apiKeyFieldsBefore.map(k => {
             const v = vf[k];
             return {
                 field: k,
@@ -357,7 +358,7 @@ export async function migrateLegacyApiKeys() {
                 await writeSecret(SECRET_KEYS.OPENROUTER, orValue);
                 moves.push(`OpenRouter → wrote to SECRET_KEYS.OPENROUTER (was empty)`);
             } catch (err) {
-                console.warn('[VectFox migrate] writeSecret(SECRET_KEYS.OPENROUTER) failed:', err?.message || err);
+                log.warn('[VectFox migrate] writeSecret(SECRET_KEYS.OPENROUTER) failed:', err?.message || err);
                 moves.push(`OpenRouter → writeSecret FAILED, key not migrated`);
             }
         } else {
@@ -406,12 +407,12 @@ export async function migrateLegacyApiKeys() {
                 await writeSecret(SECRET_KEYS.CUSTOM, vllmValue);
                 moves.push(`vLLM → wrote to SECRET_KEYS.CUSTOM (was empty)`);
             } catch (err) {
-                console.warn('[VectFox migrate] writeSecret(SECRET_KEYS.CUSTOM) failed:', err?.message || err);
+                log.warn('[VectFox migrate] writeSecret(SECRET_KEYS.CUSTOM) failed:', err?.message || err);
                 moves.push(`vLLM → writeSecret(SECRET_KEYS.CUSTOM) FAILED, chat-side key not migrated — re-enter via VectFox UI`);
             }
         } else {
             const msg = `vLLM → SECRET_KEYS.CUSTOM already has a value (likely from ST main-chat config) — kept that one for chat-side. To override, clear ST's Custom OpenAI-compatible key and re-enter via VectFox UI.`;
-            console.warn(`[VectFox migrate] ${msg}`);
+            log.warn(`[VectFox migrate] ${msg}`);
             moves.push(msg);
         }
 
@@ -421,12 +422,12 @@ export async function migrateLegacyApiKeys() {
                 await writeSecret(SECRET_KEYS.VLLM, vllmValue);
                 moves.push(`vLLM → wrote to SECRET_KEYS.VLLM (was empty, used by embedding path)`);
             } catch (err) {
-                console.warn('[VectFox migrate] writeSecret(SECRET_KEYS.VLLM) failed:', err?.message || err);
+                log.warn('[VectFox migrate] writeSecret(SECRET_KEYS.VLLM) failed:', err?.message || err);
                 moves.push(`vLLM → writeSecret(SECRET_KEYS.VLLM) FAILED, embedding-side key not migrated — configure via ST's Text Completion → vLLM UI`);
             }
         } else {
             const msg = `vLLM → SECRET_KEYS.VLLM already has a value (from ST Text Completion → vLLM config) — kept that one for embedding-side.`;
-            console.warn(`[VectFox migrate] ${msg}`);
+            log.warn(`[VectFox migrate] ${msg}`);
             moves.push(msg);
         }
     }
@@ -462,10 +463,10 @@ export async function migrateLegacyApiKeys() {
         });
         pluginSupportsQdrantSecretSlot = probe.ok;
         if (!probe.ok) {
-            console.warn(`[VectFox migrate] Plugin /qdrant/key-status probe returned ${probe.status} — Similharity plugin is pre-2026-05-26. Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Update the Similharity plugin (cd plugins/similharity && git pull && restart ST) to enable secret_state storage.`);
+            log.warn(`[VectFox migrate] Plugin /qdrant/key-status probe returned ${probe.status} — Similharity plugin is pre-2026-05-26. Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Update the Similharity plugin (cd plugins/similharity && git pull && restart ST) to enable secret_state storage.`);
         }
     } catch (err) {
-        console.warn(`[VectFox migrate] Plugin /qdrant/key-status probe failed (plugin unreachable or pre-2026-05-26). Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Reason:`, err?.message || err);
+        log.warn(`[VectFox migrate] Plugin /qdrant/key-status probe failed (plugin unreachable or pre-2026-05-26). Skipping Qdrant key migration this run; plaintext key in settings.json is PRESERVED. Reason:`, err?.message || err);
     }
 
     if (pluginSupportsQdrantSecretSlot) {
@@ -484,7 +485,7 @@ export async function migrateLegacyApiKeys() {
                 moves.push(`Qdrant → wrote to secret_state.${QDRANT_SLOT} (len=${rawQdrantPlaintext.trim().length})`);
                 writeSucceeded = true;
             } catch (err) {
-                console.warn('[VectFox migrate] writeSecret(api_key_qdrant) failed:', err?.message || err);
+                log.warn('[VectFox migrate] writeSecret(api_key_qdrant) failed:', err?.message || err);
                 moves.push(`Qdrant → writeSecret(${QDRANT_SLOT}) FAILED — plaintext key PRESERVED in settings.json for safety, retry next reload`);
                 // writeSucceeded stays false → plaintext stays in settings.json
             }
@@ -539,28 +540,28 @@ export async function migrateLegacyApiKeys() {
     }
 
     if (mutated) {
-        console.log(`[VectFox migrate] mutated=true → calling await saveSettings() (synchronous)`);
+        log.lifecycle(`[VectFox migrate] mutated=true → calling await saveSettings() (synchronous)`);
         // Synchronous save (NOT debounced) — see index.js eventbase migration
         // comment for the full rationale. Short version: if user reloads
         // before the debounce flushes, settings.json keeps the stale legacy
         // fields even though extension_settings.vectfox is clean in memory.
         // Confirmed scenario 2026-05-26.
         await saveSettings();
-        console.log(`[VectFox migrate] saveSettings() returned. Disk should be in sync with memory now.`);
+        log.lifecycle(`[VectFox migrate] saveSettings() returned. Disk should be in sync with memory now.`);
     } else {
-        console.log(`[VectFox migrate] mutated=false → skipping saveSettings(). If settings.json has stale fields, they will NOT be cleared by this migration run (in-memory state was already clean).`);
+        log.lifecycle(`[VectFox migrate] mutated=false → skipping saveSettings(). If settings.json has stale fields, they will NOT be cleared by this migration run (in-memory state was already clean).`);
     }
 
     // Diagnostic: what's left in vf after migration?
     const apiKeyFieldsAfter = Object.keys(vf).filter(k => k.includes('api_key'));
-    console.log(`[VectFox migrate] END. vf has ${apiKeyFieldsAfter.length} *api_key* field(s) remaining:`, apiKeyFieldsAfter);
+    log.lifecycle(`[VectFox migrate] END. vf has ${apiKeyFieldsAfter.length} *api_key* field(s) remaining:`, apiKeyFieldsAfter);
 
     if (moves.length > 0) {
-        console.log(`[VectFox migrate] Migration complete:\n  - ${moves.join('\n  - ')}`);
+        log.lifecycle(`[VectFox migrate] Migration complete:\n  - ${moves.join('\n  - ')}`);
         // Refresh in-memory secret_state if we wrote OpenRouter or CUSTOM
         try { await readSecretState(); } catch {}
     } else {
-        console.log('[VectFox migrate] No legacy API-key fields found — nothing to migrate');
+        log.lifecycle('[VectFox migrate] No legacy API-key fields found — nothing to migrate');
     }
 
     return { summary: moves.length > 0 ? moves.join('; ') : 'nothing-to-migrate' };

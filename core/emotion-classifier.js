@@ -14,6 +14,7 @@
 
 import { getRequestHeaders } from '../../../../../script.js';
 import { extension_settings } from '../../../../extensions.js';
+import { log } from './log.js';
 
 // =============================================================================
 // CONSTANTS
@@ -103,7 +104,7 @@ const CACHE_MAX_SIZE = 100;
  */
 export function clearClassifierCache() {
     classifierCache.clear();
-    console.log(`[${MODULE_NAME}] Classifier cache cleared`);
+    log.lifecycle(`[${MODULE_NAME}] Classifier cache cleared`);
 }
 
 /**
@@ -122,7 +123,7 @@ export async function classifyEmotion(text, options = {}) {
 
     const settings = getClassifierSettings();
     if (!settings.enabled) {
-        console.debug(`[${MODULE_NAME}] Classifier not enabled`);
+        log.trace(`[${MODULE_NAME}] Classifier not enabled`);
         return null;
     }
 
@@ -144,14 +145,14 @@ export async function classifyEmotion(text, options = {}) {
         });
 
         if (!response.ok) {
-            console.error(`[${MODULE_NAME}] Classification request failed: ${response.status}`);
+            log.error(`[${MODULE_NAME}] Classification request failed: ${response.status}`);
             return null;
         }
 
         const data = await response.json();
 
         if (!data?.classification?.length) {
-            console.debug(`[${MODULE_NAME}] No classification result`);
+            log.trace(`[${MODULE_NAME}] No classification result`);
             return null;
         }
 
@@ -169,10 +170,10 @@ export async function classifyEmotion(text, options = {}) {
         }
         classifierCache.set(cacheKey, result);
 
-        console.log(`[${MODULE_NAME}] Classified as "${result.label}" (${(result.score * 100).toFixed(1)}%)`);
+        log.verbose(`[${MODULE_NAME}] Classified as "${result.label}" (${(result.score * 100).toFixed(1)}%)`);
         return result;
     } catch (error) {
-        console.error(`[${MODULE_NAME}] Classification error:`, error);
+        log.error(`[${MODULE_NAME}] Classification error:`, error);
         return null;
     }
 }
@@ -304,7 +305,7 @@ export function updateClassifierSetting(key, value) {
         clearClassifierCache();
     }
 
-    console.log(`[${MODULE_NAME}] Setting ${settingKey} = ${value}`);
+    log.lifecycle(`[${MODULE_NAME}] Setting ${settingKey} = ${value}`);
 }
 
 // =============================================================================

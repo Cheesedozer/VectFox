@@ -69,7 +69,7 @@ export async function getCorpusStats(collectionId, settings) {
             return stats;
         })
         .catch(err => {
-            console.warn(`[CorpusStats] Build failed for ${collectionId}:`, err?.message || err);
+            log.warn(`[CorpusStats] Build failed for ${collectionId}:`, err?.message || err);
             return null;
         })
         .finally(() => {
@@ -106,7 +106,7 @@ async function _buildStats(collectionId, settings) {
         // If the plugin-availability check itself fails (shouldn't happen),
         // fall through to the fetch path — preserves prior behavior so we
         // don't accidentally lose corpus-IDF on a probe glitch.
-        console.warn(`[CorpusStats] Plugin-availability check failed for ${collectionId}, attempting /chunks/list anyway: ${err?.message || err}`);
+        log.warn(`[CorpusStats] Plugin-availability check failed for ${collectionId}, attempting /chunks/list anyway: ${err?.message || err}`);
     }
 
     // Per-stage timing so a slow build tells us WHICH stage is the choke point:
@@ -116,10 +116,9 @@ async function _buildStats(collectionId, settings) {
     //                    can be the dominant cost on chat content
     //   4. df-map build → cheap (O(unique-tokens))
     //
-    // This timing line stays an always-on console.log (not gated by the log
-    // helper) — corpus-stats build
-    // happens at most once per session per collection, so the noise is minimal
-    // and the timing data is critical for diagnosing slow first-queries.
+    // Timing line at lifecycle level — corpus-stats build happens at most once
+    // per session per collection, so the noise is minimal and the timing data
+    // is critical for diagnosing slow first-queries.
     const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const _ms = (start) => Math.round(_now() - start);
     const tStart = _now();
@@ -180,7 +179,7 @@ async function _buildStats(collectionId, settings) {
     };
 
     const totalMs = _ms(tStart);
-    console.log(
+    log.lifecycle(
         `[CorpusStats] Built for ${collectionId} in ${totalMs}ms ` +
         `(fetch=${tFetchMs}ms, parse=${tParseMs}ms, tokenize+df=${tTokenizeMs}ms) ` +
         `→ N=${stats.totalDocs}${skipped ? ` (${skipped} empty skipped)` : ''}, ` +

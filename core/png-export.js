@@ -21,6 +21,8 @@
  * ============================================================================
  */
 
+import { log } from './log.js';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -110,7 +112,7 @@ async function compressDeflateRaw(data) {
             return result;
         } catch (e) {
             // deflate-raw might not be supported, try regular deflate
-            console.warn('VectFox PNG: deflate-raw not supported, trying deflate');
+            log.warn('VectFox PNG: deflate-raw not supported, trying deflate');
         }
 
         try {
@@ -144,7 +146,7 @@ async function compressDeflateRaw(data) {
             }
             return result;
         } catch (e) {
-            console.warn('VectFox PNG: Compression failed, will use uncompressed tEXt', e);
+            log.warn('VectFox PNG: Compression failed, will use uncompressed tEXt', e);
             return null;
         }
     }
@@ -183,7 +185,7 @@ async function decompressDeflateRaw(data) {
             return result;
         } catch (e) {
             // Try wrapping in zlib format for regular deflate decoder
-            console.warn('VectFox PNG: deflate-raw decompress failed, trying with zlib wrapper');
+            log.warn('VectFox PNG: deflate-raw decompress failed, trying with zlib wrapper');
         }
 
         try {
@@ -221,7 +223,7 @@ async function decompressDeflateRaw(data) {
             }
             return result;
         } catch (e) {
-            console.error('VectFox PNG: All decompression methods failed', e);
+            log.error('VectFox PNG: All decompression methods failed', e);
             throw new Error('Failed to decompress PNG data. Browser may not support required compression.');
         }
     }
@@ -346,12 +348,12 @@ async function createZTXtChunk(keyword, text) {
         data[keywordBytes.length + 1] = 0; // Compression method 0 = deflate
         data.set(compressed, keywordBytes.length + 2);
 
-        console.log(`VectFox PNG: Compressed ${textBytes.length} bytes to ${compressed.length} bytes (${Math.round(compressed.length / textBytes.length * 100)}%)`);
+        log.lifecycle(`VectFox PNG: Compressed ${textBytes.length} bytes to ${compressed.length} bytes (${Math.round(compressed.length / textBytes.length * 100)}%)`);
 
         return createChunk('zTXt', data);
     } else {
         // Fall back to tEXt with base64 encoding
-        console.warn('VectFox PNG: Using uncompressed tEXt chunk (compression unavailable)');
+        log.warn('VectFox PNG: Using uncompressed tEXt chunk (compression unavailable)');
         const base64 = btoa(String.fromCharCode(...textBytes));
         const base64Bytes = new TextEncoder().encode(base64);
 
@@ -541,7 +543,7 @@ export async function embedDataInPNG(exportData, pngData = null) {
     // Insert chunk into PNG
     const result = insertChunkBeforeIEND(pngData, textChunk);
 
-    console.log(`VectFox PNG: Created PNG export (${result.length} bytes, original JSON: ${jsonString.length} bytes)`);
+    log.lifecycle(`VectFox PNG: Created PNG export (${result.length} bytes, original JSON: ${jsonString.length} bytes)`);
 
     return result;
 }
@@ -561,11 +563,11 @@ export async function extractDataFromPNG(pngData) {
                 const textData = await readTextChunk(chunk);
                 if (textData && textData.keyword === VectFox_KEYWORD) {
                     const exportData = JSON.parse(textData.text);
-                    console.log('VectFox PNG: Successfully extracted data from PNG');
+                    log.lifecycle('VectFox PNG: Successfully extracted data from PNG');
                     return exportData;
                 }
             } catch (e) {
-                console.warn('VectFox PNG: Failed to read text chunk:', e);
+                log.warn('VectFox PNG: Failed to read text chunk:', e);
             }
         }
     }
@@ -590,7 +592,7 @@ export function downloadPNG(pngData, filename) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    console.log(`VectFox PNG: Downloaded ${a.download}`);
+    log.lifecycle(`VectFox PNG: Downloaded ${a.download}`);
 }
 
 /**

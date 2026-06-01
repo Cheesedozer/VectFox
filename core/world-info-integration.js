@@ -21,6 +21,7 @@ import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForR
 // the builder is intentionally not imported here because lookups can't reconstruct the
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
 import { eventSource, event_types, setExtensionPrompt, substituteParams, getCurrentChatId } from '../../../../../script.js';
+import { log } from './log.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
@@ -71,7 +72,7 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     const dualQuery = kq && kq !== query;
     const queryTexts = dualQuery ? [kq, query] : [query];
 
-    console.log(`VectFox: Querying vectorized lorebooks for semantic WI activation${dualQuery ? ' (dual query)' : ''}...`);
+    log.verbose(`VectFox: Querying vectorized lorebooks for semantic WI activation${dualQuery ? ' (dual query)' : ''}...`);
 
     const semanticEntries = [];
     // Lower threshold for hybrid retrieval since RRF/weighted fusion produces lower absolute scores
@@ -141,11 +142,11 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
                     const keyDisplay = Array.isArray(entry.key)
                         ? entry.key.map(k => typeof k === 'object' ? (k.text || k.keyword || JSON.stringify(k)) : k).join(', ')
                         : (entry.key || 'unknown');
-                    console.log(`VectFox: Semantic WI activation: "${keyDisplay}" (score: ${score.toFixed(3)})`);
+                    log.trace(`VectFox: Semantic WI activation: "${keyDisplay}" (score: ${score.toFixed(3)})`);
                 }
             }
         } catch (error) {
-            console.warn(`VectFox: Failed to query lorebook collection ${collection.id}:`, error);
+            log.warn(`VectFox: Failed to query lorebook collection ${collection.id}:`, error);
         }
     }
 
@@ -165,7 +166,7 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     // Deduplicate with already active entries (avoid duplicates from keyword matching)
     const deduplicatedEntries = deduplicateWithActiveEntries(uniqueEntries, activeEntries);
 
-    console.log(`VectFox: Found ${deduplicatedEntries.length} semantic WI entries to activate`);
+    log.verbose(`VectFox: Found ${deduplicatedEntries.length} semantic WI entries to activate`);
 
     if (settings.world_info_retrieval_popup && deduplicatedEntries.length > 0) {
         try { toastr.info(`Semantic WI: retrieved ${deduplicatedEntries.length} lorebook entry/entries`, 'VectFox'); } catch (_) {}
@@ -211,7 +212,7 @@ async function getEnabledLorebookCollections(settings) {
         collections.push({ id: entry.registryKey, name, sourceName });
     }
 
-    console.log(`VectFox WI: ${collections.length} lorebook collection(s) available for semantic search`);
+    log.verbose(`VectFox WI: ${collections.length} lorebook collection(s) available for semantic search`);
     return collections;
 }
 
@@ -420,14 +421,14 @@ async function handleGenerationStarted(type, options, dryRun) {
         // sourceName won't match any entry in world_names. Show a blocking popup.
         const mismatches = await detectLorebookRenames(lorebookCollections);
         if (mismatches.length) {
-            console.warn(`VectFox: Lorebook rename detected — ${mismatches.map(m => m.sourceName).join(', ')}`);
+            log.warn(`VectFox: Lorebook rename detected — ${mismatches.map(m => m.sourceName).join(', ')}`);
             const choice = await showLorebookRenameModal(mismatches);
             if (choice === 'open_browser') {
                 try {
                     const { stopGeneration } = await import('../../../../../script.js');
                     stopGeneration();
                 } catch (e) {
-                    console.warn('[LorebookRename] stopGeneration() failed:', e?.message);
+                    log.warn('[LorebookRename] stopGeneration() failed:', e?.message);
                 }
                 openDatabaseBrowserForRename(); // async fade-wait + open; don't await here
                 return;
@@ -454,9 +455,9 @@ async function handleGenerationStarted(type, options, dryRun) {
         const injectionText = `<${xmlTag}>\n${injectionContent}\n</${xmlTag}>`;
 
         setExtensionPrompt(LOREBOOK_PROMPT_TAG, injectionText, settings.position, settings.depth, false);
-        console.log(`VectFox: Injected ${entryTexts.length} lorebook entries to <${xmlTag}>`);
+        log.verbose(`VectFox: Injected ${entryTexts.length} lorebook entries to <${xmlTag}>`);
     } catch (err) {
-        console.warn('VectFox: Lorebook WI injection failed', err.message || err);
+        log.warn('VectFox: Lorebook WI injection failed', err.message || err);
     }
 }
 
@@ -514,5 +515,5 @@ export function initializeWorldInfoIntegration() {
     };
 
     eventSource.on(event_types.GENERATION_STARTED, handleGenerationStarted);
-    console.log('VectFox: World Info integration hooks initialized');
+    log.lifecycle('VectFox: World Info integration hooks initialized');
 }

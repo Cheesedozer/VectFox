@@ -32,6 +32,7 @@ import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { getCurrentChatId } from '../../../../../script.js';
 import { getStringHash } from '../../../../utils.js';
+import { log } from './log.js';
 
 /**
  * Merge per-call settings on top of the user's global VectFox settings.
@@ -109,7 +110,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         const chunkLengths = chunks.map(c => (typeof c === 'string' ? c : c.text || '').length);
         const maxChunkLen = Math.max(...chunkLengths);
         const avgChunkLen = Math.round(chunkLengths.reduce((a, b) => a + b, 0) / chunkLengths.length);
-        console.log(`VectFox: Chunked "${sourceName}" into ${chunks.length} chunks (avg: ${avgChunkLen} chars, max: ${maxChunkLen} chars)`);
+        log.lifecycle(`VectFox: Chunked "${sourceName}" into ${chunks.length} chunks (avg: ${avgChunkLen} chars, max: ${maxChunkLen} chars)`);
 
         progressTracker.updateChunks(chunks.length);
 
@@ -153,7 +154,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 const before = hashedChunks.length;
                 finalChunks = hashedChunks.filter(c => !savedSet.has(c.hash));
                 const skipped = before - finalChunks.length;
-                console.log(`VectFox: Continue mode — ${skipped} chunks already in DB, ${finalChunks.length} remaining`);
+                log.lifecycle(`VectFox: Continue mode — ${skipped} chunks already in DB, ${finalChunks.length} remaining`);
                 progressTracker.updateChunks(finalChunks.length);
                 if (finalChunks.length === 0) {
                     progressTracker.complete(true, 'Already up to date — no new chunks to insert');
@@ -161,7 +162,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 }
                 toastr.info(`Continuing: ${skipped} chunks skipped, ${finalChunks.length} to insert`, 'VectFox');
             } catch (e) {
-                console.warn('VectFox: Could not fetch saved hashes for dedup, inserting all:', e.message);
+                log.warn('VectFox: Could not fetch saved hashes for dedup, inserting all:', e.message);
                 finalChunks = hashedChunks;
             }
         } else {
@@ -178,13 +179,13 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         /* ----- BEGIN: summarize-before-store pipeline (DISABLED, kept for future use) -----
         if (contentType === 'chat') {
             progressTracker.updateProgress(3, `Summarizing and inserting ${finalChunks.length} chunks...`);
-            console.log(`[VectFox Summarizer] Pipelining ${finalChunks.length} chat chunks via ${VectFoxSettings.summarize_provider}...`);
+            log.lifecycle(`[VectFox Summarizer] Pipelining ${finalChunks.length} chat chunks via ${VectFoxSettings.summarize_provider}...`);
 
             // Pre-init backend once before pipeline starts
             try {
                 await getBackend(VectFoxSettings);
             } catch (e) {
-                console.warn('VectFox: Backend init failed before pipeline insert, will still attempt:', e.message);
+                log.warn('VectFox: Backend init failed before pipeline insert, will still attempt:', e.message);
             }
 
             let pipelined = 0;
@@ -220,7 +221,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                         await insertVectorItems(collectionId, [summarizedChunk], VectFoxSettings, null, abortSignal);
                     } catch (insertErr) {
                         if (insertErr?.name === 'AbortError') throw insertErr;
-                        console.error('VectFox: Pipeline insert failed for chunk, skipping:', insertErr.message);
+                        log.error('VectFox: Pipeline insert failed for chunk, skipping:', insertErr.message);
                         progressTracker.addError(`Chunk ${pipelined + 1}: ${insertErr.message}`);
                     }
 
@@ -230,7 +231,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 }
             }
 
-            console.log(`[VectFox Summarizer] Pipeline complete: ${pipelined} chunks processed`);
+            log.lifecycle(`[VectFox Summarizer] Pipeline complete: ${pipelined} chunks processed`);
 
         }
         ----- END: summarize-before-store pipeline ----- */
@@ -242,7 +243,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             try {
                 await getBackend(effectiveSettings);
             } catch (e) {
-                console.warn('VectFox: Backend initialization failed before insert, will still attempt insert:', e.message);
+                log.warn('VectFox: Backend initialization failed before insert, will still attempt insert:', e.message);
                 try { progressTracker.addError(`Backend init failed: ${e.message}`); } catch (_) {}
                 try { toastr.error('Backend initialization failed: ' + e.message, 'VectFox'); } catch (_) {}
             }
@@ -250,12 +251,12 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             try {
                 await insertVectorItems(collectionId, finalChunks, effectiveSettings, (embedded, total) => {
                     throwIfAborted();
-                    console.log(`[Content Vectorization] Processing progress callback: ${embedded}/${total}`);
+                    log.verbose(`[Content Vectorization] Processing progress callback: ${embedded}/${total}`);
                     progressTracker.updateEmbeddingProgress(embedded, total);
                     progressTracker.updateCurrentItem(`Processing: ${embedded}/${total} chunks (${total - embedded} remaining)`);
                 }, abortSignal);
             } catch (error) {
-                console.error('VectFox: insertVectorItems failed', error);
+                log.error('VectFox: insertVectorItems failed', error);
                 try { progressTracker.addError(error.message || String(error)); } catch (_) {}
                 try { toastr.error('Failed to write embeddings: ' + (error.message || String(error)), 'VectFox'); } catch (_) {}
                 throw error;
@@ -289,7 +290,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
 
         // Register collection in the registry so it's discoverable
         registerCollection(registryKey);
-        console.log(`VectFox: Registered collection ${registryKey}`);
+        log.lifecycle(`VectFox: Registered collection ${registryKey}`);
 
 
         throwIfAborted();
@@ -443,7 +444,7 @@ async function loadLorebookContent(lorebookName, context) {
 
         const entries = Object.values(data.entries).filter(e => e.content);
 
-        console.log(`VectFox: Loaded lorebook "${lorebookName}" with ${entries.length} entries`);
+        log.lifecycle(`VectFox: Loaded lorebook "${lorebookName}" with ${entries.length} entries`);
 
         return {
             content: entries,
@@ -452,7 +453,7 @@ async function loadLorebookContent(lorebookName, context) {
         };
 
     } catch (e) {
-        console.error('VectFox: Failed to load lorebook:', e);
+        log.error('VectFox: Failed to load lorebook:', e);
         throw new Error(`Failed to load lorebook "${lorebookName}": ${e.message}`);
     }
 }
@@ -920,5 +921,5 @@ export async function deleteContentCollection(collectionId, callerSettings = nul
     }
     const effectiveSettings = resolveEffectiveSettings(baseSettings);
     await purgeVectorIndex(collectionId, effectiveSettings);
-    console.log(`VectFox: Deleted collection: ${collectionId} (routed via ${effectiveSettings.vector_backend})`);
+    log.lifecycle(`VectFox: Deleted collection: ${collectionId} (routed via ${effectiveSettings.vector_backend})`);
 }

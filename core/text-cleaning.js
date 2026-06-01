@@ -12,6 +12,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { uuidv4 } from '../../../../utils.js';
+import { log } from './log.js';
 
 // ============================================================================
 // BUILT-IN PRESETS
@@ -274,7 +275,7 @@ function applyPattern(text, pattern) {
         const regex = new RegExp(pattern.pattern, pattern.flags || 'g');
         return text.replace(regex, pattern.replacement || '');
     } catch (e) {
-        console.warn(`VectFox: Invalid regex pattern "${pattern.name || pattern.pattern}":`, e.message);
+        log.warn(`VectFox: Invalid regex pattern "${pattern.name || pattern.pattern}":`, e.message);
         return text;
     }
 }
