@@ -3886,16 +3886,16 @@ test('TEST 021 — Standard+plugin: per-chunk override is backend-first (survive
 // Phases:
 //   1. R4 — set {context, xmlTag} on the backend → injectionText wraps the chunk.
 //   2. backend-first — wipe ext_settings → wrapping persists (came from the backend).
-//   3. R2 — set a guaranteed-FAIL per-chunk condition → chunk is excluded from injection.
+//   3. R3 force link — A force-links to an off-query chunk B → B is pulled into the injection.
+//   4. R2 — set a guaranteed-FAIL per-chunk condition → chunk is excluded from injection.
 //
-// Standard+plugin only: the injection readers (R2/R4) are backend-agnostic — they read
+// Standard+plugin only: the injection readers (R2/R3/R4) are backend-agnostic — they read
 // chunk.metadata regardless of backend — and TEST 020/021 already cover that both backends
 // serve the payload. So one backend exercises the reader logic fully.
 //
 // Not covered here: position/depth (R5) placement — buildNestedInjectionText doesn't encode
 // position/depth (applied later by injectChunksIntoPrompt, non-dry-run only); R5's resolution
-// logic is covered by the vitest cascade test. Links (R3) end-to-end is left to the unit
-// test of the real processChunkLinks.
+// logic is covered by the vitest cascade test.
 test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter through retrieval (backend-first)', async () => {
     await skipIfNoPlugin();
     const logs = await runTestInPage(async () => {
@@ -3903,11 +3903,12 @@ test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter t
         const base = '/scripts/extensions/third-party/VectFox/';
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { rearrangeChat } = await import(base + 'core/chat-vectorization.js');
-        const { updateChunkMetadata, queryCollection } = await import(base + 'core/core-vector-api.js');
+        const { updateChunkMetadata, queryCollection, insertVectorItems } = await import(base + 'core/core-vector-api.js');
         const { getChunkMetadata, saveChunkMetadata, deleteChunkMetadata, deleteCollectionMeta, shouldCollectionActivate, setLock, setCollectionEnabled } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
+        const { getStringHash } = await import('/scripts/utils.js');
 
         const vf = extension_settings?.vectfox;
         if (!vf) { console.error(`${TEST} [FAIL] VectFox settings not found`); return; }
@@ -4023,18 +4024,33 @@ test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter t
             }
             console.log(`${TEST} Phase 2 ✓ backend-first: wrapping survived ext_settings wipe`);
 
-            // ── Phase 3: R2 per-chunk condition — a guaranteed-FAIL condition must EXCLUDE the chunk ──
+            // ── Phase 3: R3 FORCE link — chunk A force-links to a chunk B that does NOT match
+            //    the query; B must still be pulled into the injection ("target MUST appear"). ──
+            const SENTINEL_B = `Forcelinked_${ts}`;
+            const textB = `The ${SENTINEL_B} vault stays sealed until the conclave convenes — deliberately unrelated to the query terms.`;
+            const hashB = getStringHash(textB);
+            await insertVectorItems(collectionId, [{ hash: hashB, text: textB, index: 1 }], rcSettings);
+            await updateChunkMetadata(collectionId, hash, { chunkLinks: [{ targetHash: String(hashB), mode: 'force' }] }, rcSettings);
+            inj = await dryInject();
+            if (!inj.includes(SENTINEL_B)) {
+                console.error(`${TEST} [FAIL] Phase 3: force-linked target B (hash=${hashB}) was NOT pulled into the injection — force links don't fetch missing targets. Preview: ${inj.slice(0, 400)}`);
+                return;
+            }
+            console.log(`${TEST} Phase 3 ✓ R3 force link pulled in the off-query target chunk`);
+
+            // ── Phase 4: R2 per-chunk condition — a guaranteed-FAIL condition must EXCLUDE the
+            //    chunk (and, since A is gone, its force link no longer fires for B either). ──
             await updateChunkMetadata(collectionId, hash, {
                 conditions: { enabled: true, logic: 'AND', rules: [{ type: 'messageCount', settings: { count: 999999, operator: 'gte' } }] },
             }, rcSettings);
             inj = await dryInject();
             if (inj.includes(SENTINEL)) {
-                console.error(`${TEST} [FAIL] Phase 3: chunk still injected despite a failing per-chunk condition (R2 not filtering from backend payload). Preview: ${inj.slice(0, 300)}`);
+                console.error(`${TEST} [FAIL] Phase 4: chunk still injected despite a failing per-chunk condition (R2 not filtering from backend payload). Preview: ${inj.slice(0, 300)}`);
                 return;
             }
-            console.log(`${TEST} Phase 3 ✓ R2 per-chunk condition filtered the chunk out of injection`);
+            console.log(`${TEST} Phase 4 ✓ R2 per-chunk condition filtered the chunk out of injection`);
 
-            console.log(`${TEST} [PASS] Injection path: R4 wrapping + backend-first + R2 condition filter all driven by the backend payload`);
+            console.log(`${TEST} [PASS] Injection path: R4 wrapping + backend-first + R3 force link + R2 condition filter all driven by the backend payload`);
         } finally {
             try {
                 if (collectionId) {

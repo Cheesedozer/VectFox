@@ -817,10 +817,16 @@ async function applyGroupsAndLinksStage(chunks, activeCollections, settings, deb
     // legacy fallback. NOTE: processChunkLinks indexes this as a PLAIN OBJECT (map[hash]),
     // so it must be a {} — not a Map (a Map indexed with [] is always undefined).
     const chunkMetadataMap = {};
+    const forceTargetCollection = new Map(); // parseInt(targetHash) -> source chunk's collectionId
     for (const chunk of processedChunks) {
         const links = chunk.metadata?.chunkLinks || getChunkMetadata(chunk.hash)?.chunkLinks;
         if (links && links.length > 0) {
             chunkMetadataMap[String(chunk.hash)] = { chunkLinks: links };
+            // Links are within-collection (the link editor only lists same-collection
+            // targets), so a force target lives in the source chunk's collection.
+            for (const link of links) {
+                if (link.mode === 'force') forceTargetCollection.set(parseInt(link.targetHash), chunk.collectionId);
+            }
         }
     }
 
@@ -832,6 +838,22 @@ async function applyGroupsAndLinksStage(chunks, activeCollections, settings, deb
         if (boosted.length > 0) {
             addTrace(debugData, 'links', `Explicit links boosted ${boosted.length} chunks`, {});
         }
+
+        // Force links: pull in any force-linked targets that weren't already retrieved, so
+        // "target MUST appear when this chunk appears" actually holds. These bypass the
+        // query/threshold/conditions stages by design (they ran earlier); dedup may still
+        // skip ones already present in the chat context.
+        if (linkResult.missingHardLinks?.length > 0) {
+            const fetched = await fetchForceLinkedChunks(linkResult.missingHardLinks, forceTargetCollection, settings);
+            const present = new Set(processedChunks.map(c => String(c.hash)));
+            const toAdd = fetched.filter(c => !present.has(String(c.hash)));
+            if (toAdd.length > 0) {
+                processedChunks.push(...toAdd);
+                addTrace(debugData, 'links', `Force links pulled in ${toAdd.length} missing target(s)`, {
+                    hashes: toAdd.map(c => c.hash),
+                });
+            }
+        }
     }
 
     addTrace(debugData, 'links', 'Links processing complete', {
@@ -840,6 +862,60 @@ async function applyGroupsAndLinksStage(chunks, activeCollections, settings, deb
     });
 
     return processedChunks;
+}
+
+/**
+ * Fetch force-linked target chunks that weren't in the query results so they can be
+ * injected (mode: 'force' = "target MUST appear"). Targets are grouped by collection
+ * (links are within-collection) and pulled from the backend via getSavedHashes(..., true).
+ * Forced chunks are marked forceLinked and given a top score so they survive to injection.
+ * @param {number[]} missingHashes Force-link target hashes not present in results
+ * @param {Map<number,string>} targetCollection parseInt(hash) -> collectionId
+ * @param {object} settings VECTFOX settings
+ * @returns {Promise<object[]>} Chunk objects ready to inject
+ */
+async function fetchForceLinkedChunks(missingHashes, targetCollection, settings) {
+    // Group missing hashes by their collection
+    const byCollection = new Map();
+    for (const hash of missingHashes) {
+        const collectionId = targetCollection.get(hash);
+        if (!collectionId) continue; // unknown source collection — can't locate it
+        if (!byCollection.has(collectionId)) byCollection.set(collectionId, []);
+        byCollection.get(collectionId).push(hash);
+    }
+
+    const fetched = [];
+    for (const [collectionId, hashes] of byCollection) {
+        try {
+            const data = await getSavedHashes(collectionId, settings, true);
+            if (!data?.metadata) continue;
+            const lookup = new Map();
+            for (let i = 0; i < data.hashes.length; i++) {
+                lookup.set(String(data.hashes[i]), data.metadata[i]);
+            }
+            for (const hash of hashes) {
+                const meta = lookup.get(String(hash));
+                if (!meta) {
+                    log.warn(`VectFox: Force-linked target ${hash} not found in ${collectionId}`);
+                    continue;
+                }
+                fetched.push({
+                    hash,
+                    metadata: meta,
+                    text: meta.text || meta.mes || '(force-linked text not found)',
+                    score: 1.0,
+                    originalScore: meta.score,
+                    similarity: 1.0,
+                    index: meta.messageId || meta.index || 0,
+                    collectionId,
+                    forceLinked: true,
+                });
+            }
+        } catch (error) {
+            log.warn(`VectFox: Failed to fetch force-linked chunks from ${collectionId}:`, error.message);
+        }
+    }
+    return fetched;
 }
 
 /**

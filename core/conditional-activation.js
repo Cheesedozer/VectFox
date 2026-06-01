@@ -317,7 +317,7 @@ function evaluateMessageCountCondition(rule, context) {
 // They depend on information about other chunks in the current result set.
 //
 // Types:
-// - chunkLinks: Hard/soft links to other chunks ({ targetHash, mode: 'hard'|'soft' })
+// - chunkLinks: Force/soft links to other chunks ({ targetHash, mode: 'force'|'soft' })
 // - scoreThreshold: Per-chunk minimum similarity score override
 // - recency: Message age filter
 // - frequency: Activation limits/cooldown
@@ -326,9 +326,9 @@ function evaluateMessageCountCondition(rule, context) {
 /**
  * Processes chunk links and returns chunks that need to be included/boosted
  *
- * Link types:
- * - hard: Target chunk MUST be included if source chunk is in results
- * - soft: Target chunk gets a score boost if source chunk is in results
+ * Link modes:
+ * - force: Target chunk MUST be included if source chunk is in results
+ * - soft:  Target chunk gets a score boost if source chunk is in results
  *
  * Each chunk defines its own links independently. For two-way linking,
  * add links on both chunks. For one-way, only add on the source chunk.
@@ -343,8 +343,9 @@ export function processChunkLinks(chunks, chunkMetadataMap, softBoost = 0.15) {
     const hardLinkedHashes = new Set();
     const softBoosts = new Map(); // hash -> total boost
 
-    // First pass: collect all hard links and soft boosts.
-    // Links use the visualizer's shape: chunkLinks: [{ targetHash, mode: 'hard'|'soft' }].
+    // First pass: collect all force links and soft boosts.
+    // Links use the visualizer's shape: chunkLinks: [{ targetHash, mode: 'force'|'soft' }]
+    // (the link editor radio writes exactly these values — see ui/chunk-visualizer.js).
     for (const chunk of chunks) {
         const meta = chunkMetadataMap[chunk.hash];
         if (!meta?.chunkLinks || meta.chunkLinks.length === 0) continue;
@@ -352,8 +353,8 @@ export function processChunkLinks(chunks, chunkMetadataMap, softBoost = 0.15) {
         for (const link of meta.chunkLinks) {
             const targetHash = parseInt(link.targetHash);
 
-            if (link.mode === 'hard') {
-                // Hard link: target MUST be included
+            if (link.mode === 'force') {
+                // Force link: target MUST be included
                 hardLinkedHashes.add(targetHash);
             } else if (link.mode === 'soft') {
                 // Soft link: accumulate boost for target

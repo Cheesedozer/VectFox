@@ -138,9 +138,9 @@ describe('processChunkLinks — unified visualizer shape (chunkLinks/{targetHash
         expect(target.score).toBeGreaterThan(0.6);
     });
 
-    it('hard link surfaces a missing target', () => {
+    it('force link surfaces a missing target', () => {
         const chunks = [{ hash: 2001, score: 0.8 }];
-        const map = { 2001: { chunkLinks: [{ targetHash: '2002', mode: 'hard' }] } };
+        const map = { 2001: { chunkLinks: [{ targetHash: '2002', mode: 'force' }] } };
         const res = processChunkLinks(chunks, map, 0.15);
         expect(res.missingHardLinks).toContain(2002);
     });

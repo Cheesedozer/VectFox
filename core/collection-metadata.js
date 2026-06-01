@@ -103,7 +103,7 @@ const defaultCollectionMeta = {
  * CHUNK-ONLY FEATURES:
  * Only make sense at chunk-level, not collection-level.
  *
- * - chunkLinks:       Hard/soft links to other chunks ({ targetHash, mode: 'hard'|'soft' })
+ * - chunkLinks:       Force/soft links to other chunks ({ targetHash, mode: 'force'|'soft' })
  *                     - hard: Target chunk MUST appear if source appears
  *                     - soft: Target chunk gets score boost if source appears
  *                     Each chunk defines its own links independently.

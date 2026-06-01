@@ -154,7 +154,7 @@ export async function testConditionalActivation() {
 
         // Test: Chunk links (hard)
         const chunks2 = [{ hash: 2001, score: 0.8, text: 'A' }];
-        const chunkMetadataMap2 = { 2001: { chunkLinks: [{ targetHash: '2002', mode: 'hard' }] } };
+        const chunkMetadataMap2 = { 2001: { chunkLinks: [{ targetHash: '2002', mode: 'force' }] } };
         const linkResult2 = processChunkLinks(chunks2, chunkMetadataMap2, 0.15);
         addTest('Hard Links', linkResult2.missingHardLinks?.includes(2002), 'Missing hard link detected');
 
