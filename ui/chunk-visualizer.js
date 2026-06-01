@@ -85,6 +85,12 @@ function isEventBaseCollection() {
 // CHUNK DATA HELPERS
 // ============================================================================
 
+// Phase B (read-source refactor): the vector backend payload is the source of truth for
+// per-chunk fields. These are the ONLY fields still persisted to extension_settings on save
+// — genuinely client-only state with no backend payload representation. Everything else goes
+// to the backend via updateChunkMetadata. See plans/chunk-metadata-read-source-fix.md.
+const CLIENT_ONLY_CHUNK_FIELDS = ['summaries'];
+
 /**
  * Normalize keywords to the new format: { text: string, weight: number }
  * Handles migration from old string[] format
@@ -205,16 +211,21 @@ async function saveAllChanges() {
                 await deleteVectorItems(currentCollectionId, hashesToDelete, currentSettings);
             }
 
-            // Save to local settings FIRST (without temp tracking fields)
-            const toSave = { ...updates };
-            delete toSave._newSummaries;
-            delete toSave._deletedSummaries;
-            delete toSave.text; // Don't save text to metadata here
-            const existing = getChunkMetadata(hash) || {};
-            saveChunkMetadata(hash, { ...existing, ...toSave });
+            // Phase B (no dual write): the vector backend is the source of truth for
+            // per-chunk fields (name/context/xmlTag/position/depth/keywords/conditions/
+            // enabled/chunkLinks). Only genuinely client-only state — dual-vector
+            // `summaries`, which has no backend payload field — is persisted to
+            // extension_settings. See plans/chunk-metadata-read-source-fix.md (W1).
+            const clientOnly = {};
+            for (const k of CLIENT_ONLY_CHUNK_FIELDS) {
+                if (k in updates) clientOnly[k] = updates[k];
+            }
+            if (Object.keys(clientOnly).length > 0) {
+                const existing = getChunkMetadata(hash) || {};
+                saveChunkMetadata(hash, { ...existing, ...clientOnly });
+            }
 
-            // Only call updateChunkMetadata if there are non-metadata changes
-            // (metadata-only updates should skip the API call)
+            // Send per-chunk metadata to the backend (the only durable store now).
             const metadataUpdates = { ...updates };
             delete metadataUpdates.text;
             delete metadataUpdates._newSummaries;
@@ -232,8 +243,11 @@ async function saveAllChanges() {
                         }
                     });
                 } catch (e) {
-                    console.warn('VectFox: Failed to update metadata in backend:', e);
-                    // Don't fail - local metadata was already saved
+                    // Backend is now the only store for these fields, so a failure means the
+                    // change did NOT persist — surface it instead of swallowing it.
+                    console.error('VectFox: Failed to save chunk metadata to backend:', e);
+                    toastr.error(`Failed to save chunk metadata to the backend — change not persisted: ${e.message}`, 'VectFox');
+                    throw e;
                 }
             }
         }
@@ -1121,11 +1135,16 @@ function bindDetailEvents() {
                 metadata: carriedMeta,
             }], currentSettings);
 
-            // Mirror to ext_settings (legacy cache; read path is backend-first). Phase B
-            // may drop this once the backend carry above is validated.
-            if (Object.keys(oldStored).length > 0) {
-                deleteChunkMetadata(String(chunk.hash));
-                saveChunkMetadata(String(newHash), { ...oldStored });
+            // Backend fields were carried onto the new point above (Phase B: backend is the
+            // source of truth). In ext_settings, only migrate client-only state (summaries)
+            // to the new hash and drop the old entry.
+            deleteChunkMetadata(String(chunk.hash));
+            const carriedClientOnly = {};
+            for (const k of CLIENT_ONLY_CHUNK_FIELDS) {
+                if (k in oldStored) carriedClientOnly[k] = oldStored[k];
+            }
+            if (Object.keys(carriedClientOnly).length > 0) {
+                saveChunkMetadata(String(newHash), carriedClientOnly);
             }
 
             // Update local state
@@ -1382,11 +1401,16 @@ function openTextEditor(chunk) {
                 metadata: carriedMeta,
             }], currentSettings);
 
-            // Mirror to ext_settings (legacy cache; read path is backend-first). Phase B
-            // may drop this once the backend carry above is validated.
-            if (Object.keys(oldStored).length > 0) {
-                deleteChunkMetadata(String(chunk.hash));
-                saveChunkMetadata(String(newHash), { ...oldStored });
+            // Backend fields were carried onto the new point above (Phase B: backend is the
+            // source of truth). In ext_settings, only migrate client-only state (summaries)
+            // to the new hash and drop the old entry.
+            deleteChunkMetadata(String(chunk.hash));
+            const carriedClientOnly = {};
+            for (const k of CLIENT_ONLY_CHUNK_FIELDS) {
+                if (k in oldStored) carriedClientOnly[k] = oldStored[k];
+            }
+            if (Object.keys(carriedClientOnly).length > 0) {
+                saveChunkMetadata(String(newHash), carriedClientOnly);
             }
 
             // Update local state - update hash but keep same uniqueId for selection
