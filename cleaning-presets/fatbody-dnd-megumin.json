@@ -1,7 +1,7 @@
 {
     "name": "Fatbody D&D + Megumin Suite",
-    "description": "VectFox text-cleaning template tuned for chats run with the Fatbody D&D Framework + Megumin Suite. Keeps all default HTML/font/MVU cleaning, and additionally strips the bespoke tracking markup these extensions emit into AI messages (Story Tracker blocks, RNG blocks, numbered choice-menu divs, the status/level/XP footers, inline dice/check parentheticals, and combat HP/round bolds) so only the actual narrative prose gets vectorized. Import via VectFox > Cleaning settings > Import.",
-    "_comment": "preset MUST be 'custom' or the custom patterns are ignored. enabledBuiltins is overwritten on import, so it re-lists every builtin except strip_all_html (the safe default set). All custom patterns are line-scoped or explicit block tags to avoid eating real narration; toggle any of them off in the UI after import. Disable the Story_Tracker pattern if you'd prefer VectFox to remember arc progression / secrets.",
+    "description": "VectFox text-cleaning template tuned for chats run with the Fatbody D&D Framework + Megumin Suite. Keeps all default HTML/font/MVU cleaning, and additionally strips the bespoke tracking markup these extensions emit into AI messages (Story Tracker blocks, RNG blocks, choice-menu divs, the status/level/XP footers, dice/check parentheticals for ANY skill, quest/level-up markers, and combat statblock/HP lines) so only the actual narrative prose gets vectorized. Pattern shapes verified against Fatbody's sysprompt.txt. Import via VectFox > Cleaning settings > Import.",
+    "_comment": "preset MUST be 'custom' or the custom patterns are ignored. enabledBuiltins is overwritten on import, so it re-lists every builtin except strip_all_html (the safe default set). Dice/check patterns match by SHAPE (contains '=', 'DC ', or the '->' damage arrow) rather than a fixed skill list, because Fatbody's roll format uses arbitrary skill/spell names (sysprompt.txt lines 11-14). All patterns are line-scoped or explicit block tags to avoid eating real narration; toggle any off in the UI after import. Disable the Story_Tracker pattern if you'd prefer VectFox to remember arc progression / secrets.",
     "preset": "custom",
     "enabledBuiltins": [
         "strip_font_tags",
@@ -61,17 +61,59 @@
             "enabled": true
         },
         {
-            "name": "Strip Inline Dice/Check Parentheticals",
-            "pattern": "\\*\\((?:Attack|Damage|Roll|DC|Athletics|Strength|Save|Minor Illusion|Fire Bolt|Magic Missile|Initiative)[^\\n)]*\\)\\*",
+            "name": "Strip Roll-Result Parentheticals (contains '=')",
+            "pattern": "\\*\\([^\\n*]*=[^\\n)]*\\)\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip DC/Check Parentheticals (any skill)",
+            "pattern": "\\*\\([^\\n*]*\\bDC \\d[^\\n)]*\\)\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip Damage Parentheticals (contains arrow)",
+            "pattern": "\\*\\([^\\n*]*\\u2192[^\\n)]*\\)\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip [QUEST ACCEPTED] Marker",
+            "pattern": "\\*\\[QUEST ACCEPTED\\]\\*",
             "replacement": "",
             "flags": "gi",
             "enabled": true
         },
         {
-            "name": "Strip Combat/Round Headers",
-            "pattern": "\\*\\*(?:COMBAT|ROUND)[^\\n]*\\*\\*",
+            "name": "Strip Level-Up Banner Line",
+            "pattern": "\\*\\u2b06?\\s*LEVEL UP[^\\n]*\\*",
             "replacement": "",
             "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Party Sync Header",
+            "pattern": "\\*\\*[^\\n*]*PARTY SYNC[^\\n]*\\*\\*",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip 'Awaiting your choice' Line",
+            "pattern": "\\*\\*[^\\n*]*Awaiting your choice[^\\n]*\\*\\*",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Combat/Round/Initiative Headers",
+            "pattern": "^\\**(?:COMBAT\\b[^\\n]*|ROUND \\d[^\\n]*|Rolling initiative[^\\n]*)",
+            "replacement": "",
+            "flags": "gim",
             "enabled": true
         },
         {
@@ -79,6 +121,27 @@
             "pattern": "\\*\\*[^\\n*]*\\d+/\\d+ HP[^\\n]*\\*\\*",
             "replacement": "",
             "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip Statblock Saves Line",
+            "pattern": "^[ \\t]*[-\\u2022*]?[ \\t]*Saves: Fort [^\\n]*",
+            "replacement": "",
+            "flags": "gim",
+            "enabled": true
+        },
+        {
+            "name": "Strip Statblock Attr Line",
+            "pattern": "^[ \\t]*[-\\u2022*]?[ \\t]*Attr: STR \\d[^\\n]*",
+            "replacement": "",
+            "flags": "gim",
+            "enabled": true
+        },
+        {
+            "name": "Strip Statblock AC/HP/ATK Line",
+            "pattern": "^[ \\t]*[-\\u2022*]?[ \\t]*AC \\d+[^\\n]*\\bHP\\b[^\\n]*",
+            "replacement": "",
+            "flags": "gim",
             "enabled": true
         }
     ]
