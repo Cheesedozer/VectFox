@@ -143,6 +143,13 @@
             "replacement": "",
             "flags": "gim",
             "enabled": true
+        },
+        {
+            "name": "Cleanup: Lone Connector Word Left After Stripping",
+            "pattern": "^[ \\t]*(?:then|and)[ \\t,]*$",
+            "replacement": "",
+            "flags": "gim",
+            "enabled": true
         }
     ]
 }
