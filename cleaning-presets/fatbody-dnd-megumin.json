@@ -1,0 +1,85 @@
+{
+    "name": "Fatbody D&D + Megumin Suite",
+    "description": "VectFox text-cleaning template tuned for chats run with the Fatbody D&D Framework + Megumin Suite. Keeps all default HTML/font/MVU cleaning, and additionally strips the bespoke tracking markup these extensions emit into AI messages (Story Tracker blocks, RNG blocks, numbered choice-menu divs, the status/level/XP footers, inline dice/check parentheticals, and combat HP/round bolds) so only the actual narrative prose gets vectorized. Import via VectFox > Cleaning settings > Import.",
+    "_comment": "preset MUST be 'custom' or the custom patterns are ignored. enabledBuiltins is overwritten on import, so it re-lists every builtin except strip_all_html (the safe default set). All custom patterns are line-scoped or explicit block tags to avoid eating real narration; toggle any of them off in the UI after import. Disable the Story_Tracker pattern if you'd prefer VectFox to remember arc progression / secrets.",
+    "preset": "custom",
+    "enabledBuiltins": [
+        "strip_font_tags",
+        "strip_color_spans",
+        "strip_bold_italic",
+        "strip_hidden_divs",
+        "strip_details_blocks",
+        "strip_thinking_tags",
+        "strip_tucao_tags",
+        "strip_mvu_update_variable",
+        "strip_mvu_combat_calculation",
+        "strip_mvu_story_analysis",
+        "strip_mvu_combat_log",
+        "strip_mvu_game_system_tags"
+    ],
+    "customPatterns": [
+        {
+            "name": "Strip <Story_Tracker> Blocks (Megumin)",
+            "pattern": "<Story_Tracker>[\\s\\S]*?</Story_Tracker>",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip <rng_system> Blocks (Fatbody)",
+            "pattern": "<rng_system>[\\s\\S]*?</rng_system>",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Choice-Menu Divs",
+            "pattern": "<div[^>]*>[\\s\\S]*?</div>",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Status/XP/Location Footer Line",
+            "pattern": "\\*\\(Status:[^\\n]*\\)\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip Level/Time Line",
+            "pattern": "\\*Level \\d[^\\n]*\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip XP Award Lines",
+            "pattern": "\\*\\(\\+\\d+ XP[^\\n)]*\\)\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        },
+        {
+            "name": "Strip Inline Dice/Check Parentheticals",
+            "pattern": "\\*\\((?:Attack|Damage|Roll|DC|Athletics|Strength|Save|Minor Illusion|Fire Bolt|Magic Missile|Initiative)[^\\n)]*\\)\\*",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Combat/Round Headers",
+            "pattern": "\\*\\*(?:COMBAT|ROUND)[^\\n]*\\*\\*",
+            "replacement": "",
+            "flags": "gi",
+            "enabled": true
+        },
+        {
+            "name": "Strip Combat HP Status Bolds",
+            "pattern": "\\*\\*[^\\n*]*\\d+/\\d+ HP[^\\n]*\\*\\*",
+            "replacement": "",
+            "flags": "g",
+            "enabled": true
+        }
+    ]
+}
