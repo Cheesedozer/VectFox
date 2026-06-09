@@ -16,6 +16,7 @@ import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
+import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
@@ -208,6 +209,15 @@ async function getEnabledLorebookCollections(settings) {
         if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;
 
         const sourceName = entry.meta?.sourceName || null;
+        // Never semantically activate lorebooks owned by Fatbody's Lore Router — those
+        // are stat/world-state tracking entries Fatbody activates and deactivates itself.
+        // Re-surfacing them here would corrupt its controlled token budget. No-op when
+        // Fatbody is absent. Safety net for books that were vectorized before this guard
+        // existed; the vectorizer UI also prevents ingesting them in the first place.
+        if (sourceName && isFatbodyOwnedBook(sourceName)) {
+            log.trace(`VectFox WI: skipping Fatbody-owned lorebook "${sourceName}" (managed by Fatbody DnD)`);
+            continue;
+        }
         const name = sourceName || entry.collectionId;
         collections.push({ id: entry.registryKey, name, sourceName });
     }
