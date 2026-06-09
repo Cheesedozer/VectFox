@@ -37,6 +37,7 @@ import { callGenericPopup, POPUP_TYPE } from '../../../../popup.js';
 import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { getCleaningSettings } from '../core/text-cleaning.js';
 import { progressTracker } from './progress-tracker.js';
+import { isFatbodyOwnedBook } from '../core/fatbody-guard.js';
 
 // ============================================================================
 // STATE
@@ -1462,7 +1463,14 @@ async function populateSourceSelect(type) {
 
                 if (worldNames && worldNames.length > 0) {
                     worldNames.forEach(name => {
-                        select.append(`<option value="${name}">${name}</option>`);
+                        // Books owned by Fatbody's Lore Router hold its stat/world-state
+                        // tracking and must not be vectorized — VectFox would fight Fatbody's
+                        // controlled activation. Show them disabled so the user understands why.
+                        if (isFatbodyOwnedBook(name)) {
+                            select.append(`<option value="${name}" disabled>${name} (managed by Fatbody DnD)</option>`);
+                        } else {
+                            select.append(`<option value="${name}">${name}</option>`);
+                        }
                     });
                 } else {
                     select.append('<option value="" disabled>No lorebooks found</option>');
@@ -2849,6 +2857,18 @@ async function startVectorization() {
 
     if (!source) {
         toastr.warning('Please select or enter content first');
+        return;
+    }
+
+    // Defense in depth: refuse to vectorize a Fatbody-owned lorebook even if the
+    // selection bypassed the (disabled) dropdown option — e.g. a file/programmatic path.
+    // Those books are Fatbody's stat/world-state tracking; VectFox must leave them alone.
+    if (currentContentType === 'lorebook' && isFatbodyOwnedBook(source.id || source.name)) {
+        toastr.warning(
+            `"${source.name || source.id}" is managed by the Fatbody DnD Framework (stat tracking) and cannot be vectorized.`,
+            'VectFox',
+            { timeOut: 8000 },
+        );
         return;
     }
 
