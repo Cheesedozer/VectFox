@@ -13,7 +13,7 @@
  * at all, so they can never be retrieved. An agent that writes new lore every
  * few turns therefore needs this hook for semantic activation to keep up.
  *
- * Contract (consumed by Fatbody 2.5.1+ via `globalThis.vectfox_invalidateLorebook`):
+ * Contract (consumed by Fatbody 2.5.0+ via `globalThis.vectfox_invalidateLorebook`):
  *   - create-or-refresh: unindexed books are vectorized fresh (only when the
  *     caller delegates surfacing to us — Fatbody 'semantic' mode — or the book
  *     is not Fatbody-owned); indexed books are re-vectorized.

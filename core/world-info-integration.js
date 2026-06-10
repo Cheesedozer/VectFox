@@ -212,7 +212,7 @@ async function getEnabledLorebookCollections(settings) {
         // Fatbody handshake: in 'managed' mode Fatbody activates/deactivates its
         // campaign-book entries itself — semantically re-surfacing them would fight
         // its controlled token budget, so those books are skipped (historical
-        // behavior; also the fallback when Fatbody is absent or pre-2.5.1).
+        // behavior; also the fallback when Fatbody is absent or pre-2.5.0).
         // In 'native'/'semantic' mode Fatbody explicitly delegates activation, so
         // its books participate in semantic search like any other lorebook.
         if (sourceName && isFatbodyOwnedBook(sourceName) && getFatbodyActivationMode() === 'managed') {

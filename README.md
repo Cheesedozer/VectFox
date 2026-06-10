@@ -509,6 +509,16 @@ Setting enableServerPlugin to true is required for Qdrant backend.
 
 ---
 
+## 🤝 Running with the Fatbody D&D Framework
+
+VectFox 3.4.x ships first-class interop with the [Fatbody D&D Framework](https://github.com/MultihogAurelius/SillyTavern-FatbodyDnDFramework):
+
+- **Cleaning preset:** enable the **"Fatbody D&D Framework"** preset (or toggle the individual `Fatbody` builtin patterns) in *Cleaning settings* so dice-roll notation, `[RNG_QUEUE]` blocks, state memos, status footers, and level-up blocks are stripped before vectorization and EventBase extraction. Only narrative prose reaches your vector memory. The preset is opt-in — non-Fatbody users are unaffected.
+- **Semantic lore activation:** with Fatbody 2.5.0+ set to *Entry Activation → Semantic (VectFox)*, Fatbody's campaign lorebooks participate in semantic World Info activation — entries surface by story similarity instead of keywords. VectFox injects the **live** lorebook content (not the vector snapshot), and Fatbody notifies VectFox after every Lorebook Agent write so collections re-index automatically (`Auto re-index` setting, on by default).
+- **Managed mode (default):** when Fatbody manages activation itself, VectFox automatically leaves its campaign books alone — same protective behavior as before.
+
+---
+
 ## ❓ FAQ
 
 **Why are there two separate pipelines under the hood?**

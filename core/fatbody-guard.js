@@ -73,7 +73,7 @@ export function isFatbodyOwnedBook(bookName) {
 }
 
 /**
- * Reads Fatbody's lorebook activation mode (Fatbody 2.5.1+ publishes
+ * Reads Fatbody's lorebook activation mode (Fatbody 2.5.0+ publishes
  * `globalThis._rpgGetActivationMode`):
  *
  *   'managed'  — Fatbody injects entries manually; VectFox must keep skipping

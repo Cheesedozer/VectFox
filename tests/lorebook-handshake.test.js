@@ -1,5 +1,5 @@
 /**
- * Tests for the Fatbody 2.5.1+ lorebook handshake:
+ * Tests for the Fatbody 2.5.0+ lorebook handshake:
  *  - resolveLiveEntries (world-info-integration.js): live content swap,
  *    deleted/disabled filtering, Fatbody semantic-mode dormancy exemption
  *  - invalidateLorebook / vectfox_invalidateLorebook (lorebook-invalidation.js):
