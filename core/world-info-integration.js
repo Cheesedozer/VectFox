@@ -16,7 +16,7 @@ import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
-import { isFatbodyOwnedBook } from './fatbody-guard.js';
+import { isFatbodyOwnedBook, getFatbodyActivationMode } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
@@ -209,12 +209,13 @@ async function getEnabledLorebookCollections(settings) {
         if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;
 
         const sourceName = entry.meta?.sourceName || null;
-        // Never semantically activate lorebooks owned by Fatbody's Lore Router — those
-        // are stat/world-state tracking entries Fatbody activates and deactivates itself.
-        // Re-surfacing them here would corrupt its controlled token budget. No-op when
-        // Fatbody is absent. Safety net for books that were vectorized before this guard
-        // existed; the vectorizer UI also prevents ingesting them in the first place.
-        if (sourceName && isFatbodyOwnedBook(sourceName)) {
+        // Fatbody handshake: in 'managed' mode Fatbody activates/deactivates its
+        // campaign-book entries itself — semantically re-surfacing them would fight
+        // its controlled token budget, so those books are skipped (historical
+        // behavior; also the fallback when Fatbody is absent or pre-2.5.1).
+        // In 'native'/'semantic' mode Fatbody explicitly delegates activation, so
+        // its books participate in semantic search like any other lorebook.
+        if (sourceName && isFatbodyOwnedBook(sourceName) && getFatbodyActivationMode() === 'managed') {
             log.trace(`VectFox WI: skipping Fatbody-owned lorebook "${sourceName}" (managed by Fatbody DnD)`);
             continue;
         }
@@ -227,9 +228,89 @@ async function getEnabledLorebookCollections(settings) {
 }
 
 /**
+ * Resolves semantic hits against the LIVE lorebook before injection.
+ *
+ * The vector store snapshots entry text at vectorization time; injecting that
+ * snapshot serves stale content once the lorebook changes (append-only
+ * chronicles like Fatbody's campaign books change every few turns). This pass:
+ *   1. replaces each hit's content with the entry's current lorebook content,
+ *   2. drops hits whose entry no longer exists (deleted),
+ *   3. drops hits whose entry is disabled (setting-gated, default on) —
+ *      EXCEPT Fatbody-owned books in 'semantic' mode, where disable:true is a
+ *      dormancy marker rather than user intent (see fatbody-guard.js).
+ *
+ * Entries without sourceName/entryUid metadata (pre-per_entry vectorizations)
+ * and books that fail to load fall back to the vector-stored text, so this is
+ * strictly additive — it can correct or drop, never error out a generation.
+ *
+ * One loadWorldInfo per distinct book per call (the per-generation cache):
+ * semantic hits cluster in 1–3 books, so latency stays negligible.
+ *
+ * @param {object[]} semanticEntries - Hits from getSemanticWorldInfoEntries
+ * @param {object} settings - VectFox settings
+ * @returns {Promise<object[]>}
+ */
+export async function resolveLiveEntries(semanticEntries, settings) {
+    if (!semanticEntries?.length) return semanticEntries || [];
+    const respectDisable = settings?.world_info_respect_entry_disable !== false;
+
+    let loadWorldInfo = null;
+    try {
+        ({ loadWorldInfo } = await import('../../../../world-info.js'));
+    } catch (_) { /* host module unavailable (tests/headless) — fall through */ }
+    if (typeof loadWorldInfo !== 'function') return semanticEntries;
+
+    /** @type {Map<string, object|null>} sourceName → live entries object (null = load failed) */
+    const bookCache = new Map();
+    const resolved = [];
+
+    for (const e of semanticEntries) {
+        const sourceName = e.metadata?.sourceName;
+        const entryUid = e.metadata?.entryUid;
+        if (!sourceName || entryUid === null || entryUid === undefined) {
+            resolved.push(e); // no identity metadata — keep vector text
+            continue;
+        }
+
+        if (!bookCache.has(sourceName)) {
+            try {
+                const book = await loadWorldInfo(sourceName);
+                bookCache.set(sourceName, book?.entries || null);
+            } catch (_) {
+                bookCache.set(sourceName, null);
+            }
+        }
+        const liveEntries = bookCache.get(sourceName);
+        if (!liveEntries) {
+            resolved.push(e); // book failed to load — keep vector text (offline-safe)
+            continue;
+        }
+
+        const live = liveEntries[entryUid];
+        if (!live) {
+            log.trace(`VectFox WI: dropping semantic hit for deleted entry ${sourceName}::${entryUid}`);
+            continue;
+        }
+
+        if (respectDisable && live.disable === true) {
+            const fatbodyDormancy = isFatbodyOwnedBook(sourceName) && getFatbodyActivationMode() === 'semantic';
+            if (!fatbodyDormancy) {
+                log.trace(`VectFox WI: dropping semantic hit for disabled entry ${sourceName}::${entryUid}`);
+                continue;
+            }
+        }
+
+        const liveContent = typeof live.content === 'string' ? live.content : '';
+        resolved.push(liveContent.trim() ? { ...e, content: liveContent } : e);
+    }
+
+    return resolved;
+}
+
+/**
  * Deduplicate semantic entries with already active entries
  * @param {object[]} semanticEntries - Entries from vector search
- * @param {object[]} activeEntries - Already active entries from keyword matching
+ * @param {object[]} activeEntries - Currently active WI entries (from keyword matching)
  * @returns {object[]} Deduplicated entries
  */
 function deduplicateWithActiveEntries(semanticEntries, activeEntries) {
@@ -449,8 +530,12 @@ async function handleGenerationStarted(type, options, dryRun) {
         const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, keywordQuery, lorebookCollections);
         if (!semanticEntries.length) return;
 
+        // Swap vector-snapshot text for live lorebook content; drop deleted/disabled entries.
+        const liveEntries = await resolveLiveEntries(semanticEntries, settings);
+        if (!liveEntries.length) return;
+
         // Format entries into direct prompt injection under <VectFoxLorebook>
-        const entryTexts = semanticEntries
+        const entryTexts = liveEntries
             .filter(e => e.content?.trim())
             .map(e => {
                 const title = _resolveEntryTitle(e);
@@ -496,7 +581,11 @@ export async function runLorebookWIDryRun({ chat, testMessage, settings }) {
     const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, testMessage || null, lorebookCollections);
     if (!semanticEntries.length) return { injectionText: null, entryCount: 0 };
 
-    const entryTexts = semanticEntries.filter(e => e.content?.trim()).map(e => {
+    // Same live-resolution as the real injection path, so the tester shows real behavior.
+    const liveEntries = await resolveLiveEntries(semanticEntries, settings);
+    if (!liveEntries.length) return { injectionText: null, entryCount: 0 };
+
+    const entryTexts = liveEntries.filter(e => e.content?.trim()).map(e => {
         const title = _resolveEntryTitle(e);
         const content = e.content.trim();
         return title ? `# ${title}\n${content}` : content;

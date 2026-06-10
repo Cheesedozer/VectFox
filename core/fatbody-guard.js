@@ -71,3 +71,32 @@ export function bookBelongsToPrefix(bookName, prefix) {
 export function isFatbodyOwnedBook(bookName) {
     return !!bookName && bookBelongsToPrefix(bookName, getFatbodyPrefix());
 }
+
+/**
+ * Reads Fatbody's lorebook activation mode (Fatbody 2.5.1+ publishes
+ * `globalThis._rpgGetActivationMode`):
+ *
+ *   'managed'  — Fatbody injects entries manually; VectFox must keep skipping
+ *                its books or it would fight Fatbody's controlled activation.
+ *   'native'   — entries are enabled and ST's keyword scanner owns activation;
+ *                semantic activation may run alongside.
+ *   'semantic' — Fatbody delegates surfacing entirely to VectFox similarity
+ *                search; its entries stay disable:true as a dormancy marker
+ *                (NOT user intent), so the per-entry disable check is waived
+ *                for Fatbody books in this mode.
+ *
+ * Returns 'managed' when Fatbody is absent or predates the handshake — that
+ * preserves the historical skip behavior exactly.
+ *
+ * @returns {'managed'|'native'|'semantic'}
+ */
+export function getFatbodyActivationMode() {
+    try {
+        const fn = globalThis._rpgGetActivationMode;
+        if (typeof fn !== 'function') return 'managed';
+        const mode = fn();
+        return (mode === 'native' || mode === 'semantic') ? mode : 'managed';
+    } catch (_) {
+        return 'managed';
+    }
+}
