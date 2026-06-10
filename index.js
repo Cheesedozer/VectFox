@@ -6,7 +6,7 @@
  * All logic is in separate modules - see project guidelines
  *
  * @author Kritblade
- * @version 3.3.1
+ * @version 3.4.0
  * ============================================================================
  */
 
@@ -36,6 +36,7 @@ import { progressTracker } from './ui/progress-tracker.js';
 import { initializeVisualizer } from './ui/chunk-visualizer.js';
 import { initializeDatabaseBrowser } from './ui/database-browser.js';
 import { initializeWorldInfoIntegration } from './core/world-info-integration.js';
+import { installLorebookInvalidationHook } from './core/lorebook-invalidation.js';
 import { CJK_TOKENIZER_MODES, setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded } from './core/bm25-scorer.js';
 
 // VectFox modules - Cotton-Tales Integration
@@ -196,6 +197,8 @@ const defaultSettings = {
     world_info_top_k: 3,                // Max entries to activate per lorebook
     world_info_query_depth: 3,          // Recent messages to use for query
     world_info_retrieval_popup: false,  // Show popup toast when WI lorebook entries are retrieved
+    world_info_respect_entry_disable: true, // Drop semantic hits whose live lorebook entry is disabled (Fatbody semantic-mode books exempt)
+    auto_reindex_invalidated_lorebooks: true, // Auto re-vectorize lorebooks when a writer extension reports changes (vectfox_invalidateLorebook)
 
     // Keyword Extraction
     custom_stopwords: '',               // Custom stopwords (comma-separated)
@@ -594,6 +597,9 @@ jQuery(async () => {
 
     // Initialize world info integration hooks
     initializeWorldInfoIntegration();
+
+    // Publish the cross-extension lorebook re-index hook (Fatbody 2.5.1+ handshake)
+    installLorebookInvalidationHook();
 
     // VEC-34: Discover existing collections with retry mechanism
     // Uses exponential backoff to handle temporary backend unavailability

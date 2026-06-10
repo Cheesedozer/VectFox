@@ -75,3 +75,32 @@ describe('isFatbodyOwnedBook: with a live Fatbody prefix', () => {
         expect(isFatbodyOwnedBook('ChatB_NPCs')).toBe(true);
     });
 });
+
+describe('getFatbodyActivationMode: handshake with Fatbody 2.5.1+', () => {
+    afterEach(() => {
+        delete globalThis._rpgGetActivationMode;
+    });
+
+    it("returns 'managed' when Fatbody is absent (preserves historical skip)", async () => {
+        const { getFatbodyActivationMode } = await import('../core/fatbody-guard.js');
+        expect(getFatbodyActivationMode()).toBe('managed');
+    });
+
+    it('returns the published mode for native and semantic', async () => {
+        const { getFatbodyActivationMode } = await import('../core/fatbody-guard.js');
+        globalThis._rpgGetActivationMode = () => 'native';
+        expect(getFatbodyActivationMode()).toBe('native');
+        globalThis._rpgGetActivationMode = () => 'semantic';
+        expect(getFatbodyActivationMode()).toBe('semantic');
+    });
+
+    it("normalizes unknown values and throwing globals to 'managed'", async () => {
+        const { getFatbodyActivationMode } = await import('../core/fatbody-guard.js');
+        globalThis._rpgGetActivationMode = () => 'turbo';
+        expect(getFatbodyActivationMode()).toBe('managed');
+        globalThis._rpgGetActivationMode = () => { throw new Error('boom'); };
+        expect(getFatbodyActivationMode()).toBe('managed');
+        globalThis._rpgGetActivationMode = 'not-a-function';
+        expect(getFatbodyActivationMode()).toBe('managed');
+    });
+});
