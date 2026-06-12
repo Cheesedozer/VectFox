@@ -511,11 +511,12 @@ Setting enableServerPlugin to true is required for Qdrant backend.
 
 ## 🤝 Running with the Fatbody D&D Framework
 
-VectFox 3.4.x ships first-class interop with the [Fatbody D&D Framework](https://github.com/MultihogAurelius/SillyTavern-FatbodyDnDFramework):
+VectFox plays nicely alongside the [Fatbody D&D Framework](https://github.com/MultihogAurelius/SillyTavern-FatbodyDnDFramework):
 
 - **Cleaning preset:** enable the **"Fatbody D&D Framework"** preset (or toggle the individual `Fatbody` builtin patterns) in *Cleaning settings* so dice-roll notation, `[RNG_QUEUE]` blocks, state memos, status footers, and level-up blocks are stripped before vectorization and EventBase extraction. Only narrative prose reaches your vector memory. The preset is opt-in — non-Fatbody users are unaffected.
-- **Semantic lore activation:** with Fatbody 2.5.0+ set to *Entry Activation → Semantic (VectFox)*, Fatbody's campaign lorebooks participate in semantic World Info activation — entries surface by story similarity instead of keywords. VectFox injects the **live** lorebook content (not the vector snapshot), and Fatbody notifies VectFox after every Lorebook Agent write so collections re-index automatically (`Auto re-index` setting, on by default).
-- **Managed mode (default):** when Fatbody manages activation itself, VectFox automatically leaves its campaign books alone — same protective behavior as before.
+- **Campaign books are hands-off:** Fatbody's campaign lorebooks are managed exclusively by Fatbody. VectFox never vectorizes them or surfaces their entries — no configuration needed.
+
+> **Upgrading from VectFox 3.4.x:** the *Semantic (VectFox)* entry-activation interop was removed in 3.5.0. If you used Fatbody's *Entry Activation → Semantic (VectFox)* mode, update Fatbody to 3.3.0+ — it migrates the setting back to *Managed* automatically.
 
 ---
 

@@ -2,9 +2,9 @@
  * ============================================================================
  * VectFox LOREBOOK INVALIDATION
  * ============================================================================
- * Cross-extension re-index hook: lets lorebook-writing extensions (Fatbody's
- * Lorebook Agent) tell VectFox that a book's content changed on disk so its
- * vector collection can be refreshed.
+ * Cross-extension re-index hook: lets lorebook-writing extensions tell VectFox
+ * that a book's content changed on disk so its vector collection can be
+ * refreshed.
  *
  * Why it matters: the vector store snapshots entries at vectorization time.
  * Injection staleness is already fixed by live-entry resolution
@@ -13,10 +13,10 @@
  * at all, so they can never be retrieved. An agent that writes new lore every
  * few turns therefore needs this hook for semantic activation to keep up.
  *
- * Contract (consumed by Fatbody 2.5.0+ via `globalThis.vectfox_invalidateLorebook`):
- *   - create-or-refresh: unindexed books are vectorized fresh (only when the
- *     caller delegates surfacing to us — Fatbody 'semantic' mode — or the book
- *     is not Fatbody-owned); indexed books are re-vectorized.
+ * Contract (consumed via `globalThis.vectfox_invalidateLorebook`):
+ *   - create-or-refresh: unindexed books are vectorized fresh; indexed books
+ *     are re-vectorized. Fatbody-owned campaign books are always ignored —
+ *     Fatbody alone handles its books.
  *   - debounced per book (60s, resettable) so a burst of agent writes costs
  *     one re-index.
  *   - the collection is marked dirty immediately, so even with auto re-index
@@ -28,7 +28,7 @@ import { extension_settings } from '../../../../extensions.js';
 import { getCollectionRegistry, deleteCollection } from './collection-loader.js';
 import { getCollectionMeta, setCollectionMeta } from './collection-metadata.js';
 import { resolveBackendForCollection } from './collection-ids.js';
-import { isFatbodyOwnedBook, getFatbodyActivationMode } from './fatbody-guard.js';
+import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { log } from './log.js';
 
 export const REINDEX_DEBOUNCE_MS = 60_000;
@@ -81,6 +81,10 @@ export function invalidateLorebook(bookName, { debounceMs = REINDEX_DEBOUNCE_MS 
     if (!bookName || typeof bookName !== 'string') return false;
     const settings = extension_settings.vectfox || {};
 
+    // Fatbody-owned campaign books are always hands-off — never auto-vectorized
+    // or re-indexed, even if a collection exists from an older VectFox version.
+    if (isFatbodyOwnedBook(bookName)) return false;
+
     const registryKey = findLorebookRegistryKey(bookName);
 
     if (registryKey) {
@@ -89,15 +93,6 @@ export function invalidateLorebook(bookName, { debounceMs = REINDEX_DEBOUNCE_MS 
             setCollectionMeta(registryKey, { dirty: true, dirtyAt: new Date().toISOString() });
         } catch (e) {
             log.warn(`VectFox: could not mark collection dirty for "${bookName}":`, e.message);
-        }
-    } else {
-        // Create case: auto-vectorizing a never-indexed book only makes sense when
-        // its owner has delegated surfacing to us. Fatbody books qualify in
-        // 'semantic' mode; books from other (future) callers always qualify —
-        // their owner explicitly asked. Everything else stays a deliberate,
-        // user-initiated vectorization.
-        if (isFatbodyOwnedBook(bookName) && getFatbodyActivationMode() !== 'semantic') {
-            return false;
         }
     }
 

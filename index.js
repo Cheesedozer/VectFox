@@ -197,7 +197,7 @@ const defaultSettings = {
     world_info_top_k: 3,                // Max entries to activate per lorebook
     world_info_query_depth: 3,          // Recent messages to use for query
     world_info_retrieval_popup: false,  // Show popup toast when WI lorebook entries are retrieved
-    world_info_respect_entry_disable: true, // Drop semantic hits whose live lorebook entry is disabled (Fatbody semantic-mode books exempt)
+    world_info_respect_entry_disable: true, // Drop semantic hits whose live lorebook entry is disabled
     auto_reindex_invalidated_lorebooks: true, // Auto re-vectorize lorebooks when a writer extension reports changes (vectfox_invalidateLorebook)
 
     // Keyword Extraction

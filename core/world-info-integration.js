@@ -16,7 +16,7 @@ import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG } from './constants.js';
-import { isFatbodyOwnedBook, getFatbodyActivationMode } from './fatbody-guard.js';
+import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
 // the builder is intentionally not imported here because lookups can't reconstruct the
@@ -209,13 +209,10 @@ async function getEnabledLorebookCollections(settings) {
         if (!(await shouldCollectionActivate(entry.registryKey, context))) continue;
 
         const sourceName = entry.meta?.sourceName || null;
-        // Fatbody handshake: in 'managed' mode Fatbody activates/deactivates its
-        // campaign-book entries itself — semantically re-surfacing them would fight
-        // its controlled token budget, so those books are skipped (historical
-        // behavior; also the fallback when Fatbody is absent or pre-2.5.0).
-        // In 'native'/'semantic' mode Fatbody explicitly delegates activation, so
-        // its books participate in semantic search like any other lorebook.
-        if (sourceName && isFatbodyOwnedBook(sourceName) && getFatbodyActivationMode() === 'managed') {
+        // Fatbody-owned campaign books are always hands-off: Fatbody handles its
+        // own entry activation, and semantically re-surfacing them would fight
+        // its controlled token budget.
+        if (sourceName && isFatbodyOwnedBook(sourceName)) {
             log.trace(`VectFox WI: skipping Fatbody-owned lorebook "${sourceName}" (managed by Fatbody DnD)`);
             continue;
         }
@@ -235,9 +232,7 @@ async function getEnabledLorebookCollections(settings) {
  * chronicles like Fatbody's campaign books change every few turns). This pass:
  *   1. replaces each hit's content with the entry's current lorebook content,
  *   2. drops hits whose entry no longer exists (deleted),
- *   3. drops hits whose entry is disabled (setting-gated, default on) —
- *      EXCEPT Fatbody-owned books in 'semantic' mode, where disable:true is a
- *      dormancy marker rather than user intent (see fatbody-guard.js).
+ *   3. drops hits whose entry is disabled (setting-gated, default on).
  *
  * Entries without sourceName/entryUid metadata (pre-per_entry vectorizations)
  * and books that fail to load fall back to the vector-stored text, so this is
@@ -293,11 +288,8 @@ export async function resolveLiveEntries(semanticEntries, settings) {
         }
 
         if (respectDisable && live.disable === true) {
-            const fatbodyDormancy = isFatbodyOwnedBook(sourceName) && getFatbodyActivationMode() === 'semantic';
-            if (!fatbodyDormancy) {
-                log.trace(`VectFox WI: dropping semantic hit for disabled entry ${sourceName}::${entryUid}`);
-                continue;
-            }
+            log.trace(`VectFox WI: dropping semantic hit for disabled entry ${sourceName}::${entryUid}`);
+            continue;
         }
 
         const liveContent = typeof live.content === 'string' ? live.content : '';
