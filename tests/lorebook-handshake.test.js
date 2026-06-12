@@ -1,9 +1,10 @@
 /**
- * Tests for the Fatbody 2.5.0+ lorebook handshake:
+ * Tests for the lorebook live-resolution and invalidation paths:
  *  - resolveLiveEntries (world-info-integration.js): live content swap,
- *    deleted/disabled filtering, Fatbody semantic-mode dormancy exemption
+ *    deleted/disabled filtering
  *  - invalidateLorebook / vectfox_invalidateLorebook (lorebook-invalidation.js):
- *    create-or-refresh scheduling, debounce, settings gate
+ *    create-or-refresh scheduling, debounce, settings gate, and the
+ *    unconditional hands-off guard for Fatbody-owned campaign books
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -112,14 +113,11 @@ afterEach(() => {
 
 describe('resolveLiveEntries', () => {
     it('replaces vector-snapshot text with live lorebook content', async () => {
-        _state.books['Eldoria_NPCs'] = {
-            entries: { 3: { uid: 3, content: 'LIVE: Thorne now leads the Syndicate.', disable: true } },
+        _state.books['MyWorld'] = {
+            entries: { 3: { uid: 3, content: 'LIVE: Thorne now leads the Syndicate.' } },
         };
-        // Fatbody semantic mode so the disabled (dormant) entry passes
-        globalThis._rpgGetCurrentPrefix = () => 'Eldoria';
-        globalThis._rpgGetActivationMode = () => 'semantic';
 
-        const out = await resolveLiveEntries([hit('Eldoria_NPCs', 3, 'STALE: Thorne is a dockworker.')], {});
+        const out = await resolveLiveEntries([hit('MyWorld', 3, 'STALE: Thorne is a dockworker.')], {});
         expect(out).toHaveLength(1);
         expect(out[0].content).toBe('LIVE: Thorne now leads the Syndicate.');
     });
@@ -151,21 +149,15 @@ describe('resolveLiveEntries', () => {
         expect(out[0].content).toBe('disabled entry');
     });
 
-    it('waives the disable check ONLY for Fatbody books in semantic mode', async () => {
+    it('drops disabled Fatbody entries even when Fatbody publishes a legacy activation mode', async () => {
+        // Regression: the semantic-mode dormancy exemption was removed — disabled
+        // entries are filtered regardless of what Fatbody publishes.
         _state.books['Eldoria_NPCs'] = { entries: { 1: { uid: 1, content: 'dormant lore', disable: true } } };
-        _state.books['Other_Book'] = { entries: { 1: { uid: 1, content: 'user-disabled', disable: true } } };
         globalThis._rpgGetCurrentPrefix = () => 'Eldoria';
         globalThis._rpgGetActivationMode = () => 'semantic';
 
-        const out = await resolveLiveEntries(
-            [hit('Eldoria_NPCs', 1, 'x'), hit('Other_Book', 1, 'y')], {});
-        expect(out).toHaveLength(1);
-        expect(out[0].content).toBe('dormant lore');
-
-        // In managed mode the same Fatbody entry is filtered like any other
-        globalThis._rpgGetActivationMode = () => 'managed';
-        const out2 = await resolveLiveEntries([hit('Eldoria_NPCs', 1, 'x')], {});
-        expect(out2).toHaveLength(0);
+        const out = await resolveLiveEntries([hit('Eldoria_NPCs', 1, 'x')], {});
+        expect(out).toHaveLength(0);
     });
 
     it('falls back to vector text when the book fails to load', async () => {
@@ -238,14 +230,31 @@ describe('lorebook invalidation hook', () => {
         }
     });
 
-    it('creates a fresh collection for an unindexed Fatbody book only in semantic mode', () => {
-        globalThis._rpgGetCurrentPrefix = () => 'Eldoria';
+    it('never touches Fatbody-owned books, regardless of any published activation mode', async () => {
+        vi.useFakeTimers();
+        try {
+            globalThis._rpgGetCurrentPrefix = () => 'Eldoria';
 
-        globalThis._rpgGetActivationMode = () => 'managed';
-        expect(invalidateLorebook('Eldoria_NPCs', { debounceMs: 50 })).toBe(false);
+            // Unindexed Fatbody book: never auto-created, whatever Fatbody publishes
+            globalThis._rpgGetActivationMode = () => 'managed';
+            expect(invalidateLorebook('Eldoria_NPCs', { debounceMs: 50 })).toBe(false);
+            globalThis._rpgGetActivationMode = () => 'semantic';
+            expect(invalidateLorebook('Eldoria_NPCs', { debounceMs: 50 })).toBe(false);
 
-        globalThis._rpgGetActivationMode = () => 'semantic';
-        expect(invalidateLorebook('Eldoria_NPCs', { debounceMs: 50 })).toBe(true);
+            // A collection left over from the old semantic mode is not re-indexed
+            // or even dirty-marked
+            _state.registry = ['standard:vf_lorebook_eldoria_npcs_1700000000000'];
+            expect(invalidateLorebook('Eldoria_NPCs', { debounceMs: 50 })).toBe(false);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(vectorizeContent).not.toHaveBeenCalled();
+            expect(_state.meta['standard:vf_lorebook_eldoria_npcs_1700000000000']).toBeUndefined();
+
+            // A non-Fatbody unindexed book still goes through the create path
+            // (writer extensions that explicitly ask for vectorization)
+            expect(invalidateLorebook('Some_Writer_Book', { debounceMs: 50 })).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('respects the auto_reindex_invalidated_lorebooks=false gate but still marks dirty', () => {
