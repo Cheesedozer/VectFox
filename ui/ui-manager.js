@@ -620,6 +620,12 @@ export function renderSettings(containerId, settings, callbacks) {
                             <input type="range" id="VectFox_insert_batch_size" class="vectfox-slider" min="10" max="100" step="10" />
                             <small class="VectFox_hint">Chunks per insert batch (50-100 recommended for faster bulk operations)</small>
 
+                            <label class="checkbox_label" for="VectFox_document_glossary_injection" style="margin-top:12px;">
+                                <input type="checkbox" id="VectFox_document_glossary_injection" />
+                                <span>Acronym Glossary Injection (Documents)</span>
+                            </label>
+                            <small class="VectFox_hint">When vectorizing a <b>Document</b>, scan it once for "Full Name (ACRONYM)" definitions and prepend the matching definition to any chunk that references the bare acronym without it. Fixes retrieval handing the model an ungrounded acronym it then has to guess at.</small>
+
                             <!-- Query (ChunkBase-only) -->
                             <p class="vectfox-section-label" style="font-weight:600; margin-top:16px; margin-bottom:8px;">Query</p>
                             <div style="margin-top:4px; display:flex; gap:8px; align-items:center;">
@@ -4168,6 +4174,15 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
     $('#VectFox_insert_batch_size_value').text(settings.insert_batch_size || 50);
+
+    // Acronym glossary injection (Documents) — see core/glossary-extractor.js
+    $('#VectFox_document_glossary_injection')
+        .prop('checked', settings.document_glossary_injection !== false)
+        .on('change', function() {
+            settings.document_glossary_injection = $(this).prop('checked');
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
 
     // Minimum chat length before injection starts
     $('#VectFox_min_chat_length')

@@ -28,6 +28,7 @@ import {
 import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extractBM25Keywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT } from './keyword-boost.js';
 import { cleanText, cleanContentOrNull } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
+import { extractGlossary, injectGlossary } from './glossary-extractor.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { getCurrentChatId } from '../../../../../script.js';
@@ -94,7 +95,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         progressTracker.updateProgress(2, 'Chunking content...');
         const preparedContent = await prepareContent(contentType, rawContent, settings, startFromMessage);
         throwIfAborted();
-        const chunks = await chunkText(preparedContent.text || preparedContent, {
+        let chunks = await chunkText(preparedContent.text || preparedContent, {
             strategy: settings.strategy || type.defaultStrategy,
             chunkSize: settings.chunkSize || type.defaults.chunkSize,
             chunkOverlap: settings.chunkOverlap || type.defaults.chunkOverlap,
@@ -104,6 +105,20 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
 
         if (chunks.length === 0) {
             throw new Error('No chunks generated from content');
+        }
+
+        // Ground bare acronym references: a document typically spells out a named
+        // entity once ("Federal Hero Oversight Bureau (FHOB)") and refers to it by
+        // acronym everywhere else. If the chunk containing the definition never gets
+        // retrieved alongside a chunk that only uses the bare acronym, the model has
+        // no grounding for what it means. Prepend the definition to any chunk that
+        // references an acronym without it. See core/glossary-extractor.js.
+        if (contentType === 'document' && settings.document_glossary_injection !== false) {
+            const glossary = extractGlossary(preparedContent.text || '');
+            if (glossary.length > 0) {
+                chunks = injectGlossary(chunks, glossary);
+                log.verbose(`VectFox: Glossary injection found ${glossary.length} acronym(s): ${glossary.map(g => g.acronym).join(', ')}`);
+            }
         }
 
         // Log chunking results for debugging

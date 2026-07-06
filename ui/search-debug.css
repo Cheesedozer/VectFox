@@ -71,6 +71,15 @@
     opacity: 0.6;
 }
 
+.vectfox-debug-pipeline-source {
+    font-size: 0.7em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--vectfox-primary) 18%, transparent);
+    color: var(--vectfox-primary);
+}
+
 /* ============================================================================
  * QUERY DISPLAY
  * ============================================================================ */
@@ -1091,6 +1100,14 @@
     background: var(--vectfox-primary);
     border-color: var(--vectfox-primary);
     color: white;
+}
+
+.vectfox-debug-history-tab .tab-source {
+    font-size: 0.62em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    opacity: 0.6;
+    text-transform: uppercase;
 }
 
 .vectfox-debug-history-tab .tab-num {
