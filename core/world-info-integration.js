@@ -15,7 +15,7 @@ import { queryCollection } from './core-vector-api.js';
 import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
-import { LOREBOOK_PROMPT_TAG } from './constants.js';
+import { LOREBOOK_PROMPT_TAG, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
@@ -23,6 +23,8 @@ import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForR
 // exact ID (backend + handle + timestamp segments are not known at lookup time).
 import { eventSource, event_types, setExtensionPrompt, substituteParams, getCurrentChatId } from '../../../../../script.js';
 import { log } from './log.js';
+import AsyncUtils from '../utils/async-utils.js';
+import { createDebugData, addTrace, setLastSearchDebug } from '../ui/search-debug.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
@@ -52,9 +54,12 @@ function _resolveEntryTitle(entry) {
  * @param {string[]} recentMessages - Recent chat messages to use as query
  * @param {object[]} activeEntries - Currently active WI entries (from keyword matching)
  * @param {object} settings - VectFox settings
+ * @param {string|null} keywordQuery - Focused last-user-message query for dual-query mode
+ * @param {Array|null} preloadedCollections - Pre-fetched lorebook collections, if already fetched by the caller
+ * @param {object|null} debugData - Optional SearchDebugData (ui/search-debug.js) to populate for the Search Debug modal
  * @returns {Promise<object[]>} Array of WI entries to activate { uid, key, content, score }
  */
-export async function getSemanticWorldInfoEntries(recentMessages, activeEntries, settings, keywordQuery = null, preloadedCollections = null) {
+export async function getSemanticWorldInfoEntries(recentMessages, activeEntries, settings, keywordQuery = null, preloadedCollections = null, debugData = null) {
     if (!settings.enabled_world_info) {
         return [];
     }
@@ -86,6 +91,16 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 
     // Use pre-fetched collections if provided (avoids double call from handleGenerationStarted)
     const lorebookCollections = preloadedCollections ?? await getEnabledLorebookCollections(settings);
+
+    if (debugData) {
+        debugData.query = dualQuery ? `${kq}\n---\n${query}` : query;
+        debugData.collectionId = lorebookCollections.map(c => c.name).join(', ') || null;
+        debugData.settings = { threshold, topK };
+        addTrace(debugData, 'vector_search', 'Querying lorebook collections', {
+            collections: lorebookCollections.length,
+            dualQuery,
+        });
+    }
 
     for (const collection of lorebookCollections) {
         try {
@@ -127,6 +142,23 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 
             for (const meta of bestByUid.values()) {
                 const score = meta.score || 0;
+
+                if (debugData) {
+                    const debugChunk = {
+                        hash: meta.uid || meta.hash,
+                        text: meta.text || '',
+                        score,
+                        vectorScore: meta.vectorScore,
+                        textScore: meta.textScore,
+                        fusionMethod: meta.fusionMethod,
+                        hybridSearch: meta.hybridSearch,
+                        collection: collection.name,
+                        metadata: meta,
+                    };
+                    debugData.stages.initial.push(debugChunk);
+                    if (score >= threshold) debugData.stages.afterThreshold.push(debugChunk);
+                }
+
                 if (score >= threshold) {
                     const entry = {
                         uid: meta.uid || meta.hash,
@@ -168,6 +200,28 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     const deduplicatedEntries = deduplicateWithActiveEntries(uniqueEntries, activeEntries);
 
     log.verbose(`VectFox: Found ${deduplicatedEntries.length} semantic WI entries to activate`);
+
+    if (debugData) {
+        debugData.stages.afterConditions = deduplicatedEntries.map(e => ({
+            hash: e.uid,
+            text: e.content,
+            score: e.score,
+            vectorScore: e.metadata?.vectorScore,
+            textScore: e.metadata?.textScore,
+            fusionMethod: e.metadata?.fusionMethod,
+            hybridSearch: e.metadata?.hybridSearch,
+            collection: e.lorebookName,
+            metadata: e.metadata,
+        }));
+        debugData.stats.totalInCollection = lorebookCollections.length;
+        debugData.stats.retrievedFromVector = debugData.stages.initial.length;
+        debugData.stats.passedThreshold = debugData.stages.afterThreshold.length;
+        debugData.stats.afterConditions = deduplicatedEntries.length;
+        addTrace(debugData, 'conditions', 'Deduplicated against active entries and self', {
+            beforeDedup: semanticEntries.length,
+            afterDedup: deduplicatedEntries.length,
+        });
+    }
 
     if (settings.world_info_retrieval_popup && deduplicatedEntries.length > 0) {
         try { toastr.info(`Semantic WI: retrieved ${deduplicatedEntries.length} lorebook entry/entries`, 'VectFox'); } catch (_) {}
@@ -519,12 +573,42 @@ async function handleGenerationStarted(type, options, dryRun) {
             // 'continue' — user acknowledged stale content, proceed
         }
 
-        const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, keywordQuery, lorebookCollections);
-        if (!semanticEntries.length) return;
+        // Search Debug modal capture (ui/search-debug.js) — tagged so it's
+        // distinguishable from chat-vectorization.js's ChunkBase/EventBase entries
+        // in the shared query history.
+        const debugData = createDebugData();
+        debugData.source = 'lorebook-wi';
+
+        // Bound the vector query the same way as the sibling ChunkBase/EventBase
+        // pipelines (core/chat-vectorization.js) — a hung embedding provider must
+        // not freeze generation. Soft timeout: on expiry we proceed with no
+        // semantic WI injection this turn; the orphaned fetch is reaped
+        // server-side. See core/constants.js::RETRIEVAL_TIMEOUT_MS.
+        let semanticEntries;
+        try {
+            semanticEntries = await AsyncUtils.timeout(
+                getSemanticWorldInfoEntries(recentMessages, [], settings, keywordQuery, lorebookCollections, debugData),
+                RETRIEVAL_TIMEOUT_MS,
+                'Lorebook WI retrieval timed out',
+            );
+        } catch (error) {
+            log.error('VectFox: Lorebook WI retrieval error (non-fatal, message sends without lorebook memory):', error.message || error);
+            addTrace(debugData, 'vector_search', 'Retrieval failed or timed out', { error: error.message || String(error) });
+            setLastSearchDebug(debugData);
+            return;
+        }
+
+        if (!semanticEntries.length) {
+            setLastSearchDebug(debugData);
+            return;
+        }
 
         // Swap vector-snapshot text for live lorebook content; drop deleted/disabled entries.
         const liveEntries = await resolveLiveEntries(semanticEntries, settings);
-        if (!liveEntries.length) return;
+        if (!liveEntries.length) {
+            setLastSearchDebug(debugData);
+            return;
+        }
 
         // Format entries into direct prompt injection under <VectFoxLorebook>
         const entryTexts = liveEntries
@@ -535,7 +619,10 @@ async function handleGenerationStarted(type, options, dryRun) {
                 return title ? `# ${title}\n${content}` : content;
             });
 
-        if (!entryTexts.length) return;
+        if (!entryTexts.length) {
+            setLastSearchDebug(debugData);
+            return;
+        }
 
         const xmlTag = settings.lorebook_xml_tag || 'VectFoxLorebook';
         const injectionContent = entryTexts.join('\n\n');
@@ -543,6 +630,31 @@ async function handleGenerationStarted(type, options, dryRun) {
 
         setExtensionPrompt(LOREBOOK_PROMPT_TAG, injectionText, settings.position, settings.depth, false);
         log.verbose(`VectFox: Injected ${entryTexts.length} lorebook entries to <${xmlTag}>`);
+
+        debugData.stages.injected = liveEntries.filter(e => e.content?.trim()).map(e => ({
+            hash: e.uid,
+            text: e.content,
+            score: e.score,
+            vectorScore: e.metadata?.vectorScore,
+            textScore: e.metadata?.textScore,
+            fusionMethod: e.metadata?.fusionMethod,
+            hybridSearch: e.metadata?.hybridSearch,
+            collection: e.lorebookName,
+            metadata: e.metadata,
+        }));
+        debugData.stats.actuallyInjected = debugData.stages.injected.length;
+        debugData.injection = {
+            verified: true,
+            text: injectionText,
+            position: settings.position,
+            depth: settings.depth,
+            charCount: injectionText.length,
+        };
+        addTrace(debugData, 'injection', 'Injected into <VectFoxLorebook> prompt', {
+            entries: entryTexts.length,
+            charCount: injectionText.length,
+        });
+        setLastSearchDebug(debugData);
     } catch (err) {
         log.warn('VectFox: Lorebook WI injection failed', err.message || err);
     }
@@ -570,7 +682,17 @@ export async function runLorebookWIDryRun({ chat, testMessage, settings }) {
     const lorebookCollections = await getEnabledLorebookCollections(settings);
     if (!lorebookCollections.length) return { injectionText: null, entryCount: 0, noCollections: true };
 
-    const semanticEntries = await getSemanticWorldInfoEntries(recentMessages, [], settings, testMessage || null, lorebookCollections);
+    let semanticEntries;
+    try {
+        semanticEntries = await AsyncUtils.timeout(
+            getSemanticWorldInfoEntries(recentMessages, [], settings, testMessage || null, lorebookCollections),
+            RETRIEVAL_TIMEOUT_MS,
+            'Lorebook WI retrieval timed out',
+        );
+    } catch (error) {
+        log.error('VectFox: Lorebook WI dry-run retrieval error:', error.message || error);
+        return { injectionText: null, entryCount: 0 };
+    }
     if (!semanticEntries.length) return { injectionText: null, entryCount: 0 };
 
     // Same live-resolution as the real injection path, so the tester shows real behavior.

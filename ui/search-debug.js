@@ -51,6 +51,12 @@ export function createDebugData() {
         query: '',
         timestamp: Date.now(),
         collectionId: null,
+        // Which pipeline produced this entry — 'chunkbase' (chat-vectorization.js:
+        // ChunkBase documents/lorebooks/URLs + EventBase) or 'lorebook-wi'
+        // (world-info-integration.js: semantic Lorebook World Info). Both write
+        // into this same shared history; callers that want to distinguish them
+        // read this field rather than guessing from shape.
+        source: 'chunkbase',
         settings: {},
         stages: {
             initial: [],
@@ -216,6 +222,8 @@ function createModalHtml(data, historyIndex = 0) {
         : data.query;
 
     // Build history tabs
+    const sourceLabel = (source) => source === 'lorebook-wi' ? 'Lorebook WI' : 'ChunkBase';
+    const sourceAbbrev = (source) => source === 'lorebook-wi' ? 'WI' : 'CB';
     const historyTabs = queryHistory.length > 1 ? `
         <div class="vectfox-debug-history-tabs">
             ${queryHistory.map((q, idx) => {
@@ -227,7 +235,8 @@ function createModalHtml(data, historyIndex = 0) {
                 return `
                     <button class="vectfox-debug-history-tab ${isActive ? 'active' : ''} ${statusClass}"
                             data-history-index="${idx}"
-                            title="${StringUtils.escapeHtml(q.query.substring(0, 100))}">
+                            title="[${sourceLabel(q.source)}] ${StringUtils.escapeHtml(q.query.substring(0, 100))}">
+                        <span class="tab-source" title="${sourceLabel(q.source)}">${sourceAbbrev(q.source)}</span>
                         <span class="tab-num">#${idx + 1}</span>
                         <span class="tab-injected">${injectedCount}</span>
                     </button>
@@ -260,6 +269,7 @@ function createModalHtml(data, historyIndex = 0) {
                         <div class="vectfox-debug-card-header vectfox-debug-clickable" id="VectFox_query_header">
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <span>Query</span>
+                            <span class="vectfox-debug-pipeline-source" title="Which VectFox pipeline produced this">${sourceLabel(data.source)}</span>
                             <span class="vectfox-debug-timestamp">${timeAgo}</span>
                             <i class="fa-solid fa-chevron-down vectfox-debug-expand-icon"></i>
                         </div>

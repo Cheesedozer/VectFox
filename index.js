@@ -76,6 +76,7 @@ const defaultSettings = {
 
     // VEC-6: Batch insert optimization
     insert_batch_size: 50, // Chunks per insert batch (50-100 recommended)
+    document_glossary_injection: true, // Document content type only: prepend "Full Name (ACRONYM)" definitions to chunks that reference a bare acronym without it. See core/glossary-extractor.js.
     togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
     openai_model: 'text-embedding-ada-002',
     electronhub_model: 'text-embedding-3-small',
