@@ -320,6 +320,27 @@ const defaultSettings = {
     agentic_retrieval_timeout_ms: 30000,               // Planner LLM call timeout (matches summarize default; some models need >5s)
     agentic_filters_enabled: true,                     // Apply planner-emitted *_any / importance_gte filters (Phase 1.5)
 
+    // ─── Auto-Reformat (Document/URL/Wiki) ──────────────────────────────
+    // Optional, per-session LLM pass offered in Vectorize Content for
+    // Document/URL/Wiki sources. Reads the source, classifies content into
+    // named-entity vs. topic/lore records via a self-tagged schema, and
+    // emits the final chunks directly (bypassing the mechanical strategy
+    // picker for that run) once the user reviews and accepts a full
+    // before/after diff. See core/reformat-schema.js / reformat-extractor.js
+    // / reformat-store.js. Independent from EventBase (chat's LLM pipeline)
+    // by design — no shared pipeline code, only generic utilities.
+    reformat_provider: '',              // '' → inherit summarize_provider
+    reformat_model: '',                 // '' → inherit summarize_model
+    reformat_vllm_url: '',              // '' → inherit summarize_vllm_url
+    reformat_batch_chars: 6000,         // Target input chars per LLM call (packer)
+    reformat_max_output_tokens: 8000,
+    reformat_temperature: 0.2,
+    reformat_timeout_ms: 90000,
+    reformat_concurrency: 2,            // Parallel batch chains
+    reformat_max_body_chars: 2000,      // Oversize-entity ceiling — falls back to the adaptive splitter above this
+    reformat_name_fuzzy_threshold: 0.8, // Hallucination guardrail — min similarity to count a name as source-grounded
+    reformat_custom_prompt: '',
+
     // ─── Hidden / Power-User ────────────────────────────────────────────
     // SUPERADMIN MODE — no GUI toggle. Set to true by hand-editing settings.json
     // (the `vectfox` block under SillyTavern's extension_settings) to enable.
