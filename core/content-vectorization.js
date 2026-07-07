@@ -29,6 +29,7 @@ import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extr
 import { cleanText, cleanContentOrNull } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
 import { extractGlossary, injectGlossary } from './glossary-extractor.js';
+import { getReformatCache } from './reformat-store.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { getCurrentChatId } from '../../../../../script.js';
@@ -95,12 +96,55 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         progressTracker.updateProgress(2, 'Chunking content...');
         const preparedContent = await prepareContent(contentType, rawContent, settings, startFromMessage);
         throwIfAborted();
-        let chunks = await chunkText(preparedContent.text || preparedContent, {
-            strategy: settings.strategy || type.defaultStrategy,
-            chunkSize: settings.chunkSize || type.defaults.chunkSize,
-            chunkOverlap: settings.chunkOverlap || type.defaults.chunkOverlap,
-            batchSize: settings.batchSize || 4,
-        });
+
+        // Auto-Reformat: if the user already reviewed and accepted an LLM
+        // reformat pass for this exact source (settings.reformat is a plain
+        // pointer {accepted, sourceHash} threaded through resolveEffectiveSettings,
+        // never persisted to saved global settings), reuse the frozen chunks and
+        // skip chunkText() + the LLM entirely — the accepted result IS the final
+        // chunk set. See core/reformat-store.js for the freeze mechanism and
+        // ui/reformat-review.js for how chunks get into the cache in the first
+        // place (already {text, metadata} shaped, ready for enrichChunks() below).
+        const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki'];
+        let chunks;
+        if (REFORMAT_SUPPORTED_TYPES.includes(contentType) && settings.reformat?.accepted && settings.reformat?.sourceHash) {
+            // Guard against a stale pointer: settings.reformat.sourceHash was computed
+            // against whatever source was loaded WHEN the user accepted the reformat.
+            // If they've since changed the pasted text / fetched a different URL /
+            // rescraped the wiki without re-running (or discarding) Auto-Reformat,
+            // currentSettings.reformat would still be sitting there pointing at the
+            // OLD content — applying it here would silently vectorize the wrong
+            // chunks under the new source's name. Re-hash the CURRENT prepared text
+            // (normalized the same way the reformat flow hashed it — see
+            // ui/content-vectorizer.js's _resolveReformatSourceText) and only trust
+            // the cache if it still matches.
+            const normalizedText = typeof preparedContent.text === 'string'
+                ? preparedContent.text
+                : Array.isArray(preparedContent.text)
+                    ? preparedContent.text.map(t => (typeof t === 'string' ? t : t.text || '')).join('\n\n---\n\n')
+                    : String(preparedContent.text ?? preparedContent ?? '');
+            const currentHash = getStringHash(normalizedText);
+
+            if (currentHash !== settings.reformat.sourceHash) {
+                log.warn(`VectFox: Auto-Reformat was accepted for different content than what's loaded now (hash mismatch) — falling back to mechanical chunking. Re-run Auto-Reformat if you want it applied to the current content.`);
+            } else {
+                const frozen = getReformatCache(settings.reformat.sourceHash);
+                if (frozen?.chunks?.length) {
+                    chunks = frozen.chunks;
+                    log.lifecycle(`VectFox: Using frozen Auto-Reformat chunks for "${sourceName}" (${chunks.length} chunks) — LLM not re-invoked`);
+                } else {
+                    log.warn(`VectFox: Auto-Reformat marked accepted but no frozen cache found for hash ${settings.reformat.sourceHash} — falling back to mechanical chunking`);
+                }
+            }
+        }
+        if (!chunks) {
+            chunks = await chunkText(preparedContent.text || preparedContent, {
+                strategy: settings.strategy || type.defaultStrategy,
+                chunkSize: settings.chunkSize || type.defaults.chunkSize,
+                chunkOverlap: settings.chunkOverlap || type.defaults.chunkOverlap,
+                batchSize: settings.batchSize || 4,
+            });
+        }
         throwIfAborted();
 
         if (chunks.length === 0) {
@@ -854,6 +898,24 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
                     baseWeight: keywordBaseWeight,
                     settings: VectFoxSettings,
                 });
+            }
+        }
+
+        // Auto-Reformat: LLM-extracted entity/topic records carry rich fields
+        // (name/aliases/keywords) that the frequency-based extraction above
+        // doesn't know about. Boost them in as high-weight keywords and set
+        // entryName so the Database Browser shows a sensible per-chunk title —
+        // same pattern as the lorebook/character special-cases in this function.
+        // entryName also feeds the BM25 title-boost signal in hybrid-search.js.
+        if (chunk.metadata?.entry_type) {
+            entryName = chunk.metadata.name || entryName;
+            const reformatKeywordTexts = [
+                chunk.metadata.name,
+                ...(Array.isArray(chunk.metadata.aliases) ? chunk.metadata.aliases : []),
+                ...(Array.isArray(chunk.metadata.keywords) ? chunk.metadata.keywords : []),
+            ].filter(Boolean);
+            for (const kwText of reformatKeywordTexts) {
+                keywords.push({ text: kwText.toLowerCase(), weight: keywordBaseWeight + 0.5 });
             }
         }
 
