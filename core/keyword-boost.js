@@ -182,6 +182,25 @@ function shouldKeepCjkKeyword(token, frequency, isJapaneseMode, isTraditionalChi
     return false;
 }
 
+// stem -> Map<originalWord, count> — remembers which real surface forms
+// collapsed onto a stem, so the most common one can be shown instead of
+// the stem itself.
+function recordSurfaceForm(surfaceForms, stem, originalWord) {
+    const forms = surfaceForms.get(stem);
+    if (!forms) surfaceForms.set(stem, new Map([[originalWord, 1]]));
+    else forms.set(originalWord, (forms.get(originalWord) || 0) + 1);
+}
+
+function resolveDisplayText(stem, surfaceForms) {
+    const forms = surfaceForms.get(stem);
+    if (!forms) return stem; // proper nouns / CJK / not tracked
+    let bestForm = stem, bestCount = 0;
+    for (const [form, count] of forms) {
+        if (count > bestCount) { bestForm = form; bestCount = count; }
+    }
+    return bestForm;
+}
+
 function isSummarizationEnabled(settings) {
     return ['openrouter', 'vllm'].includes(String(settings?.summarize_provider || 'openrouter'));
 }
@@ -372,12 +391,14 @@ export function extractTextKeywords(text, options = {}) {
     const topicWords = (scanArea.toLowerCase().match(/\b[a-z]{4,}\b/g) || [])
         .concat(extractCJKTokens(scanArea));
     const wordCounts = new Map();
+    const surfaceForms = new Map();
 
     for (const word of topicWords) {
         if (stopwords.has(word)) continue;
         // Don't stem proper nouns/names - they should match exactly
         const stemmed = properNouns.has(word) ? word : porterStemmer(word);
         wordCounts.set(stemmed, (wordCounts.get(stemmed) || 0) + 1);
+        recordSurfaceForm(surfaceForms, stemmed, word);
     }
 
     // Step 4: Filter by minimum frequency and build weighted keywords
@@ -391,7 +412,7 @@ export function extractTextKeywords(text, options = {}) {
             const frequencyBonus = (count - config.minFrequency) * FREQUENCY_WEIGHT_INCREMENT;
             const weight = Math.min(MAX_KEYWORD_WEIGHT, baseWeight + frequencyBonus);
 
-            weightedKeywords.push({ text: word, weight, frequency: count });
+            weightedKeywords.push({ text: resolveDisplayText(word, surfaceForms), weight, frequency: count });
         }
     }
 
@@ -597,6 +618,7 @@ export function extractBM25Keywords(text, options = {}) {
 
     // Tokenize each sentence (Latin words + CJK words; Simplified + Traditional)
     const _cjkStripReBM25 = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g;
+    const surfaceForms = new Map();
     const tokenizeSentence = (s) => {
         const cjkTokens = extractCJKTokens(s).filter(t => !stopwords.has(t));
         const latinTokens = s
@@ -608,7 +630,9 @@ export function extractBM25Keywords(text, options = {}) {
             .map(t => {
                 // Don't stem proper nouns (names) - preserve them exactly
                 if (properNouns.has(t)) return t;
-                return t.length > 3 ? porterStemmer(t) : t;
+                const stemmed = t.length > 3 ? porterStemmer(t) : t;
+                recordSurfaceForm(surfaceForms, stemmed, t);
+                return stemmed;
             });
         return [...latinTokens, ...cjkTokens];
     };
@@ -684,7 +708,7 @@ export function extractBM25Keywords(text, options = {}) {
 
     const maxTfidf = topWords[0].tfidf;
     const keywords = topWords.map(w => ({
-        text: w.text,
+        text: resolveDisplayText(w.text, surfaceForms),
         // Weight scales from baseWeight to baseWeight + 0.5 based on TF-IDF rank
         weight: baseWeight + (w.tfidf / maxTfidf) * 0.5,
         tfidf: w.tfidf
@@ -936,6 +960,43 @@ function getPositionWeight(index, textLength, enabled = true) {
     }
     // Middle 60%
     return POSITION_WEIGHTS.middle;
+}
+
+/**
+ * Normalize a keyword's display text into a stem-based dedup key. Stems each
+ * whitespace-separated token independently (mirrors extractBM25Keywords'
+ * tokenizeSentence threshold: only stem tokens >3 chars) so multi-word
+ * keywords (character names, Auto-Reformat aliases, lorebook trigger
+ * phrases) aren't corrupted by treating the whole phrase as one "word".
+ * CJK passes through unchanged (porterStemmer no-ops on CJK codepoints).
+ * @param {string} text
+ * @returns {string}
+ */
+export function keywordStemKey(text) {
+    if (!text || typeof text !== 'string') return '';
+    const trimmed = text.trim().toLowerCase();
+    if (!trimmed) return '';
+    return trimmed.split(/\s+/)
+        .map(token => (token.length > 3 ? porterStemmer(token) : token))
+        .join(' ');
+}
+
+/**
+ * Dedupe a keyword list by stem, keeping the highest-weight entry per stem.
+ * This lets e.g. an LLM-authored "abilities" and a heuristically stemmed
+ * "abiliti" (same underlying word) collapse into one chip instead of
+ * surviving as separate near-duplicates.
+ * @param {Array<{text: string, weight: number}>} keywords
+ * @returns {Array<{text: string, weight: number}>}
+ */
+export function dedupeKeywordsByStem(keywords) {
+    const keywordMap = new Map();
+    for (const kw of keywords) {
+        const key = keywordStemKey(kw.text);
+        const existing = keywordMap.get(key);
+        if (!existing || kw.weight > existing.weight) keywordMap.set(key, kw);
+    }
+    return Array.from(keywordMap.values());
 }
 
 /**
