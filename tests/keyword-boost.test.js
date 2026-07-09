@@ -35,6 +35,8 @@ import {
     applyKeywordBoost,
     getOverfetchAmount,
     applyKeywordBoosts,
+    keywordStemKey,
+    dedupeKeywordsByStem,
 } from '../core/keyword-boost.js';
 
 // ============================================================================
@@ -361,6 +363,14 @@ describe('extractTextKeywords', () => {
         // 'Gandalf' should be preserved as-is (lowercased)
         expect(keywordTexts).toContain('gandalf');
     });
+
+    it('shows the real surface form, not the stemmer artifact ("abiliti" bug)', () => {
+        const text = 'Her abilities were remarkable. His abilities grew each day. Their abilities combined well.';
+        const keywords = extractTextKeywords(text, { level: 'aggressive' });
+        const texts = keywords.map(k => k.text);
+        expect(texts).toContain('abilities');
+        expect(texts).not.toContain('abiliti');
+    });
 });
 
 // ============================================================================
@@ -586,6 +596,67 @@ describe('extractBM25Keywords', () => {
         for (let i = 1; i < keywords.length; i++) {
             expect(keywords[i - 1].tfidf).toBeGreaterThanOrEqual(keywords[i].tfidf);
         }
+    });
+
+    it('shows real surface forms for words the stemmer mangles (reproduces "abiliti"/"referenc"/"femal"/"manifestate")', () => {
+        const text = 'The character discovered new abilities during training. Her abilities grew stronger ' +
+            'with each passing reference to the ancient manifestation. Every reference in the old book ' +
+            'praised her abilities. The female mentor recognized the manifestation of power. This female ' +
+            'warrior had rare abilities beyond reference.';
+        const keywords = extractBM25Keywords(text, { level: 'aggressive', maxKeywords: 15 });
+        const texts = keywords.map(k => k.text);
+        for (const garbled of ['abiliti', 'referenc', 'femal', 'manifestate']) {
+            expect(texts).not.toContain(garbled);
+        }
+        expect(texts).toContain('abilities');
+    });
+});
+
+// ============================================================================
+// keywordStemKey Tests
+// ============================================================================
+
+describe('keywordStemKey', () => {
+    it('maps a stem and its real surface form to the same key', () => {
+        expect(keywordStemKey('abiliti')).toBe(keywordStemKey('abilities'));
+    });
+
+    it('stems multi-word phrases per-token, not as one blob', () => {
+        expect(keywordStemKey('fire abilities')).toBe(keywordStemKey('fire abiliti'));
+    });
+
+    it('passes CJK text through unchanged', () => {
+        expect(keywordStemKey('魔法')).toBe('魔法');
+    });
+
+    it('guards empty/non-string input', () => {
+        expect(keywordStemKey('')).toBe('');
+        expect(keywordStemKey(null)).toBe('');
+        expect(keywordStemKey(undefined)).toBe('');
+        expect(keywordStemKey('   ')).toBe('');
+    });
+});
+
+// ============================================================================
+// dedupeKeywordsByStem Tests
+// ============================================================================
+
+describe('dedupeKeywordsByStem', () => {
+    it('collapses a heuristic stem and its LLM-authored real-word duplicate, keeping the higher-weight (real word) entry', () => {
+        const deduped = dedupeKeywordsByStem([
+            { text: 'abiliti', weight: 1.7 },
+            { text: 'abilities', weight: 2.0 },
+        ]);
+        expect(deduped).toHaveLength(1);
+        expect(deduped[0].text).toBe('abilities');
+    });
+
+    it('leaves genuinely distinct concepts separate', () => {
+        const deduped = dedupeKeywordsByStem([
+            { text: 'dragon', weight: 1.5 },
+            { text: 'wizard', weight: 1.5 },
+        ]);
+        expect(deduped).toHaveLength(2);
     });
 });
 

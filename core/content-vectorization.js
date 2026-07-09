@@ -25,7 +25,7 @@ import {
     buildRegistryKey,
     getBackendFromCollectionId,
 } from './collection-ids.js';
-import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extractBM25Keywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT } from './keyword-boost.js';
+import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extractBM25Keywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT, dedupeKeywordsByStem } from './keyword-boost.js';
 import { cleanText, cleanContentOrNull } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
 import { extractGlossary, injectGlossary } from './glossary-extractor.js';
@@ -935,15 +935,11 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
             });
         }
 
-        // Deduplicate keywords (keep highest weight for duplicates)
-        const keywordMap = new Map();
-        for (const kw of keywords) {
-            const existing = keywordMap.get(kw.text);
-            if (!existing || kw.weight > existing.weight) {
-                keywordMap.set(kw.text, kw);
-            }
-        }
-        const dedupedKeywords = Array.from(keywordMap.values());
+        // Deduplicate keywords by stem (keep highest weight for duplicates) so an
+        // LLM-authored real word (e.g. "abilities") and a heuristically stemmed
+        // near-duplicate (e.g. "abiliti") collapse into one chip instead of both
+        // surviving as separate near-duplicate tags.
+        const dedupedKeywords = dedupeKeywordsByStem(keywords);
 
         return {
             text: chunkText,
