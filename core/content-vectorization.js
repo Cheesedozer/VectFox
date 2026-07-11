@@ -890,8 +890,12 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
                     settings: VectFoxSettings,
                 });
             }
-        } else {
-            // For other content (url, wiki, document, youtube), use frequency-based extraction
+        } else if (!chunk.metadata?.entry_type) {
+            // For other content (url, wiki, document, youtube), use frequency-based extraction.
+            // Skipped for Auto-Reformat records (entry_type set) — those chunks already carry
+            // an LLM-curated, importance-scored keyword list (see below), and re-running blind
+            // frequency stats on that short, already-distilled body just adds generic-noun noise
+            // (e.g. "power") on top of it rather than replacing it.
             if (keywordLevel !== 'off') {
                 keywords = extractTextKeywords(chunkText, {
                     level: keywordLevel,
