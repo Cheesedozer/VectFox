@@ -31,6 +31,7 @@ import {
     validateReformattedChunk,
     buildReformatPrompt,
     computeNameVerification,
+    computeKeywordVerification,
 } from './reformat-schema.js';
 import { log } from './log.js';
 
@@ -497,11 +498,13 @@ async function _processChain(chain, settings, chainIndex, warnings) {
             }
 
             const verification = computeNameVerification(validatedForBatch, batch.text, threshold);
+            const keywordVerification = computeKeywordVerification(validatedForBatch, batch.text);
             validatedForBatch.forEach((chunk, j) => {
                 results.push({
                     ...chunk,
                     _nameGrounded: verification[j]?.nameGrounded ?? true,
                     _ungroundedAliases: verification[j]?.ungroundedAliases ?? [],
+                    _ungroundedKeywords: keywordVerification[j]?.ungroundedKeywords ?? [],
                 });
                 alreadyExtractedNames.push(chunk.name);
             });

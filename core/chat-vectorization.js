@@ -13,7 +13,7 @@ import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, 
 import { getContext } from '../../../../extensions.js';
 import { getStringHash as calculateHash } from '../../../../utils.js';
 import { isUnitStrategy } from './chunking.js';
-import { extractChatKeywords, extractBM25Keywords } from './keyword-boost.js';
+import { extractChatKeywords } from './keyword-boost.js';
 import { cleanText } from './text-cleaning.js';
 import {
     getSavedHashes,
@@ -23,7 +23,6 @@ import {
     deleteVectorItems,
 } from './core-vector-api.js';
 import { isBackendAvailable } from '../backends/backend-manager.js';
-import { summarizeText } from './summarizer.js';
 import { registerCollection, getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
 import { isCollectionEnabled, filterActiveCollections, setCollectionLock } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
@@ -75,123 +74,6 @@ function getStringHash(str) {
 function getTextWithoutAttachments(message) {
     const fileLength = message?.extra?.fileLength || 0;
     return String(message?.mes || '').substring(fileLength).trim();
-}
-
-/**
- * Groups messages according to chunking strategy
- *
- * HASH DESIGN NOTE: Hashes are calculated from combined text ONLY (not message indices).
- * This is INTENTIONAL semantic deduplication - identical text produces identical embeddings,
- * so storing duplicates would waste storage and query budget. Individual message IDs are
- * preserved in metadata.messageIds and metadata.messageHashes for injection lookup.
- * DO NOT add message indices to hash calculation - it would break incremental sync and
- * disable deduplication with no functional benefit.
- *
- * @param {object[]} messages Messages to group
- * @param {string} strategy Chunking strategy: 'per_message', 'conversation_turns', 'message_batch'
- * @param {number} batchSize Number of messages per batch (for message_batch strategy)
- * @param {string} keywordLevel Keyword extraction level: 'off', 'minimal', 'balanced', 'aggressive'
- * @returns {object[]} Grouped message items ready for chunking
- */
-// LEGACY CHAT STRATEGIES NOTE:
-// *** will be remove in future version because no longer used by eventbased path ***
-// EventBase-enabled chat sync no longer depends on these chat chunk grouping modes, but
-// they are kept temporarily for backward compatibility and non-EventBase legacy flows.
-async function groupMessagesByStrategy(messages, strategy, batchSize = 4, keywordLevel = 'balanced', settings = {}) {
-    if (!messages.length) return [];
-
-    log.verbose(`[VectFox] groupMessagesByStrategy: ${messages.length} messages, strategy=${strategy}, summarize_provider=${settings?.summarize_provider || 'openrouter'}`);
-
-    const summarize = (text) => summarizeText(text, settings);
-
-    // Helper to extract keywords based on level
-    const getKeywords = (text) => {
-        if (keywordLevel === 'off') return [];
-        return extractBM25Keywords(text, { level: keywordLevel, settings });
-    };
-
-    const toLabeledText = (batch) => batch.map(m => {
-        const role = m.is_user ? 'User' : 'Character';
-        return `[${role}]: ${m.text}`;
-    }).join('\n\n');
-
-    switch (strategy) {
-        case 'conversation_turns': {
-            // Group user + AI message pairs
-            const grouped = [];
-            for (let i = 0; i < messages.length; i += 2) {
-                const pair = [messages[i]];
-                if (i + 1 < messages.length) {
-                    pair.push(messages[i + 1]);
-                }
-                const combinedText = toLabeledText(pair);
-                const storedText = await summarize(combinedText);
-
-                grouped.push({
-                    text: storedText,
-                    hash: getStringHash(combinedText),
-                    index: messages[i].index,
-                    keywords: getKeywords(storedText),
-                    metadata: {
-                        strategy: 'conversation_turns',
-                        messageIds: pair.map(m => m.index),
-                        messageHashes: pair.map(m => m.hash), // Store individual hashes for injection lookup
-                        startIndex: messages[i].index,
-                        endIndex: pair[pair.length - 1].index
-                    }
-                });
-            }
-            return grouped;
-        }
-
-        case 'message_batch': {
-            // Group N messages together
-            const grouped = [];
-            for (let i = 0; i < messages.length; i += batchSize) {
-                const batch = messages.slice(i, i + batchSize);
-                const combinedText = toLabeledText(batch);
-                const storedText = await summarize(combinedText);
-
-                grouped.push({
-                    text: storedText,
-                    hash: getStringHash(combinedText),
-                    index: batch[0].index,
-                    keywords: getKeywords(storedText),
-                    metadata: {
-                        strategy: 'message_batch',
-                        batchSize: batch.length,
-                        messageIds: batch.map(m => m.index),
-                        messageHashes: batch.map(m => m.hash), // Store individual hashes for injection lookup
-                        startIndex: batch[0].index,
-                        endIndex: batch[batch.length - 1].index
-                    }
-                });
-            }
-            return grouped;
-        }
-
-        case 'per_message':
-        default: {
-            // Each message is its own item
-            const grouped = [];
-            for (const m of messages) {
-                const storedText = await summarize(m.text);
-                grouped.push({
-                    text: storedText,
-                    hash: m.hash,
-                    index: m.index,
-                    is_user: m.is_user,
-                    keywords: getKeywords(storedText),
-                    metadata: {
-                        strategy: 'per_message',
-                        messageId: m.index,
-                        messageHashes: [m.hash] // Consistent with grouped strategies
-                    }
-                });
-            }
-            return grouped;
-        }
-    }
 }
 
 /**
@@ -1281,6 +1163,66 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
     };
 }
 
+/**
+ * Boosts chunks whose keywords (Auto-Reformat or heuristic) include any of
+ * the query's extracted keywords to a perfect score. Binary match, not
+ * diminishing-returns weighting — this is rearrangeChat's STAGE 4.3, pulled
+ * out into its own function so it's testable without driving the whole
+ * rearrangeChat pipeline (see diagnostics/production-tests.js).
+ * Mutates `chunks` in place.
+ *
+ * @param {object[]} chunks
+ * @param {string[]} queryKeywordTexts - Lowercased keywords extracted from the query
+ * @param {object} [debugData] - Optional; when provided, boost traces/stats are recorded on it
+ * @returns {number} Number of chunks boosted
+ */
+export function applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData = null) {
+    if (!queryKeywordTexts?.length || !chunks?.length) return 0;
+
+    let keywordMatchCount = 0;
+    for (const chunk of chunks) {
+        // Get chunk keywords — prefer vectra/qdrant metadata (plugin path),
+        // fall back to extension_settings (saved during insert for no-plugin users).
+        const rawKeywords = chunk.metadata?.keywords?.length > 0
+            ? chunk.metadata.keywords
+            : (getChunkMetadata(String(chunk.hash))?.keywords || []);
+        const chunkKeywords = rawKeywords
+            .map(kw => (typeof kw === 'object' ? kw.text : kw)?.toLowerCase())
+            .filter(Boolean);
+
+        const matchedKeywords = queryKeywordTexts.filter(qk => chunkKeywords.includes(qk));
+
+        if (matchedKeywords.length > 0) {
+            const oldScore = chunk.score;
+            chunk.keywordMatched = true;
+            chunk.matchedQueryKeywords = matchedKeywords;
+            chunk.score = 1.0; // 100% perfect match
+            chunk.originalScore = oldScore;
+            keywordMatchCount++;
+
+            if (debugData) {
+                addTrace(debugData, 'keyword_boost', `Chunk boosted by ${matchedKeywords.length} keyword(s)`, {
+                    hash: chunk.hash,
+                    matchedKeywords,
+                    newScore: 1.0,
+                    oldScore
+                });
+            }
+        }
+    }
+
+    if (debugData && keywordMatchCount > 0) {
+        debugData.stages.afterKeywordBoost = [...chunks];
+        debugData.stats.keywordBoosted = keywordMatchCount;
+        addTrace(debugData, 'keyword_boost', `Boosted ${keywordMatchCount} chunks with keyword matches`, {
+            totalChunks: chunks.length,
+            boostedCount: keywordMatchCount
+        });
+    }
+
+    return keywordMatchCount;
+}
+
 // ============================================================================
 // MAIN ORCHESTRATOR
 // ============================================================================
@@ -1483,47 +1425,9 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
 
         // === STAGE 4.3: Boost chunks with matching query keywords ===
         if (queryKeywordTexts.length > 0 && chunks.length > 0) {
-            let keywordMatchCount = 0;
-
-            for (const chunk of chunks) {
-                // Get chunk keywords — prefer vectra/qdrant metadata (plugin path),
-                // fall back to extension_settings (saved during insert for no-plugin users).
-                const rawKeywords = chunk.metadata?.keywords?.length > 0
-                    ? chunk.metadata.keywords
-                    : (getChunkMetadata(String(chunk.hash))?.keywords || []);
-                const chunkKeywords = rawKeywords
-                    .map(kw => (typeof kw === 'object' ? kw.text : kw)?.toLowerCase())
-                    .filter(Boolean);
-
-                // Check if chunk has any matching keywords
-                const matchedKeywords = queryKeywordTexts.filter(qk => chunkKeywords.includes(qk));
-
-                if (matchedKeywords.length > 0) {
-                    // Chunk matches query keywords - boost to perfect hit
-                    const oldScore = chunk.score;
-                    chunk.keywordMatched = true;
-                    chunk.matchedQueryKeywords = matchedKeywords;
-                    chunk.score = 1.0; // 100% perfect match
-                    chunk.originalScore = oldScore;
-                    keywordMatchCount++;
-
-                    addTrace(debugData, 'keyword_boost', `Chunk boosted by ${matchedKeywords.length} keyword(s)`, {
-                        hash: chunk.hash,
-                        matchedKeywords,
-                        newScore: 1.0,
-                        oldScore
-                    });
-                }
-            }
-
+            const keywordMatchCount = applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData);
             if (keywordMatchCount > 0) {
                 log.verbose(`VectFox: Boosted ${keywordMatchCount}/${chunks.length} chunks with matching keywords to 100% score`);
-                debugData.stages.afterKeywordBoost = [...chunks];
-                debugData.stats.keywordBoosted = keywordMatchCount;
-                addTrace(debugData, 'keyword_boost', `Boosted ${keywordMatchCount} chunks with keyword matches`, {
-                    totalChunks: chunks.length,
-                    boostedCount: keywordMatchCount
-                });
             } else {
                 log.verbose(`VectFox: No chunks matched query keywords, all ${chunks.length} chunks keep original scores`);
             }

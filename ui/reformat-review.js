@@ -41,12 +41,52 @@ function _parseCsv(text) {
 }
 
 /**
+ * Renders {text, importance}[] keywords as a comma-separated string for the
+ * editable text field, ordered highest-importance first so the field's
+ * left-to-right order communicates rank without a second control.
+ * @param {Array<{text: string, importance: number}|string>} keywords
+ * @returns {string}
+ */
+function _keywordsToCsv(keywords) {
+    if (!Array.isArray(keywords)) return '';
+    return [...keywords]
+        .sort((a, b) => (typeof b === 'object' ? b?.importance ?? 5 : 5) - (typeof a === 'object' ? a?.importance ?? 5 : 5))
+        .map(k => (typeof k === 'string' ? k : k?.text))
+        .filter(Boolean)
+        .join(', ');
+}
+
+/**
+ * Re-parses the edited keywords CSV field back into {text, importance}[].
+ * A keyword whose text is unchanged from the original record keeps its
+ * original importance; new/retyped text defaults to mid-scale importance 5
+ * (there's no per-keyword numeric control in this single text field).
+ * @param {string} text
+ * @param {Array<{text: string, importance: number}|string>} originalKeywords
+ * @returns {Array<{text: string, importance: number}>}
+ */
+function _parseKeywordsCsv(text, originalKeywords) {
+    const originalByKey = new Map(
+        (Array.isArray(originalKeywords) ? originalKeywords : []).map(k => {
+            const kText = typeof k === 'string' ? k : k?.text || '';
+            const kImportance = typeof k === 'string' ? 5 : k?.importance ?? 5;
+            return [kText.toLowerCase(), kImportance];
+        })
+    );
+    return _parseCsv(text).map(kwText => ({
+        text: kwText,
+        importance: originalByKey.get(kwText.toLowerCase()) ?? 5,
+    }));
+}
+
+/**
  * Opens the Auto-Reformat review modal.
  *
  * @param {object} params
  * @param {object[]} params.chunks - Validated reformatted records from reformatDocument()
  *        (each carries entry_type/name/aliases/affiliation/traits/relationships/keywords/body
- *        plus _nameGrounded/_ungroundedAliases from the hallucination guardrail)
+ *        plus _nameGrounded/_ungroundedAliases from the hard hallucination guardrail, and
+ *        _ungroundedKeywords from the softer, advisory-only keyword grounding check)
  * @param {string[]} params.warnings - Batch-level warnings (truncation, per-batch failures)
  * @param {string} params.sourceText - Full prepared source text, shown read-only for reference
  * @param {string} params.sourceName
@@ -135,6 +175,17 @@ function _recordCardHtml(record) {
            </div>`
         : '';
 
+    // Advisory-only, deliberately softer than warningHtml above: keywords are
+    // allowed to be inferred/thematic (unlike name/aliases), so a fuzzy-match
+    // miss here is common and often fine — not a hallucination signal on its
+    // own. Never contributes to the card-flagged styling below.
+    const keywordAdvisoryHtml = record._ungroundedKeywords?.length
+        ? `<div class="vectfox-rr-keyword-advisory">
+             <i class="fa-solid fa-circle-info"></i>
+             Keyword(s) not closely matched in the source text (normal for inferred/thematic terms — just check they weren't fabricated): ${_escapeHtml(record._ungroundedKeywords.join(', '))}.
+           </div>`
+        : '';
+
     return `
         <div class="vectfox-rr-card ${ungrounded ? 'vectfox-rr-card-flagged' : ''}" data-id="${record._id}">
             <div class="vectfox-rr-card-header">
@@ -148,6 +199,7 @@ function _recordCardHtml(record) {
                 </select>
             </div>
             ${warningHtml}
+            ${keywordAdvisoryHtml}
             <div class="vectfox-rr-field-row">
                 <label>Name</label>
                 <input type="text" class="vectfox-rr-field" data-field="name" value="${_escapeHtml(record.name)}" />
@@ -170,7 +222,7 @@ function _recordCardHtml(record) {
             </div>
             <div class="vectfox-rr-field-row">
                 <label>Keywords</label>
-                <input type="text" class="vectfox-rr-field" data-field="keywords" value="${_escapeHtml(_csv(record.keywords))}" placeholder="comma-separated" />
+                <input type="text" class="vectfox-rr-field" data-field="keywords" value="${_escapeHtml(_keywordsToCsv(record.keywords))}" placeholder="comma-separated, most important first" />
             </div>
             <div class="vectfox-rr-field-row vectfox-rr-field-row-body">
                 <label>Body</label>
@@ -222,7 +274,7 @@ function _collectRecordFromCard(cardEl) {
         affiliation: String(get('affiliation') || '').trim(),
         traits: _parseCsv(get('traits')),
         relationships: _parseCsv(get('relationships')),
-        keywords: _parseCsv(get('keywords')),
+        keywords: _parseKeywordsCsv(get('keywords'), original.keywords),
         body: String(get('body') || '').trim(),
         _accepted: card.find('.vectfox-rr-accept-toggle').prop('checked'),
     };

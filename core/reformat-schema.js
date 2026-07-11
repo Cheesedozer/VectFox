@@ -87,6 +87,45 @@ function ensureArray(val) {
     return [...new Set(val.map(s => (typeof s === 'string' ? s.trim() : String(s ?? '').trim())).filter(Boolean))];
 }
 
+/**
+ * Coerce + dedupe a raw `keywords` field into {text, importance}[]. Accepts
+ * either a plain string (legacy shape, or a model that ignored the importance
+ * instruction — defaults to mid-scale 5) or a {text, importance} object.
+ * importance is clamped the same way eventbase-schema.js clamps its own
+ * `importance` field — duplicated locally rather than imported, per this
+ * file's independence rule (see file docstring).
+ * @param {unknown} val
+ * @returns {{text: string, importance: number}[]}
+ */
+function ensureKeywords(val) {
+    if (!Array.isArray(val)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const item of val) {
+        let text = '';
+        let rawImportance = 5;
+        if (typeof item === 'string') {
+            text = item.trim();
+        } else if (item && typeof item === 'object') {
+            text = typeof item.text === 'string' ? item.text.trim() : '';
+            rawImportance = item.importance;
+        }
+        if (!text) continue;
+
+        const key = text.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const parsedImportance = Number(rawImportance);
+        const importance = Number.isFinite(parsedImportance)
+            ? Math.round(Math.max(1, Math.min(10, parsedImportance)))
+            : 5;
+
+        out.push({ text, importance });
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Validator
 // ---------------------------------------------------------------------------
@@ -134,7 +173,7 @@ export function validateReformattedChunk(raw) {
         affiliation,
         traits: ensureArray((/** @type {any} */ (raw)).traits),
         relationships: ensureArray((/** @type {any} */ (raw)).relationships),
-        keywords: ensureArray((/** @type {any} */ (raw)).keywords),
+        keywords: ensureKeywords((/** @type {any} */ (raw)).keywords),
         body,
     };
 
@@ -222,6 +261,42 @@ export function computeNameVerification(chunks, sourceText, threshold = 0.8) {
     });
 }
 
+/**
+ * Softer default than DEFAULT_NAME_FUZZY_THRESHOLD (0.8) — see
+ * computeKeywordVerification's docstring for why keywords need a looser bar.
+ */
+const DEFAULT_KEYWORD_FUZZY_THRESHOLD = 0.7;
+
+/**
+ * Advisory grounding check for `keywords` — NOT a hallucination guardrail in
+ * the same sense as computeNameVerification. A name/alias is expected to
+ * appear (near-)literally in the source, so a miss is a strong hallucination
+ * signal. Keywords are explicitly allowed to be inferred/thematic (the
+ * prompt asks for "search terms someone might use to recall this entry"),
+ * e.g. "betrayal" for a scene that never uses that word — so a miss here is
+ * common and often fine. Callers should render this as a soft, informational
+ * note, never the hard "verify this wasn't invented" treatment used for
+ * names/aliases.
+ *
+ * @param {object[]} chunks - Validated reformatted chunks (from validateReformattedChunk)
+ * @param {string} sourceText - The batch's source text the chunks were extracted from
+ * @param {number} [threshold=DEFAULT_KEYWORD_FUZZY_THRESHOLD] - Minimum similarity to count as grounded
+ * @returns {Array<{ungroundedKeywords: string[]}>} Parallel to `chunks`
+ */
+export function computeKeywordVerification(chunks, sourceText, threshold = DEFAULT_KEYWORD_FUZZY_THRESHOLD) {
+    if (!Array.isArray(chunks)) return [];
+    if (!sourceText) return chunks.map(() => ({ ungroundedKeywords: [] }));
+
+    return chunks.map(chunk => {
+        const keywords = Array.isArray(chunk?.keywords) ? chunk.keywords : [];
+        const ungroundedKeywords = keywords
+            .map(kw => (typeof kw === 'string' ? kw : kw?.text))
+            .filter(Boolean)
+            .filter(text => !isNameGroundedInSource(text, sourceText, threshold));
+        return { ungroundedKeywords };
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Extraction prompt builder
 // ---------------------------------------------------------------------------
@@ -246,7 +321,7 @@ Output ONLY a JSON array. Each element must have exactly these fields:
   "affiliation": string — group/faction/allegiance this entry belongs to, or "" if not applicable,
   "traits": string[] — short factual descriptors (abilities, role, notable qualities),
   "relationships": string[] — short statements of how this entry relates to other named entries,
-  "keywords": string[] — additional search terms someone might use to recall this entry,
+  "keywords": [{"text": string, "importance": number 1-10}] — additional search terms someone might use to recall this entry; importance = how central that term is to this entry (10 = essential/defining, e.g. a character's signature ability; 1 = minor/tangential, e.g. an incidental location mention),
   "body": string — the actual retrievable prose for this entry, written so it stands alone (resolve pronouns to the actual name where the source only used "he"/"she"/"they")
 }
 
@@ -262,8 +337,8 @@ Input excerpt:
 ***Ember Corps*** — Los Angeles. **Lead Hero:** Solaris. **Spark:** Inferno Drive — controls fire at extreme temperatures."
 Correct output (two SEPARATE entries, not one merged entry):
 [
-  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","traits":["Transformation-type Spark: Fortress","can transform hide into indestructible metal"],"relationships":[],"keywords":["Ironclad","New York City","Fortress"],"body":"Bulwark (Eleanor Graves) is the lead hero of Ironclad Agency, based in New York City. Her Spark, \\"Fortress\\" (Transformation-type), lets Bulwark transform her hide into indestructible metal."},
-  {"entry_type":"character","name":"Solaris","aliases":[],"affiliation":"Ember Corps","traits":["Emitter-type Spark: Inferno Drive","controls fire at extreme temperatures"],"relationships":[],"keywords":["Ember Corps","Los Angeles","Inferno Drive"],"body":"Solaris is the lead hero of Ember Corps, based in Los Angeles. Her Spark, \\"Inferno Drive\\", lets Solaris control fire at extreme temperatures."}
+  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","traits":["Transformation-type Spark: Fortress","can transform hide into indestructible metal"],"relationships":[],"keywords":[{"text":"Fortress","importance":9},{"text":"Ironclad","importance":6},{"text":"New York City","importance":4}],"body":"Bulwark (Eleanor Graves) is the lead hero of Ironclad Agency, based in New York City. Her Spark, \\"Fortress\\" (Transformation-type), lets Bulwark transform her hide into indestructible metal."},
+  {"entry_type":"character","name":"Solaris","aliases":[],"affiliation":"Ember Corps","traits":["Emitter-type Spark: Inferno Drive","controls fire at extreme temperatures"],"relationships":[],"keywords":[{"text":"Inferno Drive","importance":9},{"text":"Ember Corps","importance":6},{"text":"Los Angeles","importance":4}],"body":"Solaris is the lead hero of Ember Corps, based in Los Angeles. Her Spark, \\"Inferno Drive\\", lets Solaris control fire at extreme temperatures."}
 ]
 
 EXAMPLE — a topic/lore section with no distinct named entity:
@@ -271,7 +346,7 @@ Input excerpt:
 "## Spark Classification System — Sparks fall into four categories based on how they manifest: Emitter (generate/control without permanent change), Transformation (temporary physical change), Mutant (permanent physical change), and Accumulation (must store energy before use)."
 Correct output (ONE concept entry, not split per category unless categories are independently discussed at length elsewhere):
 [
-  {"entry_type":"concept","name":"Spark Classification System","aliases":[],"affiliation":"","traits":["four categories: Emitter, Transformation, Mutant, Accumulation"],"relationships":[],"keywords":["Spark types","classification","Emitter","Transformation","Mutant","Accumulation"],"body":"Sparks fall into four categories based on how they manifest: Emitter-type (generate/control something without permanent physical change), Transformation-type (temporary physical change while active), Mutant-type (permanent physical change), and Accumulation-type (must store energy/resource before it can be used)."}
+  {"entry_type":"concept","name":"Spark Classification System","aliases":[],"affiliation":"","traits":["four categories: Emitter, Transformation, Mutant, Accumulation"],"relationships":[],"keywords":[{"text":"Spark types","importance":7},{"text":"Emitter","importance":6},{"text":"Transformation","importance":6},{"text":"Mutant","importance":6},{"text":"Accumulation","importance":6},{"text":"classification","importance":4}],"body":"Sparks fall into four categories based on how they manifest: Emitter-type (generate/control something without permanent physical change), Transformation-type (temporary physical change while active), Mutant-type (permanent physical change), and Accumulation-type (must store energy/resource before it can be used)."}
 ]
 
 {{continuationNote}}

@@ -153,6 +153,27 @@
     margin-top: 1px;
 }
 
+/* Deliberately softer/neutral than .vectfox-rr-hallucination-warning above —
+   keywords are allowed to be inferred/thematic, so this is advisory, not a
+   hallucination alarm. Never pairs with .vectfox-rr-card-flagged. */
+.vectfox-rr-keyword-advisory {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--vectfox-primary) 10%, transparent);
+    font-size: 0.8em;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
+.vectfox-rr-keyword-advisory i {
+    color: var(--vectfox-primary);
+    margin-top: 1px;
+}
+
 .vectfox-rr-field-row {
     display: grid;
     grid-template-columns: 100px 1fr;
