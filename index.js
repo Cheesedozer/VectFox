@@ -339,6 +339,7 @@ const defaultSettings = {
     reformat_concurrency: 2,            // Parallel batch chains
     reformat_max_body_chars: 2000,      // Oversize-entity ceiling — falls back to the adaptive splitter above this
     reformat_name_fuzzy_threshold: 0.8, // Hallucination guardrail — min similarity to count a name as source-grounded
+    reformat_enable_linking_pass: false, // Second LLM pass linking entities across batches — doubles LLM calls per document
     reformat_custom_prompt: '',
 
     // ─── Hidden / Power-User ────────────────────────────────────────────

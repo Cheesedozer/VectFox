@@ -683,11 +683,16 @@ export function renderSettings(containerId, settings, callbacks) {
                             </label>
                             <input id="VectFox_reformat_timeout_ms" type="number" class="vectfox-input" min="10000" step="1000" style="width:140px;" />
 
+                            <label class="checkbox_label" style="margin-top:10px;" title="Runs a second LLM pass over the document that cross-references every extracted entry against every section, backfilling relationships the single-pass extraction missed (entities mentioned in each other's sections but extracted separately). Doubles the number of LLM calls per document.">
+                                <input type="checkbox" id="VectFox_reformat_enable_linking_pass" />
+                                <small>Relationship Linking Pass (2x LLM calls)</small>
+                            </label>
+
                             <label for="VectFox_reformat_custom_prompt" style="margin-top:10px; display:block;">
                                 <small>Custom Extraction Prompt (advanced)</small>
                             </label>
                             <textarea id="VectFox_reformat_custom_prompt" class="vectfox-input" rows="3"
-                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/relationships/keywords/body fields."
+                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/keywords/body fields plus relationships as [{target, type}] objects."
                                 style="margin-top:4px;"></textarea>
 
                             <!-- Query (ChunkBase-only) -->
@@ -2763,6 +2768,14 @@ function bindSettingsEvents(settings, callbacks) {
         .on('change input', function() {
             const v = Number($(this).val());
             settings.reformat_timeout_ms = Math.max(10000, v || 90000);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#VectFox_reformat_enable_linking_pass')
+        .prop('checked', settings.reformat_enable_linking_pass || false)
+        .on('change', function() {
+            settings.reformat_enable_linking_pass = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

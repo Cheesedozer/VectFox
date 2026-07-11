@@ -30,6 +30,7 @@ import {
     ReformatFatalError,
     validateReformattedChunk,
     buildReformatPrompt,
+    buildLinkingPrompt,
     computeNameVerification,
     computeKeywordVerification,
 } from './reformat-schema.js';
@@ -242,9 +243,12 @@ async function _callProviderWithRetry(prompt, settings, batchIndex) {
 /**
  * @param {string} raw
  * @param {number} [batchIndex]
+ * @param {string[]} [keyFields] - An array candidate is accepted when its first
+ *        item has ANY of these keys. Defaults to the entry-record shape; the
+ *        linking pass passes ['source', 'target'] for its triple shape.
  * @returns {unknown[]}
  */
-function _parseReformatArray(raw, batchIndex = -1) {
+function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'name', 'body']) {
     let text = (raw || '').trim();
 
     if (text.startsWith('```')) {
@@ -338,9 +342,7 @@ function _parseReformatArray(raw, batchIndex = -1) {
         if (!Array.isArray(arr) || arr.length === 0) return false;
         const first = arr[0];
         if (!first || typeof first !== 'object' || Array.isArray(first)) return false;
-        return Object.prototype.hasOwnProperty.call(first, 'entry_type')
-            || Object.prototype.hasOwnProperty.call(first, 'name')
-            || Object.prototype.hasOwnProperty.call(first, 'body');
+        return keyFields.some(key => Object.prototype.hasOwnProperty.call(first, key));
     };
     const chosen = candidates.find(isReformatArray) ?? candidates.find(arr => Array.isArray(arr) && arr.length === 0);
 
@@ -520,6 +522,199 @@ async function _processChain(chain, settings, chainIndex, warnings) {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicate-entity merge
+// ---------------------------------------------------------------------------
+
+/** Lowercased, trimmed match keys for one record: its name plus all aliases. */
+function _entityKeys(record) {
+    return [record?.name, ...(Array.isArray(record?.aliases) ? record.aliases : [])]
+        .map(s => (typeof s === 'string' ? s.trim().toLowerCase() : ''))
+        .filter(Boolean);
+}
+
+/** Dedup key for a relationship; tolerates legacy plain-string entries. */
+function _relationshipKey(rel) {
+    if (typeof rel === 'string') return rel.trim().toLowerCase();
+    return `${(rel?.target || '').trim().toLowerCase()}|${(rel?.type || '').trim().toLowerCase()}`;
+}
+
+/** Case-insensitive union of two string arrays, keeping first-seen casing. */
+function _unionStrings(a, b) {
+    const seen = new Set();
+    const out = [];
+    for (const s of [...a, ...b]) {
+        const key = (typeof s === 'string' ? s : '').trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(s.trim());
+    }
+    return out;
+}
+
+/**
+ * Merges duplicate entity records produced by independent parallel chains.
+ * The per-chain "already extracted names" mechanism (_processChain) can't see
+ * across chains, so an entity discussed in two document sections gets
+ * extracted twice — e.g. one Fur Reich run produced IG Tatzen ×2 and Gestapo
+ * ×3, each copy carrying a different (often empty) relationships list.
+ *
+ * Detection is deliberately conservative: exact case-insensitive match on
+ * name/aliases, and only within the same entry_type (a location and a
+ * character sharing a name must not merge). No fuzzy matching — a
+ * false-positive merge silently destroys a record, while a false negative
+ * just leaves today's status quo.
+ *
+ * Merge policy: union aliases/traits (case-insensitive), union keywords by
+ * text keeping max importance, union relationships by target+type, first
+ * non-empty affiliation, LONGEST body wins (concatenating would put
+ * redundant/contradictory prose into the embedded + injected text).
+ * Grounding flags: _nameGrounded ORs; _ungrounded* lists union.
+ *
+ * @param {object[]} chunks - Validated records (post _processChain), document order
+ * @returns {object[]} Merged records, first-occurrence order
+ */
+export function mergeDuplicateEntities(chunks) {
+    if (!Array.isArray(chunks) || chunks.length < 2) return Array.isArray(chunks) ? chunks : [];
+
+    /** @type {Map<string, object>} `${entry_type}::${nameOrAlias}` → merged record */
+    const byKey = new Map();
+    const merged = [];
+
+    for (const record of chunks) {
+        const keys = _entityKeys(record).map(k => `${record?.entry_type || 'other'}::${k}`);
+        const existing = keys.map(k => byKey.get(k)).find(Boolean);
+
+        if (!existing) {
+            const copy = { ...record };
+            merged.push(copy);
+            for (const k of keys) byKey.set(k, copy);
+            continue;
+        }
+
+        // Absorb `record` into `existing` (first occurrence wins name/order).
+        const incomingNames = record.name && record.name.trim().toLowerCase() !== existing.name.trim().toLowerCase()
+            ? [record.name]
+            : [];
+        existing.aliases = _unionStrings(existing.aliases || [], [...incomingNames, ...(record.aliases || [])])
+            .filter(a => a.toLowerCase() !== existing.name.trim().toLowerCase());
+        existing.traits = _unionStrings(existing.traits || [], record.traits || []);
+
+        if (!existing.affiliation && record.affiliation) existing.affiliation = record.affiliation;
+        if ((record.body || '').length > (existing.body || '').length) existing.body = record.body;
+
+        const relSeen = new Set((existing.relationships || []).map(_relationshipKey));
+        for (const rel of record.relationships || []) {
+            const key = _relationshipKey(rel);
+            if (!key || relSeen.has(key)) continue;
+            relSeen.add(key);
+            existing.relationships = [...(existing.relationships || []), rel];
+        }
+
+        const kwByText = new Map();
+        for (const kw of [...(existing.keywords || []), ...(record.keywords || [])]) {
+            const text = typeof kw === 'string' ? kw : kw?.text;
+            if (!text) continue;
+            const key = text.toLowerCase();
+            const importance = typeof kw === 'object' ? kw?.importance ?? 5 : 5;
+            const prev = kwByText.get(key);
+            if (!prev || importance > (prev.importance ?? 5)) kwByText.set(key, { text, importance });
+        }
+        existing.keywords = [...kwByText.values()];
+
+        existing._nameGrounded = Boolean(existing._nameGrounded) || Boolean(record._nameGrounded);
+        existing._ungroundedAliases = _unionStrings(existing._ungroundedAliases || [], record._ungroundedAliases || []);
+        existing._ungroundedKeywords = _unionStrings(existing._ungroundedKeywords || [], record._ungroundedKeywords || []);
+
+        // The absorbed record's keys (incl. newly-gained aliases) now resolve here too.
+        for (const k of keys) byKey.set(k, existing);
+    }
+
+    return merged;
+}
+
+// ---------------------------------------------------------------------------
+// Optional cross-batch linking pass
+// ---------------------------------------------------------------------------
+
+/**
+ * Second LLM pass (opt-in via settings.reformat_enable_linking_pass) that
+ * backfills relationships the single-pass extraction structurally cannot see:
+ * each extraction batch only knows its own text, so a connection between an
+ * entity extracted in batch 2 and one extracted in batch 7 is invisible to
+ * both calls. This pass re-reads each batch's text alongside a catalog of
+ * EVERY merged entity in the document and asks only for {source, target, type}
+ * triples between catalog entries.
+ *
+ * Hallucination guard: a triple is applied only when BOTH source and target
+ * resolve (case-insensitive, name or alias) to a merged record — the model
+ * cannot introduce entities, only connect existing ones. Mutates the records'
+ * `relationships` in place (deduped by target+type). Per-batch failures are
+ * non-fatal warnings, same policy as _processChain.
+ *
+ * @param {object} params
+ * @param {Array<{text: string}>} params.batches - The SAME batches used for extraction
+ * @param {object[]} params.records - Merged records (post mergeDuplicateEntities)
+ * @param {object} params.settings
+ * @param {string[]} params.warnings - Mutated: per-batch failure notes appended
+ * @param {number} params.concurrency
+ * @param {AbortSignal|null} params.abortSignal
+ * @param {(() => void)|null} params.onTick - Called once per finished link batch (progress)
+ * @returns {Promise<{applied: number, dropped: number}>}
+ */
+async function _runLinkingPass({ batches, records, settings, warnings, concurrency, abortSignal = null, onTick = null }) {
+    const catalog = records.map(r => ({ name: r.name, entry_type: r.entry_type, aliases: r.aliases || [] }));
+
+    /** @type {Map<string, object>} lowercased name/alias → record (first registration wins) */
+    const resolver = new Map();
+    for (const r of records) {
+        for (const key of _entityKeys(r)) {
+            if (!resolver.has(key)) resolver.set(key, r);
+        }
+    }
+
+    let applied = 0;
+    let dropped = 0;
+
+    const linkFns = batches.map((batch, i) => async () => {
+        if (abortSignal?.aborted) {
+            const err = new Error('Auto-Reformat stopped by user');
+            err.name = 'AbortError';
+            throw err;
+        }
+        try {
+            const prompt = buildLinkingPrompt(batch.text, catalog);
+            const { reply } = await _callProviderWithRetry(prompt, settings, i);
+            const triples = _parseReformatArray(reply, i, ['source', 'target']);
+
+            for (const t of triples) {
+                const source = resolver.get(String((/** @type {any} */ (t))?.source || '').trim().toLowerCase());
+                const target = resolver.get(String((/** @type {any} */ (t))?.target || '').trim().toLowerCase());
+                if (!source || !target || source === target) {
+                    dropped++;
+                    continue;
+                }
+                // Canonicalize target to the resolved record's name so alias-form
+                // triples don't create near-duplicate relationship entries.
+                const rel = { target: target.name, type: String((/** @type {any} */ (t))?.type || '').trim() };
+                const existingKeys = new Set((source.relationships || []).map(_relationshipKey));
+                if (existingKeys.has(_relationshipKey(rel))) continue;
+                source.relationships = [...(source.relationships || []), rel];
+                applied++;
+            }
+        } catch (err) {
+            if (err instanceof ReformatFatalError || err?.name === 'AbortError') throw err;
+            warnings.push(`Linking pass, batch ${i}: ${err?.message || err} — skipped, extraction results are unaffected.`);
+            log.warn(`[Auto-Reformat] Linking pass batch ${i} failed:`, err?.message || err);
+        }
+        onTick?.();
+    });
+
+    await AsyncUtils.parallel(linkFns, concurrency);
+    log.lifecycle(`[Auto-Reformat] Linking pass: ${applied} relationship(s) added, ${dropped} unresolvable triple(s) dropped`);
+    return { applied, dropped };
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
@@ -553,8 +748,12 @@ export async function reformatDocument({ text, contentType, settings, onProgress
     let batchesFailed = 0;
 
     const concurrency = Math.max(1, Math.min(8, settings.reformat_concurrency || DEFAULT_CONCURRENCY));
+    const linkingEnabled = Boolean(settings.reformat_enable_linking_pass);
+    // The linking pass re-visits every batch, so the progress denominator
+    // doubles when it's enabled — keeps the UI's "(done/total)" counter truthful.
+    const progressTotal = linkingEnabled ? totalBatches * 2 : totalBatches;
 
-    log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${totalBatches} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}`);
+    log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${totalBatches} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
 
     const chainFns = chains.map((chain, chainIndex) => async () => {
         if (abortSignal?.aborted) {
@@ -565,12 +764,36 @@ export async function reformatDocument({ text, contentType, settings, onProgress
         const { results, failedCount } = await _processChain(chain, settings, chainIndex, warnings);
         batchesProcessed += chain.length;
         batchesFailed += failedCount;
-        onProgress?.(batchesProcessed, totalBatches);
+        onProgress?.(batchesProcessed, progressTotal);
         return results;
     });
 
     const chainResultsArrays = await AsyncUtils.parallel(chainFns, concurrency);
-    const chunks = chainResultsArrays.flat();
+    const rawChunks = chainResultsArrays.flat();
+
+    // Chains run in parallel with no cross-chain visibility, so the same entity
+    // can be extracted once per section that discusses it — merge those here so
+    // the review UI (and the linking pass below) see one record per entity.
+    const chunks = mergeDuplicateEntities(rawChunks);
+    if (chunks.length < rawChunks.length) {
+        warnings.push(`Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was extracted from multiple document sections.`);
+    }
+
+    if (linkingEnabled && chunks.length > 0) {
+        let linkBatchesDone = 0;
+        await _runLinkingPass({
+            batches,
+            records: chunks,
+            settings,
+            warnings,
+            concurrency,
+            abortSignal,
+            onTick: () => {
+                linkBatchesDone++;
+                onProgress?.(batchesProcessed + linkBatchesDone, progressTotal);
+            },
+        });
+    }
 
     log.lifecycle(`[Auto-Reformat] Complete: ${chunks.length} entries extracted from ${totalBatches} batch(es), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
 

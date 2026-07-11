@@ -14,6 +14,7 @@ import {
     computeKeywordVerification,
     buildReformatPrompt,
     buildRelationalClause,
+    buildLinkingPrompt,
 } from '../core/reformat-schema.js';
 
 describe('validateReformattedChunk', () => {
@@ -125,7 +126,7 @@ describe('validateReformattedChunk', () => {
         expect(chunk.keywords).toEqual([]);
     });
 
-    it('coerces a relationship object into readable text instead of "[object Object]", and reports it', () => {
+    it('accepts canonical {target, type} relationships without warnings and never produces "[object Object]"', () => {
         const { ok, errors, chunk } = validateReformattedChunk({
             entry_type: 'organization',
             name: 'Empire of the Rising Sun',
@@ -134,24 +135,54 @@ describe('validateReformattedChunk', () => {
         });
 
         expect(ok).toBe(true);
-        expect(chunk.relationships).toEqual(['The Reich — alliance']);
-        expect(chunk.relationships.join(' ')).not.toContain('[object Object]');
-        expect(errors.some(e => /relationships.*object/.test(e))).toBe(true);
+        expect(chunk.relationships).toEqual([{ target: 'The Reich', type: 'alliance' }]);
+        expect(JSON.stringify(chunk.relationships)).not.toContain('[object Object]');
+        expect(errors).toEqual([]);
     });
 
-    it('falls back to JSON.stringify for a relationship object with no recognizable keys', () => {
+    it('coerces a legacy plain-string relationship to {target, type:""} and reports the reshaping', () => {
+        const { chunk, errors } = validateReformattedChunk({
+            entry_type: 'organization',
+            name: 'Waffen-SS',
+            body: 'Y',
+            relationships: ['Schutzstaffel (parent organization)'],
+        });
+
+        // Parentheticals are deliberately NOT parsed out of strings — parens
+        // legitimately appear in entity names.
+        expect(chunk.relationships).toEqual([{ target: 'Schutzstaffel (parent organization)', type: '' }]);
+        expect(errors.some(e => /relationships.*reshaping/.test(e))).toBe(true);
+    });
+
+    it('accepts alternate object keys (name/relation) for relationships and reports the reshaping', () => {
         const { chunk, errors } = validateReformattedChunk({
             entry_type: 'organization',
             name: 'X',
             body: 'Y',
-            relationships: [{ unrecognizedKey: 'value' }],
+            relationships: [{ name: 'Reich', relation: 'ally' }],
         });
 
-        expect(chunk.relationships).toEqual(['{"unrecognizedKey":"value"}']);
-        expect(errors.some(e => /relationships.*object/.test(e))).toBe(true);
+        expect(chunk.relationships).toEqual([{ target: 'Reich', type: 'ally' }]);
+        expect(errors.some(e => /relationships.*reshaping/.test(e))).toBe(true);
     });
 
-    it('applies the same object-coercion safety net to aliases and traits', () => {
+    it('dedupes relationships by case-insensitive target+type and drops items with no resolvable target', () => {
+        const { chunk, errors } = validateReformattedChunk({
+            entry_type: 'organization',
+            name: 'X',
+            body: 'Y',
+            relationships: [
+                { target: 'Reich', type: 'ally' },
+                { target: 'reich', type: 'ALLY' },
+                { unrecognizedKey: 'value' },
+            ],
+        });
+
+        expect(chunk.relationships).toEqual([{ target: 'Reich', type: 'ally' }]);
+        expect(errors.some(e => /relationships.*no resolvable target/.test(e))).toBe(true);
+    });
+
+    it('applies the object-coercion safety net to aliases and traits', () => {
         const { chunk, errors } = validateReformattedChunk({
             entry_type: 'character',
             name: 'X',
@@ -164,16 +195,6 @@ describe('validateReformattedChunk', () => {
         expect(chunk.traits).toEqual(['Superhuman strength']);
         expect(errors.some(e => /aliases.*object/.test(e))).toBe(true);
         expect(errors.some(e => /traits.*object/.test(e))).toBe(true);
-    });
-
-    it('does not report a coercion warning for well-formed plain-string arrays', () => {
-        const { errors } = validateReformattedChunk({
-            entry_type: 'character',
-            name: 'X',
-            body: 'Y',
-            relationships: ['Leader of the Inner Circle'],
-        });
-        expect(errors).toEqual([]);
     });
 });
 
@@ -313,28 +334,63 @@ describe('buildRelationalClause', () => {
         expect(buildRelationalClause('The Reich', [])).toBe(' Affiliated with The Reich.');
     });
 
-    it('includes only the relationships clause when affiliation is empty', () => {
-        expect(buildRelationalClause('', ['Leader of the Inner Circle'])).toBe(' Related: Leader of the Inner Circle.');
+    it('renders {target, type} with the type parenthesized, joined by semicolons', () => {
+        expect(buildRelationalClause('', [
+            { target: 'Schutzstaffel', type: 'parent organization' },
+            { target: 'Oberkatze', type: 'leader' },
+        ])).toBe(' Related: Schutzstaffel (parent organization); Oberkatze (leader).');
     });
 
-    it('joins multiple relationships with semicolons', () => {
-        expect(buildRelationalClause('', ['Schutzstaffel (parent organization)', 'Reports to Oberkatze']))
-            .toBe(' Related: Schutzstaffel (parent organization); Reports to Oberkatze.');
+    it('omits the parenthetical when type is empty', () => {
+        expect(buildRelationalClause('', [{ target: 'Oberkatze', type: '' }]))
+            .toBe(' Related: Oberkatze.');
+    });
+
+    it('tolerates legacy plain-string relationships, rendering them as-is', () => {
+        expect(buildRelationalClause('', ['Leader of the Inner Circle', { target: 'Reich', type: 'ally' }]))
+            .toBe(' Related: Leader of the Inner Circle; Reich (ally).');
     });
 
     it('combines affiliation and relationships in one trailer', () => {
-        expect(buildRelationalClause('Reich', ['Leader of the Inner Circle']))
-            .toBe(' Affiliated with Reich. Related: Leader of the Inner Circle.');
+        expect(buildRelationalClause('Reich', [{ target: 'Inner Circle', type: 'leader' }]))
+            .toBe(' Affiliated with Reich. Related: Inner Circle (leader).');
     });
 
-    it('trims whitespace and drops blank relationship entries', () => {
-        expect(buildRelationalClause('  Reich  ', ['  ', 'Leader of the Inner Circle  ', '']))
-            .toBe(' Affiliated with Reich. Related: Leader of the Inner Circle.');
+    it('trims whitespace and drops entries with no target', () => {
+        expect(buildRelationalClause('  Reich  ', [{ target: '  ', type: 'x' }, { target: ' Inner Circle ', type: '' }, null]))
+            .toBe(' Affiliated with Reich. Related: Inner Circle.');
     });
 
     it('is appendable directly onto a body string with a single leading space', () => {
-        const clause = buildRelationalClause('Reich', ['Leader of the Inner Circle']);
+        const clause = buildRelationalClause('Reich', [{ target: 'Inner Circle', type: 'leader' }]);
         const body = 'Oberkatze rose to power through the movement.';
-        expect(body + clause).toBe('Oberkatze rose to power through the movement. Affiliated with Reich. Related: Leader of the Inner Circle.');
+        expect(body + clause).toBe('Oberkatze rose to power through the movement. Affiliated with Reich. Related: Inner Circle (leader).');
+    });
+});
+
+describe('buildLinkingPrompt', () => {
+    const catalog = [
+        { name: 'Victory Plaza', entry_type: 'location', aliases: ['Times Square'] },
+        { name: 'Capital Punishment in the Reich', entry_type: 'concept', aliases: [] },
+    ];
+
+    it('lists every catalog entity with its type, including aliases when present', () => {
+        const prompt = buildLinkingPrompt('Some section text.', catalog);
+        expect(prompt).toContain('- Victory Plaza [location] (also known as: Times Square)');
+        expect(prompt).toContain('- Capital Punishment in the Reich [concept]');
+        expect(prompt).not.toContain('Capital Punishment in the Reich [concept] (also known as');
+    });
+
+    it('embeds the batch text and asks for {source, target, type} triples only', () => {
+        const prompt = buildLinkingPrompt('Executions are held in Victory Plaza.', catalog);
+        expect(prompt).toContain('Executions are held in Victory Plaza.');
+        expect(prompt).toMatch(/"source":.*"target":.*"type":/s);
+        expect(prompt).toMatch(/MUST both be names from the CATALOG/);
+    });
+
+    it('handles an empty catalog without crashing', () => {
+        const prompt = buildLinkingPrompt('Text.', []);
+        expect(typeof prompt).toBe('string');
+        expect(prompt).toContain('Text.');
     });
 });
