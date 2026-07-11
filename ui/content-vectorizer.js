@@ -989,6 +989,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
+        const { buildRelationalClause } = await import('../core/reformat-schema.js');
 
         const maxBodyChars = mergedSettings.reformat_max_body_chars || 2000;
         const previous = getReformatCache(sourceHash);
@@ -998,7 +999,11 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             const expanded = await expandOversizedChunk(record, maxBodyChars);
             for (const piece of expanded) {
                 shapedChunks.push({
-                    text: piece.body,
+                    // affiliation/relationships are otherwise inert metadata (never read by
+                    // embedding, search, or the block injected into the roleplay model's
+                    // context) — fold them into the stored/embedded text so they actually
+                    // reach retrieval. See buildRelationalClause's docstring.
+                    text: piece.body + buildRelationalClause(piece.affiliation, piece.relationships),
                     metadata: {
                         chunkIndex: shapedChunks.length,
                         totalChunks: 0, // patched below once the final count is known

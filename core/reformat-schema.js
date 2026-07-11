@@ -76,15 +76,59 @@ export class ReformatFatalError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * Deduplicate + trim an array of strings; drop empties.
+ * Coerces a single array item to a display string. Models occasionally ignore
+ * the "array of strings" instruction and emit a structured relation object
+ * instead (e.g. {target: "Reich", type: "alliance"}) — most often for
+ * `relationships`, which invites that shape. Naively falling through to
+ * `String(obj)` produces the literal text "[object Object]", which then gets
+ * stored, embedded, and shown to the user as if it were real content. Pull
+ * readable text out of common keys instead, and only fall back to
+ * JSON.stringify (never the bare `[object Object]` coercion) if none match.
+ * @param {unknown} item
+ * @returns {{text: string, wasObjectCoercion: boolean}}
+ */
+function coerceArrayItem(item) {
+    if (typeof item === 'string') return { text: item.trim(), wasObjectCoercion: false };
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const parts = ['target', 'name', 'description', 'relation', 'type']
+            .map(key => (/** @type {any} */ (item))[key])
+            .filter(v => typeof v === 'string' && v.trim());
+        if (parts.length > 0) {
+            return { text: [...new Set(parts)].join(' — ').trim(), wasObjectCoercion: true };
+        }
+        try {
+            return { text: JSON.stringify(item), wasObjectCoercion: true };
+        } catch {
+            return { text: '', wasObjectCoercion: true };
+        }
+    }
+    return { text: String(item ?? '').trim(), wasObjectCoercion: false };
+}
+
+/**
+ * Deduplicate + trim an array of strings; drop empties. Coerces stray objects
+ * (see coerceArrayItem) instead of silently degrading to "[object Object]",
+ * and reports how many items needed coercion via `errors` when a fieldName
+ * and errors array are supplied.
  * Duplicated from eventbase-schema.js's helper of the same name rather than
  * imported — see file docstring on independence.
  * @param {unknown} val
+ * @param {string} [fieldName]
+ * @param {string[]} [errors]
  * @returns {string[]}
  */
-function ensureArray(val) {
+function ensureArray(val, fieldName = '', errors = null) {
     if (!Array.isArray(val)) return [];
-    return [...new Set(val.map(s => (typeof s === 'string' ? s.trim() : String(s ?? '').trim())).filter(Boolean))];
+    let objectCoercions = 0;
+    const items = val.map(item => {
+        const { text, wasObjectCoercion } = coerceArrayItem(item);
+        if (wasObjectCoercion) objectCoercions++;
+        return text;
+    }).filter(Boolean);
+    if (objectCoercions > 0 && fieldName && errors) {
+        errors.push(`${fieldName}: ${objectCoercions} item(s) were objects instead of strings — coerced to text`);
+    }
+    return [...new Set(items)];
 }
 
 /**
@@ -169,15 +213,55 @@ export function validateReformattedChunk(raw) {
     const chunk = {
         entry_type,
         name,
-        aliases: ensureArray((/** @type {any} */ (raw)).aliases),
+        aliases: ensureArray((/** @type {any} */ (raw)).aliases, 'aliases', errors),
         affiliation,
-        traits: ensureArray((/** @type {any} */ (raw)).traits),
-        relationships: ensureArray((/** @type {any} */ (raw)).relationships),
+        traits: ensureArray((/** @type {any} */ (raw)).traits, 'traits', errors),
+        relationships: ensureArray((/** @type {any} */ (raw)).relationships, 'relationships', errors),
         keywords: ensureKeywords((/** @type {any} */ (raw)).keywords),
         body,
     };
 
     return { ok: true, errors, chunk };
+}
+
+// ---------------------------------------------------------------------------
+// Relational clause builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a short factual trailer summarizing `affiliation`/`relationships`,
+ * meant to be appended to a record's `body` before it becomes the stored/
+ * embedded `text`. affiliation/relationships are otherwise inert metadata:
+ * they're validated here and shown in the review UI, but nothing downstream
+ * (dense embedding, sparse/BM25 index, or the block injected into the
+ * roleplay model's context — see world-info-integration.js, which reads only
+ * `meta.text`) ever consults them once accepted. Appending this trailer to
+ * `body` is the one change point that gets this connective information into
+ * all three, the same way the `[KEYWORDS: ...]` suffix already does for
+ * keywords (see backends/qdrant.js).
+ *
+ * Deliberately additive/redundant rather than trying to detect whether the
+ * body prose already covers the same ground — that detection is unreliable
+ * (paraphrasing, aliases, case) and the cost of mild repetition is far lower
+ * than the cost of silently omitting the connection again.
+ *
+ * @param {string} affiliation
+ * @param {string[]} relationships
+ * @returns {string} e.g. " Affiliated with the Reich. Related: Leader of the Inner Circle."
+ *          or '' when there's nothing to add.
+ */
+export function buildRelationalClause(affiliation, relationships) {
+    const parts = [];
+
+    const trimmedAffiliation = typeof affiliation === 'string' ? affiliation.trim() : '';
+    if (trimmedAffiliation) parts.push(`Affiliated with ${trimmedAffiliation}.`);
+
+    const cleanRelationships = Array.isArray(relationships)
+        ? relationships.map(r => (typeof r === 'string' ? r.trim() : '')).filter(Boolean)
+        : [];
+    if (cleanRelationships.length > 0) parts.push(`Related: ${cleanRelationships.join('; ')}.`);
+
+    return parts.length > 0 ? ' ' + parts.join(' ') : '';
 }
 
 // ---------------------------------------------------------------------------

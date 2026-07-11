@@ -13,6 +13,7 @@ import {
     computeNameVerification,
     computeKeywordVerification,
     buildReformatPrompt,
+    buildRelationalClause,
 } from '../core/reformat-schema.js';
 
 describe('validateReformattedChunk', () => {
@@ -122,6 +123,57 @@ describe('validateReformattedChunk', () => {
         expect(chunk.traits).toEqual([]);
         expect(chunk.relationships).toEqual([]);
         expect(chunk.keywords).toEqual([]);
+    });
+
+    it('coerces a relationship object into readable text instead of "[object Object]", and reports it', () => {
+        const { ok, errors, chunk } = validateReformattedChunk({
+            entry_type: 'organization',
+            name: 'Empire of the Rising Sun',
+            body: 'A militant feline aristocracy allied with the Reich.',
+            relationships: [{ target: 'The Reich', type: 'alliance' }],
+        });
+
+        expect(ok).toBe(true);
+        expect(chunk.relationships).toEqual(['The Reich — alliance']);
+        expect(chunk.relationships.join(' ')).not.toContain('[object Object]');
+        expect(errors.some(e => /relationships.*object/.test(e))).toBe(true);
+    });
+
+    it('falls back to JSON.stringify for a relationship object with no recognizable keys', () => {
+        const { chunk, errors } = validateReformattedChunk({
+            entry_type: 'organization',
+            name: 'X',
+            body: 'Y',
+            relationships: [{ unrecognizedKey: 'value' }],
+        });
+
+        expect(chunk.relationships).toEqual(['{"unrecognizedKey":"value"}']);
+        expect(errors.some(e => /relationships.*object/.test(e))).toBe(true);
+    });
+
+    it('applies the same object-coercion safety net to aliases and traits', () => {
+        const { chunk, errors } = validateReformattedChunk({
+            entry_type: 'character',
+            name: 'X',
+            body: 'Y',
+            aliases: [{ name: 'The Masked One' }],
+            traits: [{ description: 'Superhuman strength' }],
+        });
+
+        expect(chunk.aliases).toEqual(['The Masked One']);
+        expect(chunk.traits).toEqual(['Superhuman strength']);
+        expect(errors.some(e => /aliases.*object/.test(e))).toBe(true);
+        expect(errors.some(e => /traits.*object/.test(e))).toBe(true);
+    });
+
+    it('does not report a coercion warning for well-formed plain-string arrays', () => {
+        const { errors } = validateReformattedChunk({
+            entry_type: 'character',
+            name: 'X',
+            body: 'Y',
+            relationships: ['Leader of the Inner Circle'],
+        });
+        expect(errors).toEqual([]);
     });
 });
 
@@ -247,5 +299,42 @@ describe('buildReformatPrompt', () => {
     it('uses a customPrompt override instead of the default template', () => {
         const prompt = buildReformatPrompt('MY TEXT', { customPrompt: 'Custom instructions.\n\n{{text}}' });
         expect(prompt).toBe('Custom instructions.\n\nMY TEXT');
+    });
+});
+
+describe('buildRelationalClause', () => {
+    it('returns empty string when both affiliation and relationships are empty', () => {
+        expect(buildRelationalClause('', [])).toBe('');
+        expect(buildRelationalClause('', undefined)).toBe('');
+        expect(buildRelationalClause(undefined, undefined)).toBe('');
+    });
+
+    it('includes only the affiliation clause when relationships is empty', () => {
+        expect(buildRelationalClause('The Reich', [])).toBe(' Affiliated with The Reich.');
+    });
+
+    it('includes only the relationships clause when affiliation is empty', () => {
+        expect(buildRelationalClause('', ['Leader of the Inner Circle'])).toBe(' Related: Leader of the Inner Circle.');
+    });
+
+    it('joins multiple relationships with semicolons', () => {
+        expect(buildRelationalClause('', ['Schutzstaffel (parent organization)', 'Reports to Oberkatze']))
+            .toBe(' Related: Schutzstaffel (parent organization); Reports to Oberkatze.');
+    });
+
+    it('combines affiliation and relationships in one trailer', () => {
+        expect(buildRelationalClause('Reich', ['Leader of the Inner Circle']))
+            .toBe(' Affiliated with Reich. Related: Leader of the Inner Circle.');
+    });
+
+    it('trims whitespace and drops blank relationship entries', () => {
+        expect(buildRelationalClause('  Reich  ', ['  ', 'Leader of the Inner Circle  ', '']))
+            .toBe(' Affiliated with Reich. Related: Leader of the Inner Circle.');
+    });
+
+    it('is appendable directly onto a body string with a single leading space', () => {
+        const clause = buildRelationalClause('Reich', ['Leader of the Inner Circle']);
+        const body = 'Oberkatze rose to power through the movement.';
+        expect(body + clause).toBe('Oberkatze rose to power through the movement. Affiliated with Reich. Related: Leader of the Inner Circle.');
     });
 });
