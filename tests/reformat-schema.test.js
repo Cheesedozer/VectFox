@@ -11,6 +11,7 @@ import {
     REFORMAT_ENTRY_TYPES,
     validateReformattedChunk,
     computeNameVerification,
+    computeKeywordVerification,
     buildReformatPrompt,
 } from '../core/reformat-schema.js';
 
@@ -23,7 +24,7 @@ describe('validateReformattedChunk', () => {
             affiliation: 'Ironclad Agency',
             traits: ['Transformation-type Spark'],
             relationships: [],
-            keywords: ['Ironclad', 'Fortress'],
+            keywords: [{ text: 'Ironclad', importance: 6 }, { text: 'Fortress', importance: 9 }],
             body: 'Bulwark is the lead hero of Ironclad Agency.',
         });
 
@@ -36,9 +37,43 @@ describe('validateReformattedChunk', () => {
             affiliation: 'Ironclad Agency',
             traits: ['Transformation-type Spark'],
             relationships: [],
-            keywords: ['Ironclad', 'Fortress'],
+            keywords: [{ text: 'Ironclad', importance: 6 }, { text: 'Fortress', importance: 9 }],
             body: 'Bulwark is the lead hero of Ironclad Agency.',
         });
+    });
+
+    it('accepts legacy plain-string keywords and defaults their importance to 5', () => {
+        const { chunk } = validateReformattedChunk({
+            entry_type: 'concept', name: 'X', body: 'Y',
+            keywords: ['legacy term'],
+        });
+        expect(chunk.keywords).toEqual([{ text: 'legacy term', importance: 5 }]);
+    });
+
+    it('clamps out-of-range keyword importance to 1-10 and rounds fractional values', () => {
+        const { chunk } = validateReformattedChunk({
+            entry_type: 'concept', name: 'X', body: 'Y',
+            keywords: [
+                { text: 'too high', importance: 99 },
+                { text: 'too low', importance: -5 },
+                { text: 'fractional', importance: 6.7 },
+                { text: 'not a number', importance: 'high' },
+            ],
+        });
+        expect(chunk.keywords).toEqual([
+            { text: 'too high', importance: 10 },
+            { text: 'too low', importance: 1 },
+            { text: 'fractional', importance: 7 },
+            { text: 'not a number', importance: 5 },
+        ]);
+    });
+
+    it('dedupes keywords by case-insensitive text, keeping the first occurrence', () => {
+        const { chunk } = validateReformattedChunk({
+            entry_type: 'concept', name: 'X', body: 'Y',
+            keywords: [{ text: 'Fortress', importance: 9 }, { text: 'FORTRESS', importance: 2 }],
+        });
+        expect(chunk.keywords).toEqual([{ text: 'Fortress', importance: 9 }]);
     });
 
     it('rejects a non-object input', () => {
@@ -125,6 +160,58 @@ describe('computeNameVerification', () => {
 
     it('returns an empty array for non-array input', () => {
         expect(computeNameVerification(null, source)).toEqual([]);
+    });
+});
+
+describe('computeKeywordVerification', () => {
+    const source = 'Bulwark (Eleanor Graves) leads Ironclad Agency. Her Spark is called Fortress.';
+
+    it('grounds a keyword that appears verbatim in the source', () => {
+        const [result] = computeKeywordVerification([{ keywords: [{ text: 'Fortress', importance: 9 }] }], source);
+        expect(result.ungroundedKeywords).toEqual([]);
+    });
+
+    it('flags a keyword that does not appear anywhere in the source', () => {
+        const [result] = computeKeywordVerification(
+            [{ keywords: [{ text: 'betrayal', importance: 6 }] }],
+            source,
+        );
+        expect(result.ungroundedKeywords).toEqual(['betrayal']);
+    });
+
+    it('flags only the ungrounded keywords, not the grounded ones', () => {
+        const [result] = computeKeywordVerification(
+            [{ keywords: [{ text: 'Fortress', importance: 9 }, { text: 'betrayal', importance: 3 }] }],
+            source,
+        );
+        expect(result.ungroundedKeywords).toEqual(['betrayal']);
+    });
+
+    it('accepts legacy plain-string keywords', () => {
+        const [result] = computeKeywordVerification([{ keywords: ['Fortress', 'betrayal'] }], source);
+        expect(result.ungroundedKeywords).toEqual(['betrayal']);
+    });
+
+    it('treats every chunk as grounded when sourceText is empty (nothing to check against)', () => {
+        const result = computeKeywordVerification([{ keywords: [{ text: 'anything', importance: 5 }] }], '');
+        expect(result).toEqual([{ ungroundedKeywords: [] }]);
+    });
+
+    it('returns an empty array for non-array input', () => {
+        expect(computeKeywordVerification(null, source)).toEqual([]);
+    });
+
+    it('uses a softer default threshold than computeNameVerification', () => {
+        // "Iron Agency" is a near-miss for "Ironclad Agency" in the source
+        // (similarity ~0.73) — grounded under the keyword threshold (0.7)
+        // but not under the stricter name threshold (0.8), demonstrating
+        // keywords get more slack than names/aliases.
+        const keyword = 'Iron Agency';
+        const [keywordResult] = computeKeywordVerification([{ keywords: [{ text: keyword, importance: 5 }] }], source);
+        const [nameResult] = computeNameVerification([{ name: keyword, aliases: [] }], source);
+
+        expect(keywordResult.ungroundedKeywords).toEqual([]);
+        expect(nameResult.nameGrounded).toBe(false);
     });
 });
 

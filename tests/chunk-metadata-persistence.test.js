@@ -49,6 +49,33 @@ function resolveChunkKeywords(chunk) {
         .filter(Boolean);
 }
 
+/**
+ * Mirrors applyQueryKeywordBoost's behavior (core/chat-vectorization.js,
+ * rearrangeChat's STAGE 4.3) — same binary "any keyword match → perfect
+ * score" boost, built on the same resolveChunkKeywords fallback tested
+ * above. chat-vectorization.js can't be imported directly here: it pulls in
+ * core-vector-api.js's full SillyTavern host chain (down to secrets.js),
+ * which is impractical to mock in a unit test. The real function also gets
+ * an end-to-end check via diagnostics/production-tests.js's
+ * '[PROD] Keyword Boosting' self-test — keep both in sync if STAGE 4.3 changes.
+ */
+function boostChunksByQueryKeywords(chunks, queryKeywordTexts) {
+    let boostedCount = 0;
+    for (const chunk of chunks) {
+        const chunkKeywords = resolveChunkKeywords(chunk);
+        const matchedKeywords = queryKeywordTexts.filter(qk => chunkKeywords.includes(qk));
+        if (matchedKeywords.length > 0) {
+            const oldScore = chunk.score;
+            chunk.keywordMatched = true;
+            chunk.matchedQueryKeywords = matchedKeywords;
+            chunk.score = 1.0;
+            chunk.originalScore = oldScore;
+            boostedCount++;
+        }
+    }
+    return boostedCount;
+}
+
 // ---------------------------------------------------------------------------
 // Storage contract (Fix A)
 // ---------------------------------------------------------------------------
@@ -165,5 +192,54 @@ describe('resolveChunkKeywords — no-plugin fallback', () => {
         const result = resolveChunkKeywords(chunk);
         // Plugin metadata wins — this is intentional (server-side is authoritative)
         expect(result).toEqual(['plugin-keyword']);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// STAGE 4.3 binary keyword boost (applyQueryKeywordBoost)
+// ---------------------------------------------------------------------------
+
+describe('boostChunksByQueryKeywords — STAGE 4.3 binary boost', () => {
+    beforeEach(() => {
+        mockSettings.vectfox = {};
+    });
+
+    it('boosts a chunk with a matching keyword to a perfect score', () => {
+        const chunk = { hash: 'a1', score: 0.6, metadata: { keywords: makeKeywords('dragon', 'fire') } };
+        const boostedCount = boostChunksByQueryKeywords([chunk], ['dragon']);
+
+        expect(boostedCount).toBe(1);
+        expect(chunk.keywordMatched).toBe(true);
+        expect(chunk.score).toBe(1.0);
+        expect(chunk.originalScore).toBe(0.6);
+        expect(chunk.matchedQueryKeywords).toEqual(['dragon']);
+    });
+
+    it('leaves chunks without a matching keyword untouched', () => {
+        const chunk = { hash: 'a2', score: 0.5, metadata: { keywords: makeKeywords('sword') } };
+        const boostedCount = boostChunksByQueryKeywords([chunk], ['dragon']);
+
+        expect(boostedCount).toBe(0);
+        expect(chunk.keywordMatched).toBeUndefined();
+        expect(chunk.score).toBe(0.5);
+    });
+
+    it('uses the no-plugin getChunkMetadata fallback for keyword resolution', () => {
+        const hash = 'fallback-1';
+        saveChunkMetadata(hash, { keywords: makeKeywords('quest') });
+        const chunk = { hash, score: 0.4, metadata: {} };
+
+        const boostedCount = boostChunksByQueryKeywords([chunk], ['quest']);
+
+        expect(boostedCount).toBe(1);
+        expect(chunk.score).toBe(1.0);
+    });
+
+    it('tracks all matched keywords when multiple match', () => {
+        const chunk = { hash: 'a3', score: 0.3, metadata: { keywords: makeKeywords('wizard', 'spell') } };
+        const boostedCount = boostChunksByQueryKeywords([chunk], ['wizard', 'spell']);
+
+        expect(boostedCount).toBe(1);
+        expect(chunk.matchedQueryKeywords).toEqual(['wizard', 'spell']);
     });
 });

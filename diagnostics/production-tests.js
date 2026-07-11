@@ -15,7 +15,8 @@ import { getSavedHashes, purgeVectorIndex } from '../core/core-vector-api.js';
 import { getModelField, getModelFromSettings, getProviderConfig } from '../core/providers.js';
 import { unregisterCollection } from '../core/collection-loader.js';
 import { reciprocalRankFusion, weightedCombination } from '../core/hybrid-search.js';
-import { applyKeywordBoost, extractTextKeywords, extractLorebookKeywords } from '../core/keyword-boost.js';
+import { extractTextKeywords, extractLorebookKeywords } from '../core/keyword-boost.js';
+import { applyQueryKeywordBoost } from '../core/chat-vectorization.js';
 
 const CHAT_NOT_APPLICABLE_MESSAGE = 'Not applicable (EventBase mode — chat is not stored as a chunk collection)';
 
@@ -1014,93 +1015,64 @@ in claiming the legendary treasure that lay within the dragon's mountain fortres
 
 /**
  * Test: Keyword boosting on search results
- * Tests that keyword matching correctly boosts result scores
+ * Tests applyQueryKeywordBoost (chat-vectorization.js), the actual function
+ * rearrangeChat's STAGE 4.3 uses at query time — a binary "any keyword match
+ * → perfect score" boost, not the old diminishing-returns math.
  */
 export async function testKeywordBoosting(settings) {
     try {
-        // Mock search results with keywords
-        const results = [
+        // Mock chunks shaped like retrieval results (metadata.keywords, as
+        // attached by content-vectorization.js's enrichChunks)
+        const chunks = [
             {
                 hash: 'doc1',
                 text: 'The wizard cast a powerful spell',
                 score: 0.70,
-                keywords: [
-                    { text: 'wizard', weight: 2.0 },
-                    { text: 'spell', weight: 1.5 }
-                ]
+                metadata: { keywords: [{ text: 'wizard', weight: 2.0 }, { text: 'spell', weight: 1.5 }] }
             },
             {
                 hash: 'doc2',
                 text: 'The ancient tome contained secrets',
                 score: 0.85,
-                keywords: [
-                    { text: 'ancient', weight: 1.5 },
-                    { text: 'tome', weight: 1.8 }
-                ]
+                metadata: { keywords: [{ text: 'ancient', weight: 1.5 }, { text: 'tome', weight: 1.8 }] }
             },
             {
                 hash: 'doc3',
                 text: 'Magic flows through the realm',
                 score: 0.75,
-                keywords: [
-                    { text: 'magic', weight: 1.7 }
-                ]
+                metadata: { keywords: [{ text: 'magic', weight: 1.7 }] }
             }
         ];
 
-        // Query that matches keywords in doc1
-        const query = 'wizard spell';
-        const boosted = applyKeywordBoost(results, query);
+        // STAGE 4.3 receives already-extracted, lowercased query keywords, not a raw query string
+        const queryKeywordTexts = ['wizard', 'spell'];
+        const boostedCount = applyQueryKeywordBoost(chunks, queryKeywordTexts);
 
-        // Validate results
-        if (!Array.isArray(boosted) || boosted.length !== results.length) {
+        if (boostedCount !== 1) {
             return {
                 name: '[PROD] Keyword Boosting',
                 status: 'fail',
-                message: 'Keyword boost returned incorrect number of results',
+                message: `Expected 1 chunk boosted, got ${boostedCount}`,
                 category: 'production'
             };
         }
 
-        // Find the boosted document
-        const doc1Boosted = boosted.find(r => r.hash === 'doc1');
+        const doc1 = chunks.find(c => c.hash === 'doc1');
+        const doc2 = chunks.find(c => c.hash === 'doc2');
+        const doc3 = chunks.find(c => c.hash === 'doc3');
 
-        if (!doc1Boosted) {
+        // Verify doc1 was boosted to a perfect score
+        if (!doc1?.keywordMatched || doc1.score !== 1.0) {
             return {
                 name: '[PROD] Keyword Boosting',
                 status: 'fail',
-                message: 'Could not find doc1 in boosted results',
-                category: 'production'
-            };
-        }
-
-        // Verify doc1 was boosted (should have keywordBoosted flag and higher score)
-        if (!doc1Boosted.keywordBoosted) {
-            return {
-                name: '[PROD] Keyword Boosting',
-                status: 'fail',
-                message: 'Doc1 was not marked as keyword boosted',
-                category: 'production'
-            };
-        }
-
-        // Verify boost was applied correctly (with diminishing returns + per-keyword cap)
-        // Per-keyword contributions are capped at 0.5: min(2.0-1, 0.5) + min(1.5-1, 0.5) = 1.0
-        // 2 matches → 60% scaling factor → finalBoost = 1 + (1.0 * 0.6) = 1.6x
-        const expectedBoost = 1.6;
-        const actualBoost = doc1Boosted.keywordBoost;
-
-        if (Math.abs(actualBoost - expectedBoost) > 0.01) {
-            return {
-                name: '[PROD] Keyword Boosting',
-                status: 'fail',
-                message: `Expected boost ${expectedBoost}x, got ${actualBoost}x`,
+                message: 'doc1 was not boosted to a perfect score',
                 category: 'production'
             };
         }
 
         // Verify original score is preserved
-        if (doc1Boosted.originalScore !== 0.70) {
+        if (doc1.originalScore !== 0.70) {
             return {
                 name: '[PROD] Keyword Boosting',
                 status: 'fail',
@@ -1109,19 +1081,8 @@ export async function testKeywordBoosting(settings) {
             };
         }
 
-        // Verify new score is correct (0.70 * 1.6 = 1.12, clamped to 1.0 by applyKeywordBoost)
-        const expectedNewScore = Math.min(1.0, 0.70 * expectedBoost);
-        if (Math.abs(doc1Boosted.score - expectedNewScore) > 0.01) {
-            return {
-                name: '[PROD] Keyword Boosting',
-                status: 'fail',
-                message: `Expected boosted score ${expectedNewScore.toFixed(3)}, got ${doc1Boosted.score.toFixed(3)}`,
-                category: 'production'
-            };
-        }
-
         // Verify matched keywords are tracked
-        if (!doc1Boosted.matchedKeywords || doc1Boosted.matchedKeywords.length !== 2) {
+        if (!doc1.matchedQueryKeywords || doc1.matchedQueryKeywords.length !== 2) {
             return {
                 name: '[PROD] Keyword Boosting',
                 status: 'fail',
@@ -1130,13 +1091,12 @@ export async function testKeywordBoosting(settings) {
             };
         }
 
-        // Verify results are re-sorted by boosted score
-        // After boosting, doc1 (0.70 * 1.6 = 1.12, clamped to 1.0) should rank higher than doc2 (0.85)
-        if (boosted[0].hash !== 'doc1') {
+        // Verify unmatched chunks were left untouched
+        if (doc2.keywordMatched || doc2.score !== 0.85 || doc3.keywordMatched || doc3.score !== 0.75) {
             return {
                 name: '[PROD] Keyword Boosting',
                 status: 'fail',
-                message: `Expected doc1 to rank first after boosting, got ${boosted[0].hash}`,
+                message: 'Unmatched chunks were modified',
                 category: 'production'
             };
         }
@@ -1144,7 +1104,7 @@ export async function testKeywordBoosting(settings) {
         return {
             name: '[PROD] Keyword Boosting',
             status: 'pass',
-            message: `Boosted doc1: ${doc1Boosted.originalScore.toFixed(2)} → ${doc1Boosted.score.toFixed(2)} (${actualBoost}x)`,
+            message: `Boosted doc1: ${doc1.originalScore.toFixed(2)} → ${doc1.score.toFixed(2)} (matched: ${doc1.matchedQueryKeywords.join(', ')})`,
             category: 'production'
         };
     } catch (error) {
