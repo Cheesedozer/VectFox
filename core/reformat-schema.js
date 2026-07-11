@@ -38,7 +38,9 @@ export const REFORMAT_ENTRY_TYPES = Object.freeze([
     'other',
 ]);
 
-export const REFORMAT_SCHEMA_VERSION = 1;
+// v2: relationships changed from string[] to {target, type}[] (validator still
+// coerces legacy strings — see ensureRelationships).
+export const REFORMAT_SCHEMA_VERSION = 2;
 
 /**
  * Non-fatal extraction parse error (per-batch; caller should log + skip that
@@ -76,10 +78,10 @@ export class ReformatFatalError extends Error {
 // ---------------------------------------------------------------------------
 
 /**
- * Coerces a single array item to a display string. Models occasionally ignore
- * the "array of strings" instruction and emit a structured relation object
- * instead (e.g. {target: "Reich", type: "alliance"}) — most often for
- * `relationships`, which invites that shape. Naively falling through to
+ * Coerces a single array item to a display string (used for `aliases` and
+ * `traits`; `relationships` has its own structured coercion — see
+ * ensureRelationships). Models occasionally ignore the "array of strings"
+ * instruction and emit an object instead. Naively falling through to
  * `String(obj)` produces the literal text "[object Object]", which then gets
  * stored, embedded, and shown to the user as if it were real content. Pull
  * readable text out of common keys instead, and only fall back to
@@ -129,6 +131,74 @@ function ensureArray(val, fieldName = '', errors = null) {
         errors.push(`${fieldName}: ${objectCoercions} item(s) were objects instead of strings — coerced to text`);
     }
     return [...new Set(items)];
+}
+
+/**
+ * Coerce + dedupe a raw `relationships` field into {target, type}[] — the
+ * canonical schema-v2 shape. The expected input is an array of
+ * {target, type} objects, but tolerates:
+ *  - a bare string (non-compliant model, or a legacy v1 record) → treated as
+ *    the target with an empty type. Parentheticals are deliberately NOT
+ *    parsed out of strings (parens legitimately appear in entity names).
+ *  - alternate object keys: `name` for target, `relation`/`relationship`
+ *    for type.
+ * Items with no resolvable target are dropped. Dedupes by lowercased
+ * target|type. Pushes a coercion note into `errors` when items needed
+ * reshaping, same pattern as ensureArray/entry_type.
+ * @param {unknown} val
+ * @param {string[]} [errors]
+ * @returns {{target: string, type: string}[]}
+ */
+function ensureRelationships(val, errors = null) {
+    if (!Array.isArray(val)) return [];
+    const seen = new Set();
+    const out = [];
+    let coercions = 0;
+    let dropped = 0;
+
+    for (const item of val) {
+        let target = '';
+        let type = '';
+        let reshaped = false;
+        if (typeof item === 'string') {
+            target = item.trim();
+            reshaped = Boolean(target);
+        } else if (item && typeof item === 'object' && !Array.isArray(item)) {
+            const obj = /** @type {any} */ (item);
+            target = typeof obj.target === 'string' ? obj.target.trim() : '';
+            type = typeof obj.type === 'string' ? obj.type.trim() : '';
+            if (!target && typeof obj.name === 'string') {
+                target = obj.name.trim();
+                reshaped = true;
+            }
+            if (!type) {
+                const altType = typeof obj.relation === 'string' ? obj.relation
+                    : typeof obj.relationship === 'string' ? obj.relationship : '';
+                if (altType.trim()) {
+                    type = altType.trim();
+                    reshaped = true;
+                }
+            }
+        }
+        if (!target) {
+            if (item !== null && item !== undefined && item !== '') dropped++;
+            continue;
+        }
+        if (reshaped) coercions++;
+
+        const key = `${target.toLowerCase()}|${type.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ target, type });
+    }
+
+    if (coercions > 0 && errors) {
+        errors.push(`relationships: ${coercions} item(s) needed reshaping into {target, type} form`);
+    }
+    if (dropped > 0 && errors) {
+        errors.push(`relationships: ${dropped} item(s) had no resolvable target — dropped`);
+    }
+    return out;
 }
 
 /**
@@ -216,7 +286,7 @@ export function validateReformattedChunk(raw) {
         aliases: ensureArray((/** @type {any} */ (raw)).aliases, 'aliases', errors),
         affiliation,
         traits: ensureArray((/** @type {any} */ (raw)).traits, 'traits', errors),
-        relationships: ensureArray((/** @type {any} */ (raw)).relationships, 'relationships', errors),
+        relationships: ensureRelationships((/** @type {any} */ (raw)).relationships, errors),
         keywords: ensureKeywords((/** @type {any} */ (raw)).keywords),
         body,
     };
@@ -246,8 +316,9 @@ export function validateReformattedChunk(raw) {
  * than the cost of silently omitting the connection again.
  *
  * @param {string} affiliation
- * @param {string[]} relationships
- * @returns {string} e.g. " Affiliated with the Reich. Related: Leader of the Inner Circle."
+ * @param {Array<{target: string, type: string}|string>} relationships - Schema-v2
+ *        {target, type} objects; legacy v1 plain strings are rendered as-is.
+ * @returns {string} e.g. " Affiliated with the Reich. Related: Schutzstaffel (parent organization); Oberkatze (leader)."
  *          or '' when there's nothing to add.
  */
 export function buildRelationalClause(affiliation, relationships) {
@@ -256,9 +327,18 @@ export function buildRelationalClause(affiliation, relationships) {
     const trimmedAffiliation = typeof affiliation === 'string' ? affiliation.trim() : '';
     if (trimmedAffiliation) parts.push(`Affiliated with ${trimmedAffiliation}.`);
 
-    const cleanRelationships = Array.isArray(relationships)
-        ? relationships.map(r => (typeof r === 'string' ? r.trim() : '')).filter(Boolean)
-        : [];
+    const cleanRelationships = (Array.isArray(relationships) ? relationships : [])
+        .map(r => {
+            if (typeof r === 'string') return r.trim();
+            if (r && typeof r === 'object') {
+                const target = typeof r.target === 'string' ? r.target.trim() : '';
+                const type = typeof r.type === 'string' ? r.type.trim() : '';
+                if (!target) return '';
+                return type ? `${target} (${type})` : target;
+            }
+            return '';
+        })
+        .filter(Boolean);
     if (cleanRelationships.length > 0) parts.push(`Related: ${cleanRelationships.join('; ')}.`);
 
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
@@ -404,7 +484,7 @@ Output ONLY a JSON array. Each element must have exactly these fields:
   "aliases": string[] — alternate names/titles this entry is also known by (empty array if none),
   "affiliation": string — group/faction/allegiance this entry belongs to, or "" if not applicable,
   "traits": string[] — short factual descriptors (abilities, role, notable qualities),
-  "relationships": string[] — short statements of how this entry relates to other named entries,
+  "relationships": [{"target": string, "type": string}] — connections to OTHER named entries; "target" is the other entry's name exactly as it appears, "type" is how they relate (e.g. "parent organization", "rival", "mentor", "member", "located in"),
   "keywords": [{"text": string, "importance": number 1-10}] — additional search terms someone might use to recall this entry; importance = how central that term is to this entry (10 = essential/defining, e.g. a character's signature ability; 1 = minor/tangential, e.g. an incidental location mention),
   "body": string — the actual retrievable prose for this entry, written so it stands alone (resolve pronouns to the actual name where the source only used "he"/"she"/"they")
 }
@@ -413,16 +493,18 @@ CRITICAL RULES:
 - Reproduce facts VERBATIM from the source. Do not invent details, numbers, names, or relationships that aren't in the text. Do not omit a named detail that IS in the text.
 - If a section names multiple distinct entities (e.g. several people in a roster, several factions in a table), give EACH one its own array element — never merge multiple named entities into a single entry.
 - If a section is genuinely about one topic with no distinct named sub-entities, emit ONE entry of type "concept" for that whole section rather than fragmenting it.
-- Every array field must be an array of strings, even if empty ([]), never a single string or null.
+- A relationship MUST point at another named entry via "target". A capability or description with no named target (e.g. "maintains extensive files on citizens") is a TRAIT, not a relationship. Do not repeat the affiliation field as a relationship.
+- Extract every relationship the text actually states between named entries — if entity A's section mentions entity B, that connection belongs in A's relationships (and usually B's too).
+- aliases and traits are arrays of strings; relationships is an array of {target, type} objects. Every array field must be an array, even if empty ([]), never a single string or null.
 
 EXAMPLE — a roster where entities are separated only by bold text, not headings:
 Input excerpt:
-"***Ironclad Agency*** — New York City. **Lead Hero:** Bulwark (Eleanor Graves). **Spark:** Fortress (Transformation-type) — Bulwark can transform her hide into indestructible metal.
+"***Ironclad Agency*** — New York City. **Lead Hero:** Bulwark (Eleanor Graves). **Spark:** Fortress (Transformation-type) — Bulwark can transform her hide into indestructible metal. Bulwark mentors the younger hero Solaris.
 ***Ember Corps*** — Los Angeles. **Lead Hero:** Solaris. **Spark:** Inferno Drive — controls fire at extreme temperatures."
-Correct output (two SEPARATE entries, not one merged entry):
+Correct output (two SEPARATE entries, not one merged entry; the stated mentorship appears on BOTH — note "can transform hide" is a trait because it names no other entry, while the mentorship is a relationship because it does):
 [
-  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","traits":["Transformation-type Spark: Fortress","can transform hide into indestructible metal"],"relationships":[],"keywords":[{"text":"Fortress","importance":9},{"text":"Ironclad","importance":6},{"text":"New York City","importance":4}],"body":"Bulwark (Eleanor Graves) is the lead hero of Ironclad Agency, based in New York City. Her Spark, \\"Fortress\\" (Transformation-type), lets Bulwark transform her hide into indestructible metal."},
-  {"entry_type":"character","name":"Solaris","aliases":[],"affiliation":"Ember Corps","traits":["Emitter-type Spark: Inferno Drive","controls fire at extreme temperatures"],"relationships":[],"keywords":[{"text":"Inferno Drive","importance":9},{"text":"Ember Corps","importance":6},{"text":"Los Angeles","importance":4}],"body":"Solaris is the lead hero of Ember Corps, based in Los Angeles. Her Spark, \\"Inferno Drive\\", lets Solaris control fire at extreme temperatures."}
+  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","traits":["Transformation-type Spark: Fortress","can transform hide into indestructible metal"],"relationships":[{"target":"Solaris","type":"mentor"}],"keywords":[{"text":"Fortress","importance":9},{"text":"Ironclad","importance":6},{"text":"New York City","importance":4}],"body":"Bulwark (Eleanor Graves) is the lead hero of Ironclad Agency, based in New York City. Her Spark, \\"Fortress\\" (Transformation-type), lets Bulwark transform her hide into indestructible metal. Bulwark mentors the younger hero Solaris."},
+  {"entry_type":"character","name":"Solaris","aliases":[],"affiliation":"Ember Corps","traits":["Emitter-type Spark: Inferno Drive","controls fire at extreme temperatures"],"relationships":[{"target":"Bulwark","type":"mentored by"}],"keywords":[{"text":"Inferno Drive","importance":9},{"text":"Ember Corps","importance":6},{"text":"Los Angeles","importance":4}],"body":"Solaris is the lead hero of Ember Corps, based in Los Angeles. Her Spark, \\"Inferno Drive\\", lets Solaris control fire at extreme temperatures. Solaris is mentored by Bulwark of Ironclad Agency."}
 ]
 
 EXAMPLE — a topic/lore section with no distinct named entity:
@@ -465,4 +547,52 @@ export function buildReformatPrompt(text, { customPrompt = '', batchContext = nu
     return template
         .replace(/\{\{continuationNote\}\}/g, continuationNote)
         .replace(/\{\{text\}\}/g, text);
+}
+
+/**
+ * Builds the prompt for the OPTIONAL cross-batch linking pass (see
+ * reformat-extractor.js). Runs after extraction + duplicate-merge, once per
+ * batch, with a catalog of EVERY entity extracted anywhere in the document —
+ * so it can catch connections the single-pass extraction missed because the
+ * two entities were extracted from different batches (e.g. a concept entry
+ * whose text names a location that was extracted elsewhere).
+ *
+ * The catalog deliberately carries names/types/aliases only, not bodies:
+ * keeps the prompt small, and the model can only reference entities that
+ * already exist — it cannot invent new ones (the caller additionally drops
+ * any triple whose source/target doesn't resolve to a catalog entity).
+ *
+ * @param {string} text - One batch's source text
+ * @param {Array<{name: string, entry_type: string, aliases: string[]}>} entityCatalog -
+ *        Every merged entity extracted from the whole document
+ * @returns {string}
+ */
+export function buildLinkingPrompt(text, entityCatalog) {
+    const catalogLines = (Array.isArray(entityCatalog) ? entityCatalog : [])
+        .map(e => {
+            const aliasSuffix = e.aliases?.length ? ` (also known as: ${e.aliases.join(', ')})` : '';
+            return `- ${e.name} [${e.entry_type}]${aliasSuffix}`;
+        })
+        .join('\n');
+
+    return `You are finding connections between already-extracted entries of a reference document for an AI roleplay memory system.
+
+Below is the CATALOG of every entry extracted from the document, followed by one section of the document's TEXT.
+
+Find every relationship the TEXT states between two catalog entries. Output ONLY a JSON array of:
+{"source": string — a catalog entry's name, "target": string — a different catalog entry's name, "type": string — how source relates to target (e.g. "parent organization", "rival", "located in", "site of")}
+
+CRITICAL RULES:
+- "source" and "target" MUST both be names from the CATALOG (exactly as written there). Never introduce a name that is not in the catalog.
+- Only report a connection the TEXT actually states or directly implies. Do not infer from general knowledge.
+- Report each connection from the most natural direction; both directions are welcome when the text supports them.
+- If the TEXT states no connections between catalog entries, output [].
+
+CATALOG:
+${catalogLines}
+
+TEXT:
+${text}
+
+Output ONLY the JSON array, no commentary, no markdown code fences.`;
 }

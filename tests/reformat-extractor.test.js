@@ -25,7 +25,7 @@ vi.mock('../../../../extensions.js', () => ({
     extension_settings: { vectfox: {} },
 }));
 
-import { reformatDocument, expandOversizedChunk } from '../core/reformat-extractor.js';
+import { reformatDocument, expandOversizedChunk, mergeDuplicateEntities } from '../core/reformat-extractor.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -187,6 +187,228 @@ describe('reformatDocument — provider call resilience', () => {
             reformatDocument({ text: doc, contentType: 'document', settings })
         ).rejects.toThrow(/No model configured/);
         expect(fetchMock).not.toHaveBeenCalled();
+
+        vi.unstubAllGlobals();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate-entity merge
+// ---------------------------------------------------------------------------
+
+describe('mergeDuplicateEntities', () => {
+    const gestapo = (overrides = {}) => ({
+        entry_type: 'organization',
+        name: 'Gestapo',
+        aliases: [],
+        affiliation: '',
+        traits: [],
+        relationships: [],
+        keywords: [],
+        body: 'Base body.',
+        _nameGrounded: true,
+        _ungroundedAliases: [],
+        _ungroundedKeywords: [],
+        ...overrides,
+    });
+
+    it('merges same-name records of the same entry_type, unioning fields with longest body winning', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({
+                affiliation: 'The Reich',
+                traits: ['political police'],
+                relationships: [{ target: 'Schutzstaffel', type: 'parent organization' }],
+                keywords: [{ text: 'secret police', importance: 6 }],
+                body: 'Short body.',
+            }),
+            gestapo({
+                name: 'gestapo', // case-insensitive match
+                traits: ['political police', 'operates outside procedural constraints'],
+                keywords: [{ text: 'secret police', importance: 9 }, { text: 'terror', importance: 5 }],
+                body: 'This is the much longer body describing the Gestapo in detail across the document.',
+                _nameGrounded: false,
+            }),
+            gestapo({
+                relationships: [
+                    { target: 'Schutzstaffel', type: 'parent organization' }, // duplicate — dropped
+                    { target: 'Oberkatze', type: 'answers to' },
+                ],
+            }),
+        ]);
+
+        expect(merged).toHaveLength(1);
+        const g = merged[0];
+        expect(g.name).toBe('Gestapo'); // first occurrence wins
+        expect(g.affiliation).toBe('The Reich'); // first non-empty
+        expect(g.traits).toEqual(['political police', 'operates outside procedural constraints']);
+        expect(g.relationships).toEqual([
+            { target: 'Schutzstaffel', type: 'parent organization' },
+            { target: 'Oberkatze', type: 'answers to' },
+        ]);
+        // max importance wins for duplicated keyword text
+        expect(g.keywords).toContainEqual({ text: 'secret police', importance: 9 });
+        expect(g.keywords).toContainEqual({ text: 'terror', importance: 5 });
+        expect(g.body).toMatch(/much longer body/);
+        expect(g._nameGrounded).toBe(true); // OR across copies
+    });
+
+    it('merges via alias bridge and records the divergent name as an alias', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'IG Tatzen' }),
+            gestapo({ name: 'IG Tatzen conglomerate', aliases: ['IG Tatzen'] }),
+        ]);
+
+        expect(merged).toHaveLength(1);
+        expect(merged[0].name).toBe('IG Tatzen');
+        expect(merged[0].aliases).toContain('IG Tatzen conglomerate');
+        // the merged record's own name must not appear in its aliases
+        expect(merged[0].aliases.map(a => a.toLowerCase())).not.toContain('ig tatzen');
+    });
+
+    it('does NOT merge same-name records of different entry_types', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'Victory', entry_type: 'location' }),
+            gestapo({ name: 'Victory', entry_type: 'character' }),
+        ]);
+        expect(merged).toHaveLength(2);
+    });
+
+    it('leaves distinct entities untouched and preserves order', () => {
+        const input = [gestapo({ name: 'A' }), gestapo({ name: 'B' }), gestapo({ name: 'C' })];
+        const merged = mergeDuplicateEntities(input);
+        expect(merged.map(r => r.name)).toEqual(['A', 'B', 'C']);
+    });
+});
+
+describe('reformatDocument — duplicate merge integration', () => {
+    it('collapses the same entity extracted from two batches into one record and surfaces a warning', async () => {
+        const doc = [
+            '# Security Apparatus',
+            '',
+            'The Gestapo conducts political investigations. This sentence pads the section well past the tiny test budget so it must split into more than one batch for the test.',
+            '',
+            '# Legal System',
+            '',
+            'The Gestapo also appears here with different details entirely. This sentence pads the section well past the tiny test budget so it must split into more than one batch.',
+        ].join('\n');
+
+        let callCount = 0;
+        const fetchMock = vi.fn(async () => {
+            callCount++;
+            return mockChatCompletionResponse([
+                {
+                    entry_type: 'organization', name: 'Gestapo', aliases: [], affiliation: '',
+                    traits: [`trait from call ${callCount}`], relationships: [], keywords: [],
+                    body: `Body from call ${callCount}.`,
+                },
+            ]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings() });
+
+        expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(result.chunks).toHaveLength(1);
+        expect(result.chunks[0].traits.length).toBeGreaterThanOrEqual(2);
+        expect(result.warnings.some(w => /Merged \d+ duplicate/i.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Optional cross-batch linking pass
+// ---------------------------------------------------------------------------
+
+describe('reformatDocument — linking pass', () => {
+    const doc = '# Law\n\nExecutions are held in Victory Plaza as public spectacle.';
+
+    const extractionEntities = [
+        {
+            entry_type: 'location', name: 'Victory Plaza', aliases: ['Times Square'], affiliation: '',
+            traits: [], relationships: [], keywords: [], body: 'Victory Plaza is an execution venue.',
+        },
+        {
+            entry_type: 'concept', name: 'Capital Punishment', aliases: [], affiliation: '',
+            traits: [], relationships: [], keywords: [], body: 'Capital punishment applies broadly.',
+        },
+    ];
+
+    it('is off by default — no linking calls, no CATALOG prompts', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse(extractionEntities));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(extractPrompt(fetchMock.mock.calls[0])).not.toContain('CATALOG:');
+
+        vi.unstubAllGlobals();
+    });
+
+    it('when enabled, revisits each batch with the entity catalog and applies resolvable triples (canonicalizing names), dropping unresolvable ones', async () => {
+        const fetchMock = vi.fn(async (url, opts) => {
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            if (prompt.includes('CATALOG:')) {
+                return mockChatCompletionResponse([
+                    // resolvable: target given in lowercase + source by alias — both must canonicalize
+                    { source: 'capital punishment', target: 'times square', type: 'site of executions' },
+                    // duplicate of the above after canonicalization — must not double-apply
+                    { source: 'Capital Punishment', target: 'Victory Plaza', type: 'site of executions' },
+                    // unresolvable source — must be dropped, not crash
+                    { source: 'Nonexistent Entity', target: 'Victory Plaza', type: 'x' },
+                ]);
+            }
+            return mockChatCompletionResponse(extractionEntities);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const progressCalls = [];
+        const result = await reformatDocument({
+            text: doc,
+            contentType: 'document',
+            settings: baseSettings({ reformat_batch_chars: 6000, reformat_enable_linking_pass: true }),
+            onProgress: (done, total) => progressCalls.push([done, total]),
+        });
+
+        // 1 extraction batch + 1 linking batch
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        const linkPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => p.includes('CATALOG:'));
+        expect(linkPrompt).toContain('- Victory Plaza [location] (also known as: Times Square)');
+        expect(linkPrompt).toContain('- Capital Punishment [concept]');
+
+        const capital = result.chunks.find(c => c.name === 'Capital Punishment');
+        // exactly one relationship applied, with the target canonicalized to the
+        // record's real name (not the alias/lowercase form the triple used)
+        expect(capital.relationships).toEqual([{ target: 'Victory Plaza', type: 'site of executions' }]);
+
+        // progress denominator doubles when linking is enabled, and completes
+        expect(progressCalls[progressCalls.length - 1]).toEqual([2, 2]);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('a failed linking batch is a non-fatal warning and extraction results survive', async () => {
+        let linkCall = 0;
+        const fetchMock = vi.fn(async (url, opts) => {
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            if (prompt.includes('CATALOG:')) {
+                linkCall++;
+                return { ok: false, status: 500, statusText: 'boom', text: async () => 'server error' };
+            }
+            return mockChatCompletionResponse(extractionEntities);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({
+            text: doc,
+            contentType: 'document',
+            settings: baseSettings({ reformat_batch_chars: 6000, reformat_enable_linking_pass: true }),
+        });
+
+        expect(linkCall).toBeGreaterThanOrEqual(1);
+        expect(result.chunks).toHaveLength(2); // extraction output intact
+        expect(result.warnings.some(w => /Linking pass/i.test(w))).toBe(true);
 
         vi.unstubAllGlobals();
     });

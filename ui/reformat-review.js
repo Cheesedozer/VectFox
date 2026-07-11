@@ -80,6 +80,48 @@ function _parseKeywordsCsv(text, originalKeywords) {
 }
 
 /**
+ * Renders {target, type}[] relationships as a comma-separated string for the
+ * editable text field — "Schutzstaffel (parent organization), Oberkatze".
+ * The "(type)" suffix is omitted when type is empty. Tolerates legacy v1
+ * plain strings (rendered as-is). Same single-text-field idiom as
+ * _keywordsToCsv above.
+ * @param {Array<{target: string, type: string}|string>} relationships
+ * @returns {string}
+ */
+function _relationshipsToCsv(relationships) {
+    if (!Array.isArray(relationships)) return '';
+    return relationships
+        .map(r => {
+            if (typeof r === 'string') return r.trim();
+            const target = typeof r?.target === 'string' ? r.target.trim() : '';
+            const type = typeof r?.type === 'string' ? r.type.trim() : '';
+            if (!target) return '';
+            return type ? `${target} (${type})` : target;
+        })
+        .filter(Boolean)
+        .join(', ');
+}
+
+/**
+ * Re-parses the edited relationships CSV field back into {target, type}[].
+ * A trailing "(...)" on an item is read as the type; an item without one
+ * gets an empty type. This means a legacy parenthetical-in-name entry loses
+ * its parens into `type` on round-trip — acceptable, since that's exactly
+ * the structure the parenthetical was expressing.
+ * @param {string} text
+ * @returns {Array<{target: string, type: string}>}
+ */
+function _parseRelationshipsCsv(text) {
+    return _parseCsv(text).map(item => {
+        const m = item.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+        if (m && m[1].trim()) {
+            return { target: m[1].trim(), type: m[2].trim() };
+        }
+        return { target: item, type: '' };
+    });
+}
+
+/**
  * Opens the Auto-Reformat review modal.
  *
  * @param {object} params
@@ -218,7 +260,7 @@ function _recordCardHtml(record) {
             </div>
             <div class="vectfox-rr-field-row">
                 <label>Relationships</label>
-                <input type="text" class="vectfox-rr-field" data-field="relationships" value="${_escapeHtml(_csv(record.relationships))}" placeholder="comma-separated" />
+                <input type="text" class="vectfox-rr-field" data-field="relationships" value="${_escapeHtml(_relationshipsToCsv(record.relationships))}" placeholder="comma-separated, e.g. Target Name (relation type)" />
             </div>
             <div class="vectfox-rr-field-row">
                 <label>Keywords</label>
@@ -273,7 +315,7 @@ function _collectRecordFromCard(cardEl) {
         aliases: _parseCsv(get('aliases')),
         affiliation: String(get('affiliation') || '').trim(),
         traits: _parseCsv(get('traits')),
-        relationships: _parseCsv(get('relationships')),
+        relationships: _parseRelationshipsCsv(get('relationships')),
         keywords: _parseKeywordsCsv(get('keywords'), original.keywords),
         body: String(get('body') || '').trim(),
         _accepted: card.find('.vectfox-rr-accept-toggle').prop('checked'),
