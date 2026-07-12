@@ -55,6 +55,7 @@ vi.mock('../core/collection-ids.js', () => ({
 vi.mock('../core/text-cleaning.js', () => ({
     cleanText: vi.fn((t) => t),
     cleanContentOrNull: vi.fn((t) => t),
+    cleanWikiNoise: vi.fn((t) => t),
 }));
 vi.mock('../core/lorebook-content-preparer.js', () => ({
     prepareLorebookContent: vi.fn(),

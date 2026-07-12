@@ -26,7 +26,7 @@ import {
     getBackendFromCollectionId,
 } from './collection-ids.js';
 import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extractBM25Keywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT, dedupeKeywordsByStem } from './keyword-boost.js';
-import { cleanText, cleanContentOrNull } from './text-cleaning.js';
+import { cleanText, cleanContentOrNull, cleanWikiNoise } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
 import { extractGlossary, injectGlossary } from './glossary-extractor.js';
 import { getReformatCache } from './reformat-store.js';
@@ -689,14 +689,16 @@ function prepareDocumentContent(rawContent, settings) {
 /**
  * Prepares wiki content
  */
-function prepareWikiContent(rawContent, settings) {
+export function prepareWikiContent(rawContent, settings) {
     let text = rawContent.content || rawContent;
 
     // Wiki content is already formatted with headers from scraper
     if (typeof text === 'string') {
-        // Apply user's cleaning patterns first; bail with empty text if
-        // nothing survives. See cleanContentOrNull docstring.
-        const cleaned = cleanContentOrNull(text);
+        // Strip known wiki/booru site-chrome first — unconditional, not
+        // gated by the user's cleaning preset (see cleanWikiNoise docstring)
+        // — then apply the user's own cleaning patterns; bail with empty
+        // text if nothing survives. See cleanContentOrNull docstring.
+        const cleaned = cleanContentOrNull(cleanWikiNoise(text));
         if (cleaned === null) {
             text = '';
         } else {
@@ -720,7 +722,7 @@ function prepareWikiContent(rawContent, settings) {
         return {
             text: rawContent.pages
                 .map(p => {
-                    const cleaned = cleanContentOrNull(p.content);
+                    const cleaned = cleanContentOrNull(cleanWikiNoise(p.content));
                     if (cleaned === null) return null;
                     return {
                         text: `# ${p.title}\n\n${cleaned}`,
