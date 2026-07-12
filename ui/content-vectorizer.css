@@ -1050,6 +1050,25 @@
     opacity: 0.8;
 }
 
+.vectfox-cv-wiki-pages-details {
+    margin-top: 8px;
+    font-size: 0.9em;
+}
+
+.vectfox-cv-wiki-pages-details summary {
+    cursor: pointer;
+    opacity: 0.8;
+    user-select: none;
+}
+
+.vectfox-cv-wiki-page-list {
+    max-height: 180px;
+    overflow-y: auto;
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.85em;
+}
+
 .vectfox-cv-optional {
     font-weight: normal;
     opacity: 0.6;

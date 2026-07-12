@@ -9,12 +9,17 @@
 import { describe, it, expect } from 'vitest';
 import {
     REFORMAT_ENTRY_TYPES,
+    REFORMAT_HIERARCHY_REL_TYPES,
     validateReformattedChunk,
     computeNameVerification,
     computeKeywordVerification,
     buildReformatPrompt,
     buildRelationalClause,
     buildLinkingPrompt,
+    sanitizeTraits,
+    TRAIT_MAX_CHARS,
+    TRAITS_MAX_COUNT,
+    TRAIT_BODY_OVERLAP_MIN_CHARS,
 } from '../core/reformat-schema.js';
 
 describe('validateReformattedChunk', () => {
@@ -320,6 +325,97 @@ describe('buildReformatPrompt', () => {
     it('uses a customPrompt override instead of the default template', () => {
         const prompt = buildReformatPrompt('MY TEXT', { customPrompt: 'Custom instructions.\n\n{{text}}' });
         expect(prompt).toBe('Custom instructions.\n\nMY TEXT');
+    });
+
+    it('teaches rewrite-not-verbatim: facts preserved, prose rewritten, meta-instructions dropped', () => {
+        const prompt = buildReformatPrompt('x');
+        expect(prompt).toContain('REWRITE the prose');
+        expect(prompt).toContain('INFORMATIONAL, not instructional');
+        expect(prompt).not.toContain('VERBATIM');
+        // the no-invent/no-omit fact contract must survive the rewrite change
+        expect(prompt).toMatch(/Never invent details/i);
+        expect(prompt).toMatch(/never omit a named detail/i);
+    });
+
+    it('teaches the topic-hierarchy vocabulary exported as REFORMAT_HIERARCHY_REL_TYPES', () => {
+        const prompt = buildReformatPrompt('x');
+        for (const relType of REFORMAT_HIERARCHY_REL_TYPES) {
+            expect(prompt).toContain(`"${relType}"`);
+        }
+        expect(prompt).toContain('TOPIC HIERARCHY');
+        // anti-fragmentation guard: list-item subtypes stay in the parent body
+        expect(prompt).toMatch(/one-line list item does NOT get its own entry/);
+    });
+});
+
+describe('sanitizeTraits', () => {
+    const body = 'Bulwark, civilian name Eleanor Graves, is the lead hero of Ironclad Agency in New York City. Her Transformation-type Spark, Fortress, allows Bulwark to turn her hide into indestructible metal.';
+
+    it('drops traits longer than TRAIT_MAX_CHARS and reports a note', () => {
+        const errors = [];
+        const longTrait = 'x'.repeat(TRAIT_MAX_CHARS + 1);
+        const out = sanitizeTraits(['short trait', longTrait], body, errors);
+        expect(out).toEqual(['short trait']);
+        expect(errors.some(e => /traits: 1 item\(s\) over/.test(e))).toBe(true);
+    });
+
+    it('drops a trait that duplicates a substantial span of the body (paste-body-into-traits failure)', () => {
+        const errors = [];
+        // ≥ TRAIT_BODY_OVERLAP_MIN_CHARS but under TRAIT_MAX_CHARS, and contained in body
+        const bodyCopy = 'is the lead hero of Ironclad Agency in New York City. Her Transformation-type Spark, Fortress';
+        expect(bodyCopy.length).toBeGreaterThanOrEqual(TRAIT_BODY_OVERLAP_MIN_CHARS);
+        expect(bodyCopy.length).toBeLessThanOrEqual(TRAIT_MAX_CHARS);
+        const out = sanitizeTraits([bodyCopy, 'Spark: Fortress'], body, errors);
+        expect(out).toEqual(['Spark: Fortress']);
+        expect(errors.some(e => /duplicated a span of the body/.test(e))).toBe(true);
+    });
+
+    it('keeps short traits that legitimately echo body phrases', () => {
+        const out = sanitizeTraits(['lead hero of Ironclad Agency'], body, []);
+        expect(out).toEqual(['lead hero of Ironclad Agency']);
+    });
+
+    it('caps the array at TRAITS_MAX_COUNT keeping the first entries', () => {
+        const errors = [];
+        const many = Array.from({ length: TRAITS_MAX_COUNT + 5 }, (_, i) => `trait ${i}`);
+        const out = sanitizeTraits(many, body, errors);
+        expect(out).toHaveLength(TRAITS_MAX_COUNT);
+        expect(out[0]).toBe('trait 0');
+        expect(errors.some(e => /capped at/.test(e))).toBe(true);
+    });
+
+    it('end-to-end: validateReformattedChunk sanitizes a body-pasted-into-traits payload without rejecting it', () => {
+        const entryBody = 'The process of transforming into an individual dumb brute or stud, perfectly happy to work out and perform physical tasks mindlessly. Frequently involves an exaggerated, hypersexualized male form.';
+        const { ok, errors, chunk } = validateReformattedChunk({
+            entry_type: 'concept',
+            name: 'Himbofication',
+            aliases: [],
+            affiliation: '',
+            traits: [entryBody, 'male equivalent of bimbofication'],
+            relationships: [],
+            keywords: [],
+            body: entryBody,
+        });
+        expect(ok).toBe(true);
+        expect(chunk.traits).toEqual(['male equivalent of bimbofication']);
+        expect(errors.some(e => /traits/.test(e))).toBe(true);
+    });
+});
+
+describe('hierarchy relationship normalization', () => {
+    it('canonicalizes "sub-topic of" spelling variants to "subtopic of"', () => {
+        const { chunk } = validateReformattedChunk({
+            entry_type: 'concept', name: 'Transformation Sparks', body: 'Body.',
+            relationships: [
+                { target: 'Spark Classification System', type: 'Sub-Topic Of' },
+                { target: 'Spark Classification System', type: 'subtopic of' }, // dupe after canonicalization
+                { target: 'Something Else', type: 'variant of' },
+            ],
+        });
+        expect(chunk.relationships).toEqual([
+            { target: 'Spark Classification System', type: 'subtopic of' },
+            { target: 'Something Else', type: 'variant of' },
+        ]);
     });
 });
 

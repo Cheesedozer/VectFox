@@ -692,7 +692,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Custom Extraction Prompt (advanced)</small>
                             </label>
                             <textarea id="VectFox_reformat_custom_prompt" class="vectfox-input" rows="3"
-                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/keywords/body fields plus relationships as [{target, type}] objects."
+                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/keywords/body fields plus relationships as [{target, type}] objects. Note: traits are always code-sanitized regardless of prompt (items over 160 chars or duplicating the body are dropped)."
                                 style="margin-top:4px;"></textarea>
 
                             <!-- Query (ChunkBase-only) -->

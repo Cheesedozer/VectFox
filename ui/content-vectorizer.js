@@ -761,6 +761,10 @@ function renderWikiSource(type) {
                     <span><strong id="vectfox_cv_wiki_pages">0</strong> pages</span>
                     <span><strong id="vectfox_cv_wiki_chars">0</strong> characters</span>
                 </div>
+                <details class="vectfox-cv-wiki-pages-details" id="vectfox_cv_wiki_pages_details">
+                    <summary>Show scraped page titles</summary>
+                    <ul id="vectfox_cv_wiki_page_list" class="vectfox-cv-wiki-page-list"></ul>
+                </details>
             </div>
         </div>
     `;
@@ -944,9 +948,12 @@ async function runAutoReformat() {
             text,
             contentType: currentContentType,
             settings: mergedSettings,
-            onProgress: (done, total) => {
+            onProgress: (done, total, phase) => {
+                const label = phase === 'link'
+                    ? `Running Auto-Reformat — linking pass (${done}/${total})...`
+                    : `Running Auto-Reformat — extracting (${done}/${total} batches)...`;
                 container.find('.vectfox-cv-loading').html(
-                    `<i class="fa-solid fa-spinner fa-spin"></i> Running Auto-Reformat (${done}/${total} batches)...`
+                    `<i class="fa-solid fa-spinner fa-spin"></i> ${label}`
                 );
             },
         });
@@ -991,7 +998,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
-        const { buildRelationalClause } = await import('../core/reformat-schema.js');
+        const { buildRelationalClause, REFORMAT_SCHEMA_VERSION } = await import('../core/reformat-schema.js');
 
         const maxBodyChars = mergedSettings.reformat_max_body_chars || 2000;
         const previous = getReformatCache(sourceHash);
@@ -1056,7 +1063,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             contentType: currentContentType,
             sourceName,
             providerModel,
-            schemaVersion: 1,
+            schemaVersion: REFORMAT_SCHEMA_VERSION,
         });
 
         currentSettings.reformat = { accepted: true, sourceHash };
@@ -2100,6 +2107,16 @@ async function checkWikiPluginStatus() {
     const statusEl = $('#vectfox_cv_wiki_plugin_status');
     const wikiType = $('#vectfox_cv_wiki_type').val() || 'fandom';
 
+    // e621 uses its own CORS-open JSON API — no plugin exists for it, so
+    // don't probe and don't advertise a fallback that can't help.
+    if (wikiType === 'e621') {
+        statusEl.html(`
+            <i class="fa-solid fa-check-circle" style="color: var(--vectfox-success);"></i>
+            <span>Built-in browser scraper ready (no plugin needed for e621)</span>
+        `);
+        return;
+    }
+
     const isAvailable = await isWikiPluginAvailable(wikiType);
 
     if (isAvailable) {
@@ -2174,7 +2191,8 @@ async function scrapeWiki() {
     const url = $('#vectfox_cv_wiki_url').val().trim();
     const filter = $('#vectfox_cv_wiki_filter').val().trim();
 
-    if (!url) {
+    // e621 needs no URL — blank defaults to e621.net
+    if (!url && wikiType !== 'e621') {
         toastr.warning('Please enter a wiki URL or ID');
         return;
     }
@@ -2184,8 +2202,17 @@ async function scrapeWiki() {
     const scrapeBtn = $('#vectfox_cv_scrape_wiki');
 
     wikiScrapeAbortController = new AbortController();
-    status.html('<i class="fa-solid fa-spinner fa-spin"></i> Scraping wiki...');
+    // e621's wiki corpus is large (100k+ page ids) and, to keep filter matching
+    // consistent with the MediaWiki path (unanchored regex, not e621's own
+    // exact-match search), scraping always walks the full corpus — a filtered
+    // scrape can take several minutes even though it returns few pages.
+    status.html(wikiType === 'e621'
+        ? '<i class="fa-solid fa-spinner fa-spin"></i> Scraping e621 wiki (large corpus — this can take several minutes; Cancel is available)...'
+        : '<i class="fa-solid fa-spinner fa-spin"></i> Scraping wiki...');
     preview.hide();
+    // Clear the previous run's title list so a failed re-scrape can't show stale titles
+    $('#vectfox_cv_wiki_page_list').empty();
+    $('#vectfox_cv_wiki_pages_details').prop('open', false);
     scrapeBtn.html('<i class="fa-solid fa-stop"></i> Cancel');
 
     try {
@@ -2205,7 +2232,9 @@ async function scrapeWiki() {
                 },
             });
         } catch (e) {
-            if (!shouldFallbackToPlugin(e)) {
+            // The Fandom Scraper plugin has no e621 endpoints — a fallback
+            // there would only produce a misleading "install plugin" hint.
+            if (wikiType === 'e621' || !shouldFallbackToPlugin(e)) {
                 throw e;
             }
             if (!await isWikiPluginAvailable(wikiType)) {
@@ -2242,6 +2271,14 @@ async function scrapeWiki() {
         $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
         $('#vectfox_cv_wiki_pages').text(pages.length);
         $('#vectfox_cv_wiki_chars').text(combinedContent.length.toLocaleString());
+
+        // Page titles are remote-controlled strings — build the list with
+        // .text() so they can never be interpreted as HTML.
+        const pageList = $('#vectfox_cv_wiki_page_list').empty();
+        for (const page of pages) {
+            pageList.append($('<li>').text(String(page.title)));
+        }
+        $('#vectfox_cv_wiki_pages_details').prop('open', pages.length <= 15);
         preview.show();
 
         toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
@@ -2314,6 +2351,9 @@ function extractFandomId(url) {
  */
 function extractWikiName(url, wikiType) {
     try {
+        if (wikiType === 'e621') {
+            return 'e621-wiki';
+        }
         if (wikiType === 'fandom') {
             return extractFandomId(url);
         }

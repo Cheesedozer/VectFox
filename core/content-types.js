@@ -338,7 +338,7 @@ export const CONTENT_TYPES = {
         id: 'wiki',
         name: 'Wiki Page',
         icon: 'fa-book-open',
-        description: 'Scrape Fandom or MediaWiki wikis directly from your browser (server plugin optional, used as fallback)',
+        description: 'Scrape Fandom, MediaWiki, or e621 tag wikis directly from your browser (server plugin optional, used as fallback)',
 
         features: {
             keywordExtraction: true,
@@ -363,6 +363,7 @@ export const CONTENT_TYPES = {
             types: [
                 { id: 'fandom', name: 'Fandom Wiki', placeholder: 'https://baldursgate.fandom.com/ or just "baldursgate"' },
                 { id: 'mediawiki', name: 'MediaWiki', placeholder: 'https://minecraft.wiki/ or any MediaWiki base URL' },
+                { id: 'e621', name: 'e621 Wiki (tag wiki)', placeholder: 'Leave blank for e621.net, or paste an e926.net URL' },
             ],
             filterPlaceholder: 'Astarion|Gale|Shadowheart (regex on page titles)',
             pluginUrl: 'https://github.com/SillyTavern/SillyTavern-Fandom-Scraper',

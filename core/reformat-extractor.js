@@ -726,7 +726,10 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
  *        wiki text with per_page strategy overridden away — see caller)
  * @param {string} params.contentType - 'document' | 'url' | 'wiki'
  * @param {object} params.settings - VectFox settings
- * @param {(processed: number, total: number) => void} [params.onProgress]
+ * @param {(processed: number, total: number, phase?: 'extract'|'link') => void} [params.onProgress]
+ *        `total` is the count for the CURRENT phase — the linking pass (when
+ *        enabled) re-visits every batch and reports its own 1..total sequence
+ *        tagged 'link', rather than doubling a shared denominator.
  * @param {AbortSignal} [params.abortSignal]
  * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number}>}
  */
@@ -749,9 +752,6 @@ export async function reformatDocument({ text, contentType, settings, onProgress
 
     const concurrency = Math.max(1, Math.min(8, settings.reformat_concurrency || DEFAULT_CONCURRENCY));
     const linkingEnabled = Boolean(settings.reformat_enable_linking_pass);
-    // The linking pass re-visits every batch, so the progress denominator
-    // doubles when it's enabled — keeps the UI's "(done/total)" counter truthful.
-    const progressTotal = linkingEnabled ? totalBatches * 2 : totalBatches;
 
     log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${totalBatches} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
 
@@ -764,7 +764,7 @@ export async function reformatDocument({ text, contentType, settings, onProgress
         const { results, failedCount } = await _processChain(chain, settings, chainIndex, warnings);
         batchesProcessed += chain.length;
         batchesFailed += failedCount;
-        onProgress?.(batchesProcessed, progressTotal);
+        onProgress?.(batchesProcessed, totalBatches, 'extract');
         return results;
     });
 
@@ -790,7 +790,7 @@ export async function reformatDocument({ text, contentType, settings, onProgress
             abortSignal,
             onTick: () => {
                 linkBatchesDone++;
-                onProgress?.(batchesProcessed + linkBatchesDone, progressTotal);
+                onProgress?.(linkBatchesDone, totalBatches, 'link');
             },
         });
     }

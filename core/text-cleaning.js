@@ -276,6 +276,90 @@ export const BUILTIN_PATTERNS = {
         flags: 'gim',
         builtin: true,
     },
+    // ── Wiki/booru HTML-export noise (see the 'Wiki Export Noise' preset) ──
+    // Targets the junk that generic HTML scrapers leave in wiki page dumps
+    // (booru sites especially): repeated site-news banners, post-score number
+    // runs, truncation fragments, and search/layout navigation lines. The
+    // built-in MediaWiki/e621 scrapers produce almost none of this — these
+    // exist for content scraped through outside tools.
+    strip_wiki_announcement_blocks: {
+        id: 'strip_wiki_announcement_blocks',
+        name: 'Strip Site Announcement Blocks (Wiki Export)',
+        // "**10 June** Have you heard? … Get verified now!](…/staff#verification)"
+        // — the news banner repeated on every exported page. Anchored on the
+        // bold date + greeting, lazily bounded at the verification link that
+        // closes the banner; an unterminated banner simply doesn't match.
+        pattern: '\\*\\*\\d{1,2} \\w+\\*\\*\\s+(?:Have you heard|Hey there)[\\s\\S]{0,3000}?verification\\)',
+        replacement: '',
+        flags: 'g',
+        builtin: true,
+    },
+    strip_wiki_promo_lines: {
+        id: 'strip_wiki_promo_lines',
+        name: 'Strip Changelog/Discord/Advertising Lines (Wiki Export)',
+        // Backstop for banner fragments that survive the block pattern when a
+        // page's banner is cut off mid-way.
+        pattern: '^[^\\n]*(?:Read the full changelog|We still have a Discord server|Want to advertise on|Get verified now|changing the API response format|post deletion appeal system|crop any post on the site|Download our userscript)[^\\n]*$',
+        replacement: '',
+        flags: 'gim',
+        builtin: true,
+    },
+    strip_wiki_score_runs: {
+        id: 'strip_wiki_score_runs',
+        name: 'Strip Post-Score Number Runs (Wiki Export)',
+        // " 3 8 Q  4 3 E  1.3k 2.8k E …" — score/favcount/rating triplets from
+        // post thumbnails. Requires 3+ consecutive triplets so a legitimate
+        // lone "3 8 Q" inside prose survives.
+        pattern: '(?:\\b\\d+(?:\\.\\d+)?k?[ \\t]+\\d+(?:\\.\\d+)?k?[ \\t]+[SQE]\\b[ \\t]*){3,}',
+        replacement: '',
+        flags: 'g',
+        builtin: true,
+    },
+    strip_wiki_compact_score_runs: {
+        id: 'strip_wiki_compact_score_runs',
+        name: 'Strip Compact Score Runs (Wiki Export)',
+        // "2529E  99192E  6151298E" — the same data with inner spaces collapsed.
+        pattern: '(?:\\b\\d{2,}(?:\\.\\d+)?k?[SQE]\\b[ \\t]*){2,}',
+        replacement: '',
+        flags: 'g',
+        builtin: true,
+    },
+    strip_wiki_posts_hidden: {
+        id: 'strip_wiki_posts_hidden',
+        name: "Strip 'N post(s) hidden' Notices (Wiki Export)",
+        pattern: '\\d+\\s+post\\(s\\) on this page were hidden[^\\n]*',
+        replacement: '',
+        flags: 'gi',
+        builtin: true,
+    },
+    strip_wiki_read_more: {
+        id: 'strip_wiki_read_more',
+        name: "Strip 'Read More' Truncation Fragments (Wiki Export)",
+        // "\[... [Read More](https://…/wiki_pages/3515)" — truncated-article
+        // markers, with or without the leading escaped-bracket ellipsis.
+        pattern: '(?:\\\\?\\[\\.{3}\\s*)?\\[Read More\\]\\([^)]*\\)',
+        replacement: '',
+        flags: 'gi',
+        builtin: true,
+    },
+    strip_wiki_nav_settings: {
+        id: 'strip_wiki_nav_settings',
+        name: 'Strip Search/Layout Navigation Lines (Wiki Export)',
+        pattern: '(?:^(?:#{1,6}[ \\t]*)?(?:Advanced Options|Layout Settings|Rating Safe Questionable Explicit[^\\n]*|Card Size Small Medium Large[^\\n]*)$|Posts[ \\t]+\\[.{0,4}search help.{0,4}\\]\\([^)]*\\))',
+        replacement: '',
+        flags: 'gim',
+        builtin: true,
+    },
+    strip_wiki_url_echo_lines: {
+        id: 'strip_wiki_url_echo_lines',
+        name: 'Strip Bare-URL Echo Lines (Wiki Export)',
+        // "[*https://e621.net/posts?tags=…*](https://…)" — the italicized URL
+        // echo scrapers emit directly under each page header.
+        pattern: '^\\[\\*https?:[^\\n]*$',
+        replacement: '',
+        flags: 'gim',
+        builtin: true,
+    },
     strip_mvu_game_system_tags: {
         id: 'strip_mvu_game_system_tags',
         name: 'Strip Game-System Guide/Protocol Tags (MVU)',
@@ -378,6 +462,24 @@ export const CLEANING_PRESETS = {
             'strip_mvu_game_system_tags',
         ],
     },
+    wiki_noise: {
+        id: 'wiki_noise',
+        name: 'Wiki Export Noise',
+        description: 'Strips booru/wiki HTML-export noise — repeated site announcement banners, post-score number runs, "Read More" truncation fragments, "N post(s) hidden" notices, and search/layout/advertising lines — plus standard HTML formatting. For page dumps from outside scrapers; the built-in wiki scraper produces little of this',
+        patterns: [
+            'strip_font_tags',
+            'strip_color_spans',
+            'strip_bold_italic',
+            'strip_wiki_announcement_blocks',
+            'strip_wiki_promo_lines',
+            'strip_wiki_score_runs',
+            'strip_wiki_compact_score_runs',
+            'strip_wiki_posts_hidden',
+            'strip_wiki_read_more',
+            'strip_wiki_nav_settings',
+            'strip_wiki_url_echo_lines',
+        ],
+    },
 };
 
 // ============================================================================
@@ -396,9 +498,11 @@ export function getCleaningSettings() {
         // Default: Custom preset with all MVU + standard patterns pre-checked
         // (equivalent to MVU Game Maker preset, but lets users toggle individual patterns).
         // Fatbody patterns are game-specific — opt in via the 'Fatbody D&D Framework'
-        // preset or per-pattern toggles, never by default.
+        // preset or per-pattern toggles, never by default. Wiki-export patterns are
+        // likewise opt-in via the 'Wiki Export Noise' preset: the score-run regexes
+        // could plausibly eat stat tables in game chats.
         const defaultEnabled = Object.keys(BUILTIN_PATTERNS)
-            .filter(id => id !== 'strip_all_html' && !id.startsWith('strip_fatbody_'));
+            .filter(id => id !== 'strip_all_html' && !id.startsWith('strip_fatbody_') && !id.startsWith('strip_wiki_'));
         extension_settings.vectfox.cleaning = {
             selectedPreset: 'custom',
             customPatterns: [],
