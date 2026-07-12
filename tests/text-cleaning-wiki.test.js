@@ -26,6 +26,7 @@ import {
     CLEANING_PRESETS,
     getCleaningSettings,
     cleanText,
+    cleanWikiNoise,
 } from '../core/text-cleaning.js';
 
 const WIKI_IDS = Object.keys(BUILTIN_PATTERNS).filter(id => id.startsWith('strip_wiki_'));
@@ -204,5 +205,36 @@ describe('wiki pattern group: cleaning behavior', () => {
         useWikiNoisePreset();
         const himbofication = 'The process of transforming into an individual dumb brute or stud, perfectly happy to be fuck anyone and/or workout and perform physical tasks mindlessly. Alternatively, the male equivalent of bimbofication - rather than a male character becoming feminine or a female character becoming stereotypically hyperfeminine, an individual becoming ubermasculine and/or hypersexual in body, outfit, behavior, or all of the above.';
         expect(cleanText(himbofication)).toContain(himbofication);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// cleanWikiNoise — unconditional, independent of getCleaningSettings()
+// ---------------------------------------------------------------------------
+
+describe('cleanWikiNoise: applies regardless of the user\'s cleaning preset', () => {
+    it('strips noise with default (out-of-the-box) cleaning settings — wiki_noise preset never selected', () => {
+        getCleaningSettings(); // builds defaults: selectedPreset 'custom', no strip_wiki_* enabled
+        const text = 'Real lore sentence stays.\nRead the full changelog [here](https://e621.net/forum_topics/13631)';
+        const cleaned = cleanWikiNoise(text);
+        expect(cleaned).toContain('Real lore sentence stays.');
+        expect(cleaned).not.toContain('changelog');
+    });
+
+    it('strips noise even when a totally unrelated preset (nuclear) is selected', () => {
+        extension_settings.vectfox.cleaning = { selectedPreset: 'nuclear', customPatterns: [], enabledBuiltins: [] };
+        const text = 'Fur Coloration matters. 3 post(s) on this page were hidden because you need to be logged in to view them. [(learn more)](https://e621.net/help/global_blacklist)';
+        const cleaned = cleanWikiNoise(text);
+        expect(cleaned).toContain('Fur Coloration matters.');
+        expect(cleaned).not.toContain('learn more');
+    });
+
+    it('does not depend on getActivePatterns() at all — ignores custom user patterns', () => {
+        extension_settings.vectfox.cleaning = { selectedPreset: 'custom', customPatterns: [{ name: 'unrelated', pattern: 'Fur', replacement: 'XXX', flags: 'g', enabled: true }], enabledBuiltins: [] };
+        const cleaned = cleanWikiNoise('Fur Coloration matters. 2529E  99192E  6151298E');
+        // the user's custom "Fur"->"XXX" pattern must NOT have run (cleanWikiNoise
+        // only ever touches strip_wiki_* patterns), but wiki noise is still gone
+        expect(cleaned).toContain('Fur Coloration matters.');
+        expect(cleaned).not.toContain('2529E');
     });
 });

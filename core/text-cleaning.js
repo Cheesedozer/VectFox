@@ -638,6 +638,34 @@ export function cleanText(text) {
     return result;
 }
 
+const WIKI_NOISE_PATTERN_IDS = Object.keys(BUILTIN_PATTERNS).filter(id => id.startsWith('strip_wiki_'));
+
+/**
+ * Strips known wiki/booru export chrome (announcement banners, score-run
+ * digit noise, "Read More" truncation, "N post(s) hidden" notices,
+ * search/layout/nav lines) unconditionally — independent of the user's
+ * cleaning preset or custom pattern selection.
+ *
+ * This intentionally does NOT go through getActivePatterns(): these shapes
+ * are site furniture, never legitimate wiki prose (the same reasoning that
+ * already makes wikiToText() in wiki-scraper.js strip wikitext-structural
+ * noise unconditionally), so there's no reason to make every wiki-scrape
+ * user find and enable a preset before the LLM sees clean input. Scoped to
+ * content prepared as `wiki` (see prepareWikiContent) — other content types
+ * are untouched, so this can't eat a stat table in a pasted chat log.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function cleanWikiNoise(text) {
+    if (!text || typeof text !== 'string') return text;
+    let result = text;
+    for (const id of WIKI_NOISE_PATTERN_IDS) {
+        result = applyPattern(result, BUILTIN_PATTERNS[id]);
+    }
+    return result.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // cleanMessages removed 2026-05-24 — its only consumer was prepareChatContent
 // in content-vectorization.js, which is itself gone. EventBase's per-message
 // cleaning happens inline in eventbase-extractor.js via cleanText() directly.
