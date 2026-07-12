@@ -1,0 +1,358 @@
+/* ============================================================================
+ * WIKI LIBRARY MODAL
+ * ============================================================================ */
+
+.vectfox-wl-content {
+    max-width: 900px;
+    width: 92%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.vectfox-wl-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px 16px;
+}
+
+/* Running-task strip */
+.vectfox-wl-task-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 16px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, var(--SmartThemeBlurTintColor));
+    border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    font-size: 0.9em;
+}
+
+.vectfox-wl-task-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Tabs */
+.vectfox-wl-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+}
+
+.vectfox-wl-tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.7;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 0.95em;
+}
+
+.vectfox-wl-tab-btn:hover {
+    opacity: 1;
+}
+
+.vectfox-wl-tab-btn.active {
+    opacity: 1;
+    border-bottom-color: var(--SmartThemeQuoteColor);
+    font-weight: 500;
+}
+
+.vectfox-wl-tab-content {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.vectfox-wl-tab-content.active {
+    display: flex;
+}
+
+/* Filter row */
+.vectfox-wl-filter-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.vectfox-wl-filter-row select {
+    max-width: 220px;
+}
+
+.vectfox-wl-filter-row input[type="text"] {
+    flex: 1;
+}
+
+.vectfox-wl-mode-toggle {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    white-space: nowrap;
+    cursor: pointer;
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+/* Facet chips */
+.vectfox-wl-facets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.vectfox-wl-facet-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    padding-right: 10px;
+}
+
+.vectfox-wl-chip {
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 25%, transparent);
+    font-size: 0.8em;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.vectfox-wl-chip:hover {
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+.vectfox-wl-chip.active {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 25%, transparent);
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+.vectfox-wl-chip-more {
+    opacity: 0.7;
+    border-style: dashed;
+}
+
+/* Toolbar */
+.vectfox-wl-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.vectfox-wl-toolbar-sep {
+    width: 1px;
+    height: 18px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 20%, transparent);
+}
+
+/* Quick lookup */
+.vectfox-wl-quick-lookup {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.9em;
+}
+
+.vectfox-wl-quick-lookup input {
+    flex: 1;
+}
+
+/* Page rows */
+.vectfox-wl-list {
+    flex: 1;
+    min-height: 120px;
+    overflow-y: auto;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    border-radius: 8px;
+    padding: 4px;
+}
+
+.vectfox-wl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.9em;
+}
+
+.vectfox-wl-row:hover {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+}
+
+.vectfox-wl-fetched-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.vectfox-wl-fetched-dot.is-fetched {
+    background: var(--vectfox-success);
+}
+
+.vectfox-wl-fetched-dot.is-unfetched {
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 30%, transparent);
+}
+
+.vectfox-wl-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--SmartThemeBodyColor);
+    text-decoration: none;
+}
+
+a.vectfox-wl-title:hover {
+    text-decoration: underline;
+}
+
+.vectfox-wl-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.vectfox-wl-badge {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 15%, transparent);
+    font-size: 0.75em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.vectfox-wl-badge-more {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.vectfox-wl-size {
+    width: 64px;
+    text-align: right;
+    font-size: 0.8em;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.vectfox-wl-row-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.vectfox-wl-list-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+.vectfox-wl-empty {
+    padding: 24px;
+    text-align: center;
+    opacity: 0.7;
+}
+
+/* Basket */
+.vectfox-wl-basket-totals {
+    font-size: 0.88em;
+    opacity: 0.85;
+}
+
+.vectfox-wl-basket-group summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 500;
+}
+
+.vectfox-wl-basket-group-count {
+    opacity: 0.7;
+    font-weight: normal;
+    font-size: 0.85em;
+}
+
+/* Storage */
+.vectfox-wl-storage-card {
+    padding: 10px 12px;
+    margin: 6px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 14%, transparent);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vectfox-wl-storage-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.vectfox-wl-storage-name {
+    font-weight: 600;
+}
+
+.vectfox-wl-storage-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+.vectfox-wl-storage-error {
+    font-size: 0.82em;
+    color: var(--vectfox-danger);
+}
+
+.vectfox-wl-storage-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.vectfox-wl-storage-footer {
+    padding-top: 8px;
+    font-size: 0.85em;
+}
+
+.vectfox-wl-usage-bar {
+    margin-top: 4px;
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    overflow: hidden;
+}
+
+.vectfox-wl-usage-fill {
+    height: 100%;
+    background: var(--SmartThemeQuoteColor);
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+    .vectfox-wl-filter-row {
+        flex-wrap: wrap;
+    }
+
+    .vectfox-wl-badges {
+        display: none;
+    }
+}

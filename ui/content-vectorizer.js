@@ -767,6 +767,10 @@ function renderWikiSource(type) {
                         title="Continue an interrupted scrape from its saved checkpoint.">
                     <i class="fa-solid fa-play"></i> Resume
                 </button>
+                <button id="vectfox_cv_open_library" class="vectfox-btn-secondary"
+                        title="Browse everything scraped so far: search, filter by category, pick pages, build a cross-wiki basket, manage storage.">
+                    <i class="fa-solid fa-book-open"></i> Wiki Library
+                </button>
             </div>
 
             <!-- Running-task controls -->
@@ -2464,6 +2468,10 @@ async function initWikiLibrarySection() {
         $('#vectfox_cv_wiki_status').html('<i class="fa-solid fa-spinner fa-spin"></i> Stopping after the current batch (results are kept)…');
     });
     $('#vectfox_cv_cancel_scrape').on('click', () => wikiLibrary.cancelHard());
+    $('#vectfox_cv_open_library').on('click', async () => {
+        const { openWikiLibrary } = await import('./wiki-library.js');
+        await openWikiLibrary();
+    });
     $('#vectfox_cv_wiki_type').on('change', updateWikiButtonsForType);
     $('#vectfox_cv_wiki_url').on('change', () => { refreshWikiLibraryPanel(); });
 
