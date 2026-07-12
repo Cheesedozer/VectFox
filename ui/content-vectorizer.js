@@ -38,7 +38,15 @@ import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { getCleaningSettings } from '../core/text-cleaning.js';
 import { progressTracker } from './progress-tracker.js';
 import { isFatbodyOwnedBook } from '../core/fatbody-guard.js';
-import { scrapeWiki as scrapeWikiInternal, WikiScrapeError, shouldFallbackToPlugin } from '../core/wiki-scraper.js';
+import {
+    scrapeWiki as scrapeWikiInternal,
+    WikiScrapeError,
+    shouldFallbackToPlugin,
+    regexFromString,
+    buildApiCandidates,
+    resolveE621Base,
+} from '../core/wiki-scraper.js';
+import * as wikiLibrary from '../core/wiki-library-service.js';
 
 // ============================================================================
 // STATE
@@ -129,6 +137,7 @@ export function openContentVectorizer(initialType = null) {
  * Closes the modal
  */
 export function closeContentVectorizer() {
+    teardownWikiLibraryEvents();
     $('#vectfox_content_vectorizer_modal').fadeOut(200, function() {
         $(this).remove();
     });
@@ -732,19 +741,48 @@ function renderWikiSource(type) {
             <!-- Page Filter (for bulk scraping) -->
             <div class="vectfox-cv-wiki-filter">
                 <label>
-                    Page Filter
+                    Title Filter
                     <span class="vectfox-cv-optional">(optional)</span>
                 </label>
                 <input type="text" id="vectfox_cv_wiki_filter"
                        class="vectfox-input"
                        placeholder="${options.filterPlaceholder}">
                 <div class="vectfox-cv-hint">
-                    Optional regex matched against page titles (e.g. Astarion|Gale). Leave empty to scrape all pages.
+                    Optional regex applied while indexing (e.g. Astarion|Gale). Leave empty to index
+                    everything — you can search and pick pages in the Wiki Library afterwards.
                 </div>
             </div>
 
-            <!-- Scrape Button -->
-            <div class="vectfox-cv-wiki-actions">
+            <!-- Wiki Library actions -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_library_actions">
+                <button id="vectfox_cv_index_titles" class="vectfox-btn-primary"
+                        title="Fast: list every page title with categories and sizes, without downloading content. Pick pages in the Wiki Library afterwards.">
+                    <i class="fa-solid fa-list"></i> Index Titles
+                </button>
+                <button id="vectfox_cv_fetch_everything" class="vectfox-btn-secondary"
+                        title="Index and download the full content of every page (the old Scrape Wiki behavior, now saved to the Wiki Library).">
+                    <i class="fa-solid fa-download"></i> Fetch Everything
+                </button>
+                <button id="vectfox_cv_resume_indexing" class="vectfox-btn-secondary" style="display: none;"
+                        title="Continue an interrupted scrape from its saved checkpoint.">
+                    <i class="fa-solid fa-play"></i> Resume
+                </button>
+            </div>
+
+            <!-- Running-task controls -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_running_actions" style="display: none;">
+                <button id="vectfox_cv_stop_keep" class="vectfox-btn-secondary"
+                        title="Stop now but KEEP everything retrieved so far (a checkpoint is saved for Resume).">
+                    <i class="fa-solid fa-hand"></i> Stop &amp; Keep
+                </button>
+                <button id="vectfox_cv_cancel_scrape" class="vectfox-btn-danger"
+                        title="Abort the current request. Pages already saved to the Wiki Library are kept.">
+                    <i class="fa-solid fa-stop"></i> Cancel
+                </button>
+            </div>
+
+            <!-- Legacy one-shot scrape (only when IndexedDB is unavailable) -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_legacy_actions" style="display: none;">
                 <button id="vectfox_cv_scrape_wiki" class="vectfox-btn-primary">
                     <i class="fa-solid fa-download"></i> Scrape Wiki
                 </button>
@@ -752,6 +790,12 @@ function renderWikiSource(type) {
 
             <!-- Status/Preview -->
             <div class="vectfox-cv-wiki-status" id="vectfox_cv_wiki_status"></div>
+
+            <!-- Live results during scraping -->
+            <div class="vectfox-cv-wiki-live" id="vectfox_cv_wiki_live" style="display: none;">
+                <div class="vectfox-cv-wiki-live-counts" id="vectfox_cv_wiki_live_counts"></div>
+                <ul class="vectfox-cv-wiki-live-list" id="vectfox_cv_wiki_live_list"></ul>
+            </div>
             <div class="vectfox-cv-wiki-preview" id="vectfox_cv_wiki_preview" style="display: none;">
                 <div class="vectfox-cv-wiki-preview-header">
                     <i class="fa-solid fa-check-circle"></i>
@@ -1661,6 +1705,7 @@ function bindSourceEvents(type) {
     // Check wiki plugin availability when wiki type is selected
     if (type.sourceType === 'wiki') {
         checkWikiPluginStatus();
+        initWikiLibrarySection();
     }
 }
 
@@ -2266,20 +2311,7 @@ async function scrapeWiki() {
         };
 
         status.html('');
-
-        // Show preview
-        $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
-        $('#vectfox_cv_wiki_pages').text(pages.length);
-        $('#vectfox_cv_wiki_chars').text(combinedContent.length.toLocaleString());
-
-        // Page titles are remote-controlled strings — build the list with
-        // .text() so they can never be interpreted as HTML.
-        const pageList = $('#vectfox_cv_wiki_page_list').empty();
-        for (const page of pages) {
-            pageList.append($('<li>').text(String(page.title)));
-        }
-        $('#vectfox_cv_wiki_pages_details').prop('open', pages.length <= 15);
-        preview.show();
+        showWikiPreview(pages, combinedContent);
 
         toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
 
@@ -2363,6 +2395,356 @@ function extractWikiName(url, wikiType) {
         return pathParts[pathParts.length - 1] || urlObj.hostname;
     } catch {
         return url.substring(0, 50);
+    }
+}
+
+/**
+ * Renders the shared wiki preview panel (page/char counts + title list).
+ * Page titles are remote-controlled strings — build the list with .text()
+ * so they can never be interpreted as HTML.
+ */
+function showWikiPreview(pages, combinedContent) {
+    $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
+    $('#vectfox_cv_wiki_pages').text(pages.length);
+    $('#vectfox_cv_wiki_chars').text(combinedContent.length.toLocaleString());
+
+    const pageList = $('#vectfox_cv_wiki_page_list').empty();
+    for (const page of pages) {
+        pageList.append($('<li>').text(String(page.title)));
+    }
+    $('#vectfox_cv_wiki_pages_details').prop('open', pages.length <= 15);
+    $('#vectfox_cv_wiki_preview').show();
+}
+
+// ============================================================================
+// WIKI LIBRARY SECTION
+// ============================================================================
+// The persistent scrape flow: Index Titles / Fetch Everything / Stop & Keep /
+// Cancel / Resume, with a live list of results as they land. Everything runs
+// through core/wiki-library-service.js so pages survive stops, cancels, and
+// reloads. The legacy one-shot scrapeWiki() above remains only as the
+// degraded path when IndexedDB is unavailable.
+
+let wikiLibraryUnsubs = [];
+let wikiLiveTitles = [];
+let wikiLiveRenderQueued = false;
+let wikiLibraryAvailable = null; // null = not probed yet
+
+function teardownWikiLibraryEvents() {
+    for (const unsub of wikiLibraryUnsubs) {
+        try { unsub(); } catch { /* already gone */ }
+    }
+    wikiLibraryUnsubs = [];
+}
+
+/**
+ * Wires the Wiki Library controls of the wiki source section. Called from
+ * bindSourceEvents each time the wiki section is (re)rendered.
+ */
+async function initWikiLibrarySection() {
+    teardownWikiLibraryEvents();
+    wikiLiveTitles = [];
+
+    if (wikiLibraryAvailable === null) {
+        wikiLibraryAvailable = await wikiLibrary.isStoreAvailable();
+    }
+    if (!wikiLibraryAvailable) {
+        // Degraded mode: the legacy in-memory one-shot flow
+        $('#vectfox_cv_wiki_library_actions').hide();
+        $('#vectfox_cv_wiki_legacy_actions').show();
+        $('#vectfox_cv_wiki_status').html('<i class="fa-solid fa-triangle-exclamation"></i> Browser storage unavailable — scrapes will not be saved (legacy mode).');
+        return;
+    }
+
+    $('#vectfox_cv_index_titles').on('click', () => runWikiLibraryTask('index'));
+    $('#vectfox_cv_fetch_everything').on('click', () => runWikiLibraryTask('full'));
+    $('#vectfox_cv_resume_indexing').on('click', () => runWikiLibraryTask('resume'));
+    $('#vectfox_cv_stop_keep').on('click', () => {
+        wikiLibrary.stopAndKeep();
+        $('#vectfox_cv_wiki_status').html('<i class="fa-solid fa-spinner fa-spin"></i> Stopping after the current batch (results are kept)…');
+    });
+    $('#vectfox_cv_cancel_scrape').on('click', () => wikiLibrary.cancelHard());
+    $('#vectfox_cv_wiki_type').on('change', updateWikiButtonsForType);
+    $('#vectfox_cv_wiki_url').on('change', () => { refreshWikiLibraryPanel(); });
+
+    wikiLibraryUnsubs.push(wikiLibrary.on('pages-added', onWikiPagesEvent));
+    wikiLibraryUnsubs.push(wikiLibrary.on('pages-fetched', onWikiPagesEvent));
+    wikiLibraryUnsubs.push(wikiLibrary.on('task-status', onWikiTaskStatus));
+    wikiLibraryUnsubs.push(wikiLibrary.on('library-updated', onWikiLibraryUpdated));
+
+    updateWikiButtonsForType();
+    setWikiRunningUi(wikiLibrary.isBusy());
+    refreshWikiLibraryPanel();
+}
+
+/** e621 has no cheap titles-only mode — bodies arrive with the listing. */
+function updateWikiButtonsForType() {
+    const isE621 = $('#vectfox_cv_wiki_type').val() === 'e621';
+    $('#vectfox_cv_index_titles').toggle(!isE621);
+    refreshWikiLibraryPanel();
+}
+
+function setWikiRunningUi(running) {
+    $('#vectfox_cv_wiki_library_actions').toggle(!running);
+    $('#vectfox_cv_wiki_running_actions').toggle(!!running);
+}
+
+/** Streams the last few landed titles into the live list, throttled. */
+function onWikiPagesEvent(event) {
+    for (const record of event.records ?? []) {
+        wikiLiveTitles.push(record.title);
+    }
+    if (wikiLiveTitles.length > 8) {
+        wikiLiveTitles = wikiLiveTitles.slice(-8);
+    }
+    if (wikiLiveRenderQueued) {
+        return;
+    }
+    wikiLiveRenderQueued = true;
+    setTimeout(() => {
+        wikiLiveRenderQueued = false;
+        const list = $('#vectfox_cv_wiki_live_list').empty();
+        for (const title of wikiLiveTitles) {
+            list.append($('<li>').text(String(title)));
+        }
+        $('#vectfox_cv_wiki_live').show();
+    }, 250);
+}
+
+function onWikiTaskStatus({ task }) {
+    const status = $('#vectfox_cv_wiki_status');
+    if (task) {
+        setWikiRunningUi(true);
+        if (task.phase === 'titles') {
+            status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Indexing pages… ${task.done} found`);
+        } else if (task.phase === 'content') {
+            status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Fetching content ${task.done}/${task.total}…`);
+        }
+    } else {
+        setWikiRunningUi(false);
+        refreshWikiLibraryPanel();
+    }
+}
+
+function onWikiLibraryUpdated({ library }) {
+    if (library) {
+        $('#vectfox_cv_wiki_live_counts').text(
+            `${(library.titleCount ?? 0).toLocaleString()} titles / ${(library.fetchedCount ?? 0).toLocaleString()} fetched in library`);
+        $('#vectfox_cv_wiki_live').show();
+    }
+}
+
+/**
+ * Finds the stored library matching the section's current wikiType + URL
+ * input, tolerating the /api.php vs /w/api.php ambiguity by checking every
+ * endpoint candidate.
+ */
+async function findWikiLibraryForInput(wikiType, url) {
+    if (!url && wikiType !== 'e621') {
+        return null;
+    }
+    const candidates = new Set();
+    try {
+        if (wikiType === 'e621') {
+            candidates.add(wikiLibrary.deriveLibraryIdentity('e621', resolveE621Base(url)).id);
+        } else {
+            for (const apiUrl of buildApiCandidates(wikiType, url)) {
+                candidates.add(wikiLibrary.deriveLibraryIdentity(wikiType, apiUrl).id);
+            }
+        }
+    } catch {
+        return null;
+    }
+    const libraries = await wikiLibrary.listLibraries();
+    return libraries.find(lib => candidates.has(lib.id) || (url && lib.inputUrl === url)) ?? null;
+}
+
+/** Refreshes the Resume button and stored-counts line for the current input. */
+async function refreshWikiLibraryPanel() {
+    if (!wikiLibraryAvailable) {
+        return;
+    }
+    const resumeBtn = $('#vectfox_cv_resume_indexing');
+    try {
+        const wikiType = $('#vectfox_cv_wiki_type').val();
+        const url = $('#vectfox_cv_wiki_url').val()?.trim() ?? '';
+        const library = await findWikiLibraryForInput(wikiType, url);
+        if (library) {
+            onWikiLibraryUpdated({ library });
+        }
+        if (library && !library.enumComplete && library.checkpoint != null) {
+            resumeBtn.data('libraryId', library.id).show();
+        } else {
+            resumeBtn.hide();
+        }
+    } catch {
+        resumeBtn.hide();
+    }
+}
+
+/**
+ * Builds the legacy wiki sourceData shape from a library's fetched pages,
+ * optionally narrowed by the section's title filter (same regex semantics
+ * as scrape-time filtering).
+ */
+async function buildWikiSourceDataFromLibrary(libraryId, filter) {
+    const library = await wikiLibrary.getLibrary(libraryId);
+    if (!library) {
+        return false;
+    }
+    const records = await wikiLibrary.getPagesByLibrary(libraryId, { fetchedOnly: true });
+    const regex = filter ? regexFromString(String(filter)) : undefined;
+    const pages = records
+        .filter(r => r.plaintext && (!regex || new RegExp(regex).test(r.title + '\n')))
+        .map(r => ({ title: r.title, content: r.plaintext }));
+    if (pages.length === 0) {
+        return false;
+    }
+
+    const combinedContent = pages.map(page =>
+        `# ${String(page.title).trim()}\n\n${String(page.content).trim()}`
+    ).join('\n\n---\n\n');
+
+    sourceData = {
+        type: 'wiki',
+        wikiType: library.wikiType,
+        url: library.inputUrl,
+        content: combinedContent,
+        pages: pages,
+        pageCount: pages.length,
+        name: library.name,
+    };
+    showWikiPreview(pages, combinedContent);
+    return true;
+}
+
+/**
+ * Runs an Index Titles / Fetch Everything / Resume task through the Wiki
+ * Library service, with plugin fallback when the browser is CORS-blocked.
+ *
+ * @param {('index'|'full'|'resume')} kind
+ */
+async function runWikiLibraryTask(kind) {
+    const wikiType = $('#vectfox_cv_wiki_type').val();
+    const url = $('#vectfox_cv_wiki_url').val().trim();
+    const filter = $('#vectfox_cv_wiki_filter').val().trim();
+
+    if (!url && wikiType !== 'e621') {
+        toastr.warning('Please enter a wiki URL or ID');
+        return;
+    }
+    if (wikiLibrary.isBusy()) {
+        toastr.warning('A Wiki Library task is already running — stop it first.');
+        return;
+    }
+
+    const status = $('#vectfox_cv_wiki_status');
+    $('#vectfox_cv_wiki_preview').hide();
+    wikiLiveTitles = [];
+    $('#vectfox_cv_wiki_live_list').empty();
+    status.html('<i class="fa-solid fa-spinner fa-spin"></i> Contacting wiki…');
+
+    try {
+        // e621's only walk mode downloads the whole corpus — confirm the cost
+        // once, before the first walk (resume/complete walks skip the dialog)
+        if (wikiType === 'e621' && kind !== 'resume') {
+            const libraryId = wikiLibrary.deriveLibraryIdentity('e621', resolveE621Base(url)).id;
+            const estimate = await wikiLibrary.estimateFullWalk(libraryId);
+            if (estimate.requests > 0) {
+                const minutes = Math.max(1, Math.round(estimate.estMs / 60000));
+                const confirmed = await callGenericPopup(
+                    `<p>Indexing the e621 wiki downloads its full corpus: roughly <b>${estimate.requests}</b> requests over <b>~${minutes} minutes</b> (the site asks for ≤1 request/second).</p>
+                     <p>Progress is saved continuously — you can <b>Stop &amp; Keep</b> at any time and resume later. For a single known tag, use the Wiki Library's exact-title quick lookup instead.</p>
+                     <p>Start the walk?</p>`,
+                    POPUP_TYPE.CONFIRM);
+                if (!confirmed) {
+                    status.html('');
+                    return;
+                }
+            }
+        }
+
+        let result;
+        if (kind === 'resume') {
+            result = await wikiLibrary.resumeEnumeration($('#vectfox_cv_resume_indexing').data('libraryId'));
+        } else {
+            result = await wikiLibrary.startEnumeration({ wikiType, url, filter });
+            if (kind === 'full' && wikiType !== 'e621' && !result.stopped) {
+                const fetchResult = await wikiLibrary.fetchEverything(result.libraryId);
+                result = { ...result, ...fetchResult };
+            }
+        }
+
+        const library = await wikiLibrary.getLibrary(result.libraryId);
+        if (result.stopped) {
+            status.html(`<i class="fa-solid fa-circle-check"></i> Stopped — ${library.titleCount.toLocaleString()} pages kept in the library. Resume when ready.`);
+            toastr.info(`Stopped and kept ${library.titleCount.toLocaleString()} pages`, 'VectFox');
+        } else if (kind === 'full' || wikiType === 'e621') {
+            const built = await buildWikiSourceDataFromLibrary(result.libraryId, filter);
+            status.html('');
+            if (built) {
+                toastr.success(`Scraped ${sourceData.pageCount} page(s), ${sourceData.content.length.toLocaleString()} chars`, 'VectFox');
+            } else {
+                status.html('<i class="fa-solid fa-circle-info"></i> Nothing matched the filter — adjust it or browse the Wiki Library.');
+            }
+        } else {
+            status.html(`<i class="fa-solid fa-circle-check"></i> ${library.titleCount.toLocaleString()} titles indexed — pick pages in the Wiki Library, or Fetch Everything.`);
+            toastr.success(`Indexed ${library.titleCount.toLocaleString()} titles`, 'VectFox');
+        }
+    } catch (e) {
+        if (e instanceof WikiScrapeError && e.code === 'aborted') {
+            status.html('<i class="fa-solid fa-ban"></i> Cancelled — pages already saved were kept in the library.');
+        } else if (e?.code === 'busy') {
+            toastr.warning(e.message);
+        } else if (wikiType !== 'e621' && shouldFallbackToPlugin(e) && await isWikiPluginAvailable(wikiType)) {
+            await runWikiPluginFallback(wikiType, url, filter, status);
+        } else {
+            console.error('VectFox: Wiki Library task failed:', e);
+            status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
+            if (shouldFallbackToPlugin(e)) {
+                status.append(renderPluginHint());
+            }
+            toastr.error('Wiki task failed: ' + e.message);
+        }
+    } finally {
+        refreshWikiLibraryPanel();
+    }
+}
+
+/**
+ * CORS-blocked wikis fall back to the external Fandom Scraper plugin —
+ * results still land in the library (no metadata, but persistent).
+ */
+async function runWikiPluginFallback(wikiType, url, filter, status) {
+    try {
+        console.warn('VectFox: Built-in wiki scraper blocked, falling back to Fandom Scraper plugin');
+        status.html('<i class="fa-solid fa-spinner fa-spin"></i> Browser scrape blocked — using Fandom Scraper plugin...');
+        const pages = await scrapeViaPlugin(wikiType, url, filter);
+        if (!pages || pages.length === 0) {
+            throw new Error('No content found');
+        }
+        await wikiLibrary.ingestPluginPages(wikiType, url, pages)
+            .catch(err => console.warn('VectFox: Could not save plugin results to the Wiki Library:', err));
+
+        const combinedContent = pages.map(page =>
+            `# ${String(page.title).trim()}\n\n${String(page.content).trim()}`
+        ).join('\n\n---\n\n');
+        sourceData = {
+            type: 'wiki',
+            wikiType: wikiType,
+            url: url,
+            content: combinedContent,
+            pages: pages,
+            pageCount: pages.length,
+            name: extractWikiName(url, wikiType),
+        };
+        status.html('');
+        showWikiPreview(pages, combinedContent);
+        toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
+    } catch (e) {
+        console.error('VectFox: Plugin fallback failed:', e);
+        status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
+        toastr.error('Failed to scrape wiki: ' + e.message);
     }
 }
 
