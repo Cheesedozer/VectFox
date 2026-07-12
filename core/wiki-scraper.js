@@ -427,6 +427,238 @@ async function fetchContents(apiUrl, titles, { onProgress, signal } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Wiki Library primitives — incremental, resumable, stop-and-keep-able
+//
+// The legacy scrapeWiki/scrapeE621 path is atomic: results exist only in
+// local arrays until the whole run succeeds. These primitives instead emit
+// every batch through an awaited onBatch callback (so the caller can persist
+// before the next request fires) and honor two distinct stop semantics:
+//   - signal (AbortSignal): hard cancel, throws WikiScrapeError('aborted')
+//   - stopToken ({stopped}):  graceful Stop & Keep, returns normally with
+//     everything emitted so far plus a resume checkpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Strips the namespace prefix from a category title ("Category:Foo" → "Foo",
+ * including localized prefixes like "Kategorie:Foo").
+ */
+function categoryName(title) {
+    const idx = String(title ?? '').indexOf(':');
+    return idx >= 0 ? String(title).slice(idx + 1) : String(title ?? '');
+}
+
+/**
+ * Enumerates all main-namespace pages WITH metadata (categories, size,
+ * last-touched, canonical URL) in one pass, using generator=allpages combined
+ * with prop=categories|info. Metadata costs no extra requests beyond category
+ * continuation on category-heavy windows.
+ *
+ * Continuation protocol: the ENTIRE `continue` object from each response is
+ * echoed back as parameters — the MediaWiki-sanctioned way to interleave
+ * clcontinue (more categories for the current 500-page window) with
+ * gapcontinue (the next window). A window is flushed through onBatch only
+ * once its categories are complete (the response's continue has no
+ * clcontinue), so no page is emitted twice within a run.
+ *
+ * @param {string} apiUrl - Confirmed api.php URL
+ * @param {object} [options]
+ * @param {object} [options.resumeContinue] - `continue` blob from a previous
+ *        run's checkpoint; enumeration resumes from that window
+ * @param {string} [options.filter] - Regex string tested against titles
+ *        (same title+'\n' semantics as enumerateTitles)
+ * @param {Function} [options.onBatch] - async (records, checkpoint) —
+ *        awaited before the next request. checkpoint is
+ *        {continue: object|null, complete: boolean}: `continue` resumes
+ *        enumeration AFTER this batch (null = from the beginning), `complete`
+ *        is true only when the whole wiki has been enumerated
+ * @param {Function} [options.onProgress] - Called with {phase:'titles', done}
+ * @param {AbortSignal} [options.signal] - Hard cancel
+ * @param {{stopped: boolean}} [options.stopToken] - Graceful Stop & Keep
+ * @returns {Promise<{count: number, continue: object|null, stopped: boolean}>}
+ */
+export async function enumeratePagesWithMetadata(apiUrl, { resumeContinue, filter, onBatch, onProgress, signal, stopToken } = {}) {
+    const regex = filter ? regexFromString(String(filter)) : undefined;
+    let continueBlob = resumeContinue ?? null;
+    // Checkpoint that restarts the CURRENT window — used when stopping while
+    // its categories are still streaming in (the window is re-enumerated on
+    // resume; putPages read-merge makes that harmless).
+    let windowStartContinue = continueBlob;
+    let window = new Map();
+    let count = 0;
+
+    const flush = async (records, checkpoint) => {
+        count += records.length;
+        if (records.length > 0 || checkpoint.complete) {
+            await onBatch?.(records, checkpoint);
+        }
+        onProgress?.({ phase: 'titles', done: count, total: null });
+    };
+
+    for (;;) {
+        if (signal?.aborted) {
+            throw new WikiScrapeError('aborted', 'Wiki scrape cancelled');
+        }
+        if (stopToken?.stopped) {
+            await flush([...window.values()], { continue: windowStartContinue, complete: false });
+            return { count, continue: windowStartContinue, stopped: true };
+        }
+
+        const params = new URLSearchParams({
+            action: 'query',
+            generator: 'allpages',
+            gaplimit: '500',
+            gapnamespace: '0',
+            gapfilterredir: 'nonredirects',
+            prop: 'categories|info',
+            clshow: '!hidden',
+            cllimit: 'max',
+            inprop: 'url',
+            format: 'json',
+            origin: '*',
+        });
+        for (const [key, value] of Object.entries(continueBlob ?? {})) {
+            params.set(key, String(value));
+        }
+
+        const data = await fetchApiJson(`${apiUrl}?${params}`, { signal });
+        if (data?.error) {
+            throw new WikiScrapeError('api', `MediaWiki API error: ${data.error.info ?? data.error.code}`);
+        }
+        // Pre-1.26 wikis answer in rawcontinue format this code can't page
+        if (data?.['query-continue']) {
+            throw new WikiScrapeError('api', 'This wiki\'s MediaWiki version is too old for metadata enumeration.');
+        }
+
+        for (const page of Object.values(data?.query?.pages ?? {})) {
+            if (!page?.title || 'missing' in page) {
+                continue;
+            }
+            if (regex && !new RegExp(regex).test(page.title + '\n')) {
+                continue;
+            }
+            let record = window.get(page.pageid);
+            if (!record) {
+                record = {
+                    title: page.title,
+                    url: page.fullurl ?? '',
+                    categories: [],
+                    sizeBytes: page.length ?? 0,
+                    touched: Date.parse(page.touched ?? '') || 0,
+                };
+                window.set(page.pageid, record);
+            }
+            for (const cat of page.categories ?? []) {
+                const name = categoryName(cat.title);
+                if (name && !record.categories.includes(name)) {
+                    record.categories.push(name);
+                }
+            }
+        }
+
+        const next = data?.continue ?? null;
+        if (next?.clcontinue) {
+            // Categories for the current window are incomplete — keep merging
+            continueBlob = next;
+        } else {
+            // Window complete: flush, then advance to the next window
+            await flush([...window.values()], { continue: next, complete: next === null });
+            window = new Map();
+            continueBlob = next;
+            windowStartContinue = next;
+            if (!next) {
+                return { count, continue: null, stopped: false };
+            }
+        }
+
+        if (WIKI_SCRAPER_TIMINGS.enumDelayMs > 0) {
+            await AsyncUtils.sleep(WIKI_SCRAPER_TIMINGS.enumDelayMs);
+        }
+    }
+}
+
+/**
+ * Fetches raw wikitext + converted plaintext for the given titles in batches
+ * of 50, emitting each batch as it lands so the caller can persist it.
+ *
+ * @param {string} apiUrl - Confirmed api.php URL
+ * @param {string[]} titles - Page titles to fetch
+ * @param {object} [options]
+ * @param {Function} [options.onBatch] - async (pages) — awaited per batch;
+ *        pages are {title, content: wikitext, plaintext}
+ * @param {Function} [options.onProgress] - Called with {phase:'content', done, total}
+ * @param {AbortSignal} [options.signal] - Hard cancel
+ * @param {{stopped: boolean}} [options.stopToken] - Graceful Stop & Keep
+ * @returns {Promise<{pages: Array<{title: string, content: string, plaintext: string}>, stopped: boolean, remainingTitles: string[]}>}
+ */
+export async function fetchPageContents(apiUrl, titles, { onBatch, onProgress, signal, stopToken } = {}) {
+    async function fetchBatch(batch) {
+        const params = new URLSearchParams({
+            action: 'query',
+            prop: 'revisions',
+            rvprop: 'content',
+            rvslots: 'main',
+            format: 'json',
+            origin: '*',
+            titles: batch.join('|'),
+        });
+        const url = `${apiUrl}?${params}`;
+
+        if (url.length > MAX_URL_LENGTH && batch.length > 1) {
+            const mid = Math.ceil(batch.length / 2);
+            return [
+                ...await fetchBatch(batch.slice(0, mid)),
+                ...await fetchBatch(batch.slice(mid)),
+            ];
+        }
+
+        const data = await fetchApiJson(url, { signal });
+
+        const normalized = new Map((data?.query?.normalized ?? []).map(n => [n.from, n.to]));
+        const byTitle = new Map();
+        for (const page of Object.values(data?.query?.pages ?? {})) {
+            if (!page || 'missing' in page || 'invalid' in page) {
+                continue;
+            }
+            const slot = page.revisions?.[0]?.slots?.main;
+            const wikitext = slot?.['*'] ?? slot?.content;
+            if (typeof wikitext === 'string') {
+                byTitle.set(page.title, wikitext);
+            }
+        }
+
+        const pages = [];
+        for (const title of batch) {
+            const resolved = normalized.get(title) ?? title;
+            const wikitext = byTitle.get(resolved);
+            if (wikitext !== undefined) {
+                pages.push({ title: resolved, content: wikitext, plaintext: wikiToText(wikitext) });
+            }
+        }
+        return pages;
+    }
+
+    const pages = [];
+    for (let i = 0; i < titles.length; i += BATCH_SIZE) {
+        if (signal?.aborted) {
+            throw new WikiScrapeError('aborted', 'Wiki scrape cancelled');
+        }
+        if (stopToken?.stopped) {
+            return { pages, stopped: true, remainingTitles: titles.slice(i) };
+        }
+
+        const batchPages = await fetchBatch(titles.slice(i, i + BATCH_SIZE));
+        pages.push(...batchPages);
+        await onBatch?.(batchPages);
+        onProgress?.({ phase: 'content', done: Math.min(i + BATCH_SIZE, titles.length), total: titles.length });
+
+        if (i + BATCH_SIZE < titles.length && WIKI_SCRAPER_TIMINGS.batchDelayMs > 0) {
+            await AsyncUtils.sleep(WIKI_SCRAPER_TIMINGS.batchDelayMs);
+        }
+    }
+    return { pages, stopped: false, remainingTitles: [] };
+}
+
+// ---------------------------------------------------------------------------
 // e621 adapter
 //
 // e621/e926 are Danbooru-lineage boorus, not MediaWiki — endpoint discovery
@@ -438,6 +670,17 @@ async function fetchContents(apiUrl, titles, { onProgress, signal } = {}) {
 
 const E621_PAGE_LIMIT = 320; // API max per request
 const E621_ALLOWED_HOSTS = new Set(['e621.net', 'e926.net']);
+/** e621 wiki-page category ids → display names (tag-category taxonomy). */
+export const E621_CATEGORY_NAMES = {
+    0: 'general',
+    1: 'artist',
+    3: 'copyright',
+    4: 'character',
+    5: 'species',
+    6: 'invalid',
+    7: 'meta',
+    8: 'lore',
+};
 // Starting cursor above any real wiki-page id. A cursorless request uses the
 // site's default ordering (recently-updated, NOT id) — mixing that first page
 // with b<id> cursors silently skips most of the wiki (verified live: the
@@ -557,14 +800,103 @@ export function dtextToPlaintext(dtext) {
  * @throws {WikiScrapeError}
  */
 export async function scrapeE621({ url, filter, onProgress, signal } = {}) {
-    const base = resolveE621Base(url);
     const regex = filter ? regexFromString(String(filter)) : undefined;
     const pages = [];
-    let cursor = E621_MAX_ID_SENTINEL;
+
+    await enumerateE621Pages({
+        url,
+        signal,
+        onBatch: (records) => {
+            for (const record of records) {
+                // Same matching semantics as enumerateTitles (title + trailing newline)
+                if (regex && !new RegExp(regex).test(record.title + '\n')) {
+                    continue;
+                }
+                if (record.plaintext) {
+                    pages.push({ title: record.title, content: record.plaintext });
+                }
+            }
+            onProgress?.({ phase: 'titles', done: pages.length, total: null });
+        },
+    });
+
+    if (pages.length === 0) {
+        throw new WikiScrapeError('not-found', filter
+            ? 'No e621 wiki pages matched the filter — check the filter regex (e621 titles are lowercase_with_underscores).'
+            : 'No e621 wiki pages found.');
+    }
+
+    log.lifecycle(`[WikiScraper] Scraped ${pages.length} e621 wiki pages`);
+    return pages;
+}
+
+/**
+ * Maps a raw /wiki_pages.json item to a Wiki Library page record, or null
+ * for items the scraper has always skipped (deleted, untitled, empty body).
+ * e621 bodies arrive with the listing, so records are born content-fetched.
+ */
+function mapE621Item(item) {
+    if (item?.is_deleted) {
+        return null;
+    }
+    const title = typeof item?.title === 'string' ? item.title.trim() : '';
+    const body = typeof item?.body === 'string' ? item.body : '';
+    if (!title || !body.trim()) {
+        return null;
+    }
+    // The taxonomy id normally lives in category_id; some API versions expose
+    // it under the (misleadingly named) category_name key instead — as
+    // either the numeric id or, on some variants, the name string itself.
+    const rawCategory = item?.category_id ?? item?.category_name;
+    let categories = [];
+    if (rawCategory !== undefined && rawCategory !== null) {
+        const catId = Number(rawCategory);
+        categories = Number.isFinite(catId)
+            ? [E621_CATEGORY_NAMES[catId] ?? 'other']
+            : [String(rawCategory)];
+    }
+    return {
+        title,
+        url: '',
+        categories,
+        sizeBytes: body.length,
+        touched: Date.parse(item?.updated_at ?? '') || 0,
+        content: body,
+        plaintext: dtextToPlaintext(body),
+        contentFetched: true,
+    };
+}
+
+/**
+ * Walks the e621/e926 wiki-page corpus incrementally, emitting each response's
+ * pages through an awaited onBatch so the caller can persist them, with a
+ * resumable id cursor. Unlike scrapeE621 this applies NO title filter —
+ * filtering is the Wiki Library index's job once pages are stored.
+ *
+ * @param {object} options
+ * @param {string} [options.url] - '' for e621.net, or an e621/e926 URL
+ * @param {number} [options.resumeCursor] - Id cursor from a previous run's
+ *        checkpoint; the walk resumes below that id
+ * @param {Function} [options.onBatch] - async (records, cursor) — awaited
+ *        before the next request; cursor resumes AFTER this batch
+ * @param {Function} [options.onProgress] - Called with {phase:'titles', done}
+ * @param {AbortSignal} [options.signal] - Hard cancel
+ * @param {{stopped: boolean}} [options.stopToken] - Graceful Stop & Keep
+ * @returns {Promise<{count: number, cursor: number, done: boolean, stopped: boolean}>}
+ *          done=true means the corpus is exhausted (cursor no longer useful)
+ * @throws {WikiScrapeError}
+ */
+export async function enumerateE621Pages({ url, resumeCursor, onBatch, onProgress, signal, stopToken } = {}) {
+    const base = resolveE621Base(url);
+    let cursor = Number.isFinite(resumeCursor) ? resumeCursor : E621_MAX_ID_SENTINEL;
+    let count = 0;
 
     for (;;) {
         if (signal?.aborted) {
             throw new WikiScrapeError('aborted', 'Wiki scrape cancelled');
+        }
+        if (stopToken?.stopped) {
+            return { count, cursor, done: false, stopped: true };
         }
 
         const params = new URLSearchParams({
@@ -578,62 +910,70 @@ export async function scrapeE621({ url, filter, onProgress, signal } = {}) {
         const items = Array.isArray(data) ? data
             : Array.isArray(data?.wiki_pages) ? data.wiki_pages : [];
         if (items.length === 0) {
-            break;
+            return { count, cursor, done: true, stopped: false };
         }
 
         let minId = Infinity;
+        const records = [];
         for (const item of items) {
             const id = Number(item?.id);
             if (Number.isFinite(id) && id < minId) {
                 minId = id;
             }
-            if (item?.is_deleted) {
-                continue;
+            const record = mapE621Item(item);
+            if (record) {
+                records.push(record);
             }
-            const title = typeof item?.title === 'string' ? item.title.trim() : '';
-            const body = typeof item?.body === 'string' ? item.body : '';
-            if (!title || !body.trim()) {
-                continue;
-            }
-            // Same matching semantics as enumerateTitles (title + trailing newline)
-            if (regex && !new RegExp(regex).test(title + '\n')) {
-                continue;
-            }
-            pages.push({ title, content: body });
         }
 
-        onProgress?.({ phase: 'titles', done: pages.length, total: null });
+        count += records.length;
+        const nextCursor = Number.isFinite(minId) ? minId : cursor;
+        await onBatch?.(records, nextCursor);
+        onProgress?.({ phase: 'titles', done: count, total: null });
 
         // No usable cursor or no forward progress → stop rather than loop
         if (!Number.isFinite(minId) || minId >= cursor) {
-            break;
+            return { count, cursor, done: true, stopped: false };
         }
         cursor = minId;
 
         if (items.length < E621_PAGE_LIMIT) {
-            break;
+            return { count, cursor, done: true, stopped: false };
         }
         if (WIKI_SCRAPER_TIMINGS.e621DelayMs > 0) {
             await AsyncUtils.sleep(WIKI_SCRAPER_TIMINGS.e621DelayMs);
         }
     }
+}
 
-    const converted = [];
-    for (const page of pages) {
-        const content = dtextToPlaintext(page.content);
-        if (content) {
-            converted.push({ title: page.title, content });
-        }
+/**
+ * Looks up e621/e926 wiki pages by EXACT title via the server-side
+ * search[title] parameter — fast (one request) but deliberately different
+ * matching semantics from the regex filter: "bimbo" finds the page literally
+ * titled "bimbo", not "bimbofication" (see the scrapeE621 walk rationale).
+ * Powers the Wiki Library's pre-walk quick lookup.
+ *
+ * @param {string} url - '' for e621.net, or an e621/e926 URL
+ * @param {string} title - Exact page title (lowercase_with_underscores)
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<Array<object>>} Matching page records (mapE621Item shape)
+ * @throws {WikiScrapeError}
+ */
+export async function searchE621ByTitle(url, title, { signal } = {}) {
+    const base = resolveE621Base(url);
+    const trimmed = String(title ?? '').trim();
+    if (!trimmed) {
+        return [];
     }
-
-    if (converted.length === 0) {
-        throw new WikiScrapeError('not-found', filter
-            ? 'No e621 wiki pages matched the filter — check the filter regex (e621 titles are lowercase_with_underscores).'
-            : 'No e621 wiki pages found.');
-    }
-
-    log.lifecycle(`[WikiScraper] Scraped ${converted.length} e621 wiki pages`);
-    return converted;
+    const params = new URLSearchParams({
+        'search[title]': trimmed,
+        limit: '10',
+    });
+    const data = await fetchApiJson(`${base}/wiki_pages.json?${params}`, { signal });
+    const items = Array.isArray(data) ? data
+        : Array.isArray(data?.wiki_pages) ? data.wiki_pages : [];
+    return items.map(mapE621Item).filter(Boolean);
 }
 
 /**

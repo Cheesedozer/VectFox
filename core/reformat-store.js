@@ -36,6 +36,10 @@ import { log } from './log.js';
  *        chunk's metadata so a later "Re-run Auto-Reformat" can purge exactly
  *        this generation's chunks from a live collection without touching
  *        anything from a different generation.
+ * @property {string} selectionDescriptor - For Wiki Library basket sources:
+ *        the exact page selection (key:contentHash pairs) this result was
+ *        accepted for, so a changed selection can be detected instead of
+ *        silently orphaning the freeze. '' for non-basket sources.
  */
 
 function _ensureReformatCacheObject() {
@@ -88,6 +92,7 @@ export function saveReformatCache(sourceHash, data) {
         providerModel: data.providerModel || '',
         schemaVersion: data.schemaVersion || 1,
         runId: `${sourceHash}_${acceptedAt}`,
+        selectionDescriptor: data.selectionDescriptor || '',
     };
 
     extension_settings.vectfox.reformat_cache[sourceHash] = entry;

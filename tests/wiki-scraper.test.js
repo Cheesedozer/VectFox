@@ -29,6 +29,11 @@ import {
     shouldFallbackToPlugin,
     WikiScrapeError,
     WIKI_SCRAPER_TIMINGS,
+    enumeratePagesWithMetadata,
+    fetchPageContents,
+    enumerateE621Pages,
+    searchE621ByTitle,
+    E621_CATEGORY_NAMES,
 } from '../core/wiki-scraper.js';
 
 // ---------------------------------------------------------------------------
@@ -622,5 +627,410 @@ describe('scrapeE621', () => {
         }
         expect(caught).toBeInstanceOf(WikiScrapeError);
         expect(caught.code).toBe('api');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Wiki Library primitives
+// ---------------------------------------------------------------------------
+
+describe('enumeratePagesWithMetadata', () => {
+    const API = 'https://testwiki.fandom.com/api.php';
+
+    function gpage(pageid, title, { categories, length = 100, touched = '2024-01-01T00:00:00Z' } = {}) {
+        const page = { pageid, ns: 0, title, length, touched, fullurl: `https://x/wiki/${title}` };
+        if (categories) {
+            page.categories = categories.map(c => ({ ns: 14, title: `Category:${c}` }));
+        }
+        return page;
+    }
+
+    /**
+     * Generator-mode API mock with an interleaved continuation schedule:
+     * window 1 needs a clcontinue round before its categories are complete,
+     * then gapcontinue advances to window 2, which finishes enumeration.
+     */
+    function installGeneratorMock() {
+        const fetchMock = vi.fn(async (url) => {
+            const params = new URL(url).searchParams;
+            expect(params.get('generator')).toBe('allpages');
+            expect(params.get('prop')).toBe('categories|info');
+
+            if (params.get('clcontinue')) {
+                // Second round of window 1: same pages, Beta's categories arrive
+                return jsonResponse({
+                    continue: { gapcontinue: 'Gamma', continue: 'gapcontinue||' },
+                    query: { pages: {
+                        1: gpage(1, 'Alpha'),
+                        2: gpage(2, 'Beta', { categories: ['Locations'] }),
+                    } },
+                });
+            }
+            if (params.get('gapcontinue') === 'Gamma') {
+                // Window 2: final window, no further continuation
+                return jsonResponse({
+                    query: { pages: { 3: gpage(3, 'Gamma', { categories: ['Characters'], length: 55 }) } },
+                });
+            }
+            // First request of window 1: Alpha's categories, Beta's pending
+            return jsonResponse({
+                continue: { clcontinue: '2|Locations', continue: '||' },
+                query: { pages: {
+                    1: gpage(1, 'Alpha', { categories: ['Characters', 'Companions'] }),
+                    2: gpage(2, 'Beta'),
+                } },
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    }
+
+    it('merges interleaved clcontinue rounds and flushes each window exactly once', async () => {
+        installGeneratorMock();
+        const batches = [];
+
+        const result = await enumeratePagesWithMetadata(API, {
+            onBatch: (records, checkpoint) => { batches.push({ records, checkpoint }); },
+        });
+
+        expect(result).toEqual({ count: 3, continue: null, stopped: false });
+        expect(batches).toHaveLength(2);
+
+        // Window 1: both pages, categories merged across rounds, no duplicates
+        const titles1 = batches[0].records.map(r => r.title);
+        expect(titles1).toEqual(['Alpha', 'Beta']);
+        expect(batches[0].records[0].categories).toEqual(['Characters', 'Companions']);
+        expect(batches[0].records[1].categories).toEqual(['Locations']);
+        expect(batches[0].checkpoint).toEqual({
+            continue: { gapcontinue: 'Gamma', continue: 'gapcontinue||' },
+            complete: false,
+        });
+
+        // Window 2: final flush signals completion
+        expect(batches[1].records.map(r => r.title)).toEqual(['Gamma']);
+        expect(batches[1].checkpoint).toEqual({ continue: null, complete: true });
+
+        // Metadata mapping: category prefix stripped, size/touched/url captured
+        const gamma = batches[1].records[0];
+        expect(gamma.sizeBytes).toBe(55);
+        expect(gamma.touched).toBe(Date.parse('2024-01-01T00:00:00Z'));
+        expect(gamma.url).toBe('https://x/wiki/Gamma');
+    });
+
+    it('echoes the entire continue blob back as request parameters', async () => {
+        const fetchMock = installGeneratorMock();
+        await enumeratePagesWithMetadata(API, {});
+
+        const urls = fetchMock.mock.calls.map(c => new URL(c[0]));
+        expect(urls).toHaveLength(3);
+        // Round 2 carries both keys of window 1's continue blob
+        expect(urls[1].searchParams.get('clcontinue')).toBe('2|Locations');
+        expect(urls[1].searchParams.get('continue')).toBe('||');
+        // Round 3 carries window 2's blob
+        expect(urls[2].searchParams.get('gapcontinue')).toBe('Gamma');
+        expect(urls[2].searchParams.get('clcontinue')).toBeNull();
+    });
+
+    it('resumes from a persisted continue blob', async () => {
+        const fetchMock = installGeneratorMock();
+        const batches = [];
+
+        const result = await enumeratePagesWithMetadata(API, {
+            resumeContinue: { gapcontinue: 'Gamma', continue: 'gapcontinue||' },
+            onBatch: (records) => { batches.push(records); },
+        });
+
+        expect(result.count).toBe(1);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('gapcontinue')).toBe('Gamma');
+        expect(batches[0].map(r => r.title)).toEqual(['Gamma']);
+    });
+
+    it('stop-token between windows returns a resumable checkpoint without re-emitting', async () => {
+        installGeneratorMock();
+        const stopToken = { stopped: false };
+        const batches = [];
+
+        const result = await enumeratePagesWithMetadata(API, {
+            stopToken,
+            onBatch: (records, checkpoint) => {
+                batches.push({ records, checkpoint });
+                stopToken.stopped = true; // stop after the first flushed window
+            },
+        });
+
+        expect(result.stopped).toBe(true);
+        expect(result.count).toBe(2);
+        expect(result.continue).toEqual({ gapcontinue: 'Gamma', continue: 'gapcontinue||' });
+        // Only window 1 was emitted; the empty stop-flush is suppressed
+        expect(batches).toHaveLength(1);
+    });
+
+    it('stop-token mid-window flushes the partial window with a restart checkpoint', async () => {
+        const stopToken = { stopped: false };
+        const fetchMock = vi.fn(async () => {
+            stopToken.stopped = true; // flip after the first response lands
+            return jsonResponse({
+                continue: { clcontinue: '2|Locations', continue: '||' },
+                query: { pages: { 1: gpage(1, 'Alpha', { categories: ['Characters'] }), 2: gpage(2, 'Beta') } },
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const batches = [];
+
+        const result = await enumeratePagesWithMetadata('https://x/api.php', {
+            stopToken,
+            onBatch: (records, checkpoint) => { batches.push({ records, checkpoint }); },
+        });
+
+        expect(result).toMatchObject({ count: 2, continue: null, stopped: true });
+        expect(batches).toHaveLength(1);
+        // Partial window emitted (Beta's categories incomplete), checkpoint
+        // restarts the window — NOT marked complete despite continue: null
+        expect(batches[0].records.map(r => r.title)).toEqual(['Alpha', 'Beta']);
+        expect(batches[0].checkpoint).toEqual({ continue: null, complete: false });
+    });
+
+    it('applies the title filter with plugin semantics', async () => {
+        installGeneratorMock();
+        const batches = [];
+        await enumeratePagesWithMetadata(API, {
+            filter: 'Alpha|Gamma',
+            onBatch: (records) => { batches.push(...records); },
+        });
+        expect(batches.map(r => r.title)).toEqual(['Alpha', 'Gamma']);
+    });
+
+    it('throws an api error on rawcontinue (pre-1.26) responses', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+            'query-continue': { allpages: { gapcontinue: 'X' } },
+            query: { pages: {} },
+        })));
+        await expect(enumeratePagesWithMetadata('https://x/api.php', {}))
+            .rejects.toMatchObject({ code: 'api' });
+    });
+
+    it('throws an api error when the API reports one (e.g. stale badcontinue)', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+            error: { code: 'badcontinue', info: 'Invalid continue param' },
+        })));
+        await expect(enumeratePagesWithMetadata('https://x/api.php', { resumeContinue: { gapcontinue: 'stale' } }))
+            .rejects.toMatchObject({ code: 'api' });
+    });
+
+    it('hard-cancels via the signal', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ query: { pages: {} } })));
+        const controller = new AbortController();
+        controller.abort();
+        await expect(enumeratePagesWithMetadata('https://x/api.php', { signal: controller.signal }))
+            .rejects.toMatchObject({ code: 'aborted' });
+    });
+});
+
+describe('fetchPageContents', () => {
+    function installRevisionsMock() {
+        const fetchMock = vi.fn(async (url) => {
+            const titles = new URL(url).searchParams.get('titles').split('|');
+            const pages = {};
+            titles.forEach((title, i) => {
+                pages[String(i + 1)] = {
+                    pageid: i + 1, ns: 0, title,
+                    revisions: [{ slots: { main: { '*': `'''${title}''' body` } } }],
+                };
+            });
+            return jsonResponse({ query: { pages } });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    }
+
+    it('emits each 50-title batch with wikitext and converted plaintext', async () => {
+        const fetchMock = installRevisionsMock();
+        const titles = Array.from({ length: 120 }, (_, i) => `Page ${i + 1}`);
+        const batches = [];
+        const progress = [];
+
+        const result = await fetchPageContents('https://x/api.php', titles, {
+            onBatch: (pages) => { batches.push(pages.length); },
+            onProgress: (p) => progress.push(p.done),
+        });
+
+        expect(result.stopped).toBe(false);
+        expect(result.remainingTitles).toEqual([]);
+        expect(result.pages).toHaveLength(120);
+        expect(batches).toEqual([50, 50, 20]);
+        expect(progress).toEqual([50, 100, 120]);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+
+        expect(result.pages[0].content).toBe("'''Page 1''' body");
+        expect(result.pages[0].plaintext).toBe('Page 1 body');
+    });
+
+    it('stop-token between batches returns fetched pages plus the remaining titles', async () => {
+        installRevisionsMock();
+        const titles = Array.from({ length: 120 }, (_, i) => `Page ${i + 1}`);
+        const stopToken = { stopped: false };
+
+        const result = await fetchPageContents('https://x/api.php', titles, {
+            stopToken,
+            onBatch: () => { stopToken.stopped = true; },
+        });
+
+        expect(result.stopped).toBe(true);
+        expect(result.pages).toHaveLength(50);
+        expect(result.remainingTitles).toHaveLength(70);
+        expect(result.remainingTitles[0]).toBe('Page 51');
+    });
+
+    it('hard-cancels via the signal', async () => {
+        installRevisionsMock();
+        const controller = new AbortController();
+        controller.abort();
+        await expect(fetchPageContents('https://x/api.php', ['Alpha'], { signal: controller.signal }))
+            .rejects.toMatchObject({ code: 'aborted' });
+    });
+});
+
+describe('enumerateE621Pages', () => {
+    function e6page(id, title, body, extra = {}) {
+        return { id, title, body, is_deleted: false, updated_at: '2024-06-01T00:00:00Z', category_id: 0, ...extra };
+    }
+
+    function installE621Mock(batches) {
+        let call = 0;
+        const fetchMock = vi.fn(async () => jsonResponse(batches[call++] ?? []));
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    }
+
+    it('emits per-response batches with content, plaintext, and mapped categories', async () => {
+        installE621Mock([[
+            e6page(100, 'himbofication', 'See [[bimbofication]].', { category_id: 0 }),
+            e6page(99, 'renamon', 'A digimon.', { category_id: 4 }),
+            e6page(98, 'sergal', 'A species.', { category_id: 5 }),
+            e6page(97, 'weird_tag', 'Unknown category.', { category_id: 42 }),
+        ]]);
+        const batches = [];
+
+        const result = await enumerateE621Pages({
+            url: '',
+            onBatch: (records, cursor) => { batches.push({ records, cursor }); },
+        });
+
+        expect(result).toMatchObject({ count: 4, done: true, stopped: false });
+        expect(batches).toHaveLength(1);
+        expect(batches[0].cursor).toBe(97);
+
+        const records = batches[0].records;
+        expect(records[0]).toMatchObject({
+            title: 'himbofication',
+            content: 'See [[bimbofication]].',
+            plaintext: 'See bimbofication.',
+            categories: ['general'],
+            contentFetched: true,
+            touched: Date.parse('2024-06-01T00:00:00Z'),
+        });
+        expect(records[1].categories).toEqual(['character']);
+        expect(records[2].categories).toEqual(['species']);
+        expect(records[3].categories).toEqual(['other']);
+    });
+
+    it('reads the category id from the misnamed category_name key when category_id is absent', async () => {
+        installE621Mock([[
+            { id: 1, title: 'lore_tag', body: 'Lore body.', is_deleted: false, category_name: 8 },
+        ]]);
+        const batches = [];
+        await enumerateE621Pages({ url: '', onBatch: (records) => batches.push(...records) });
+        expect(batches[0].categories).toEqual(['lore']);
+    });
+
+    it('keeps the category as a literal name when category_name is a non-numeric string, instead of dropping it', async () => {
+        installE621Mock([[
+            { id: 1, title: 'weird_tag', body: 'Body.', is_deleted: false, category_name: 'artist' },
+        ]]);
+        const batches = [];
+        await enumerateE621Pages({ url: '', onBatch: (records) => batches.push(...records) });
+        expect(batches[0].categories).toEqual(['artist']);
+    });
+
+    it('resumes from a persisted cursor', async () => {
+        const fetchMock = installE621Mock([[e6page(400, 'tag_400', 'Body.')]]);
+        await enumerateE621Pages({ url: '', resumeCursor: 500 });
+        expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('page')).toBe('b500');
+    });
+
+    it('stop-token returns the cursor for resume without marking done', async () => {
+        const full = Array.from({ length: 320 }, (_, i) => e6page(1000 - i, `tag_${1000 - i}`, 'Body.'));
+        installE621Mock([full, [e6page(500, 'tag_500', 'Body.')]]);
+        const stopToken = { stopped: false };
+
+        const result = await enumerateE621Pages({
+            url: '',
+            stopToken,
+            onBatch: () => { stopToken.stopped = true; },
+        });
+
+        expect(result.stopped).toBe(true);
+        expect(result.done).toBe(false);
+        expect(result.count).toBe(320);
+        expect(result.cursor).toBe(681);
+    });
+
+    it('skips deleted and empty items but still advances the cursor past them', async () => {
+        installE621Mock([[
+            e6page(10, 'kept', 'Real.'),
+            e6page(9, 'gone', 'X.', { is_deleted: true }),
+            e6page(8, '', 'No title.'),
+        ]]);
+        const batches = [];
+        const result = await enumerateE621Pages({ url: '', onBatch: (records, cursor) => batches.push({ records, cursor }) });
+        expect(result.count).toBe(1);
+        expect(batches[0].records.map(r => r.title)).toEqual(['kept']);
+        expect(batches[0].cursor).toBe(8);
+    });
+});
+
+describe('searchE621ByTitle', () => {
+    it('queries search[title] with limit 10 and maps records', async () => {
+        const fetchMock = vi.fn(async () => jsonResponse([
+            { id: 5, title: 'bimbo', body: 'The page literally titled bimbo.', is_deleted: false, category_id: 0 },
+        ]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const records = await searchE621ByTitle('', 'bimbo');
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({ title: 'bimbo', contentFetched: true });
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe('/wiki_pages.json');
+        expect(url.searchParams.get('search[title]')).toBe('bimbo');
+        expect(url.searchParams.get('limit')).toBe('10');
+    });
+
+    it('returns [] for a blank title without making a request', async () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        expect(await searchE621ByTitle('', '   ')).toEqual([]);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('handles the {"wiki_pages": []} empty shape and filters deleted items', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ wiki_pages: [
+            { id: 1, title: 'gone', body: 'X.', is_deleted: true },
+        ] })));
+        expect(await searchE621ByTitle('', 'gone')).toEqual([]);
+    });
+
+    it('rejects non-e621 hosts', async () => {
+        await expect(searchE621ByTitle('https://danbooru.donmai.us', 'tag'))
+            .rejects.toMatchObject({ code: 'api' });
+    });
+});
+
+describe('E621_CATEGORY_NAMES', () => {
+    it('covers the e621 taxonomy', () => {
+        expect(E621_CATEGORY_NAMES[1]).toBe('artist');
+        expect(E621_CATEGORY_NAMES[4]).toBe('character');
+        expect(E621_CATEGORY_NAMES[8]).toBe('lore');
     });
 });

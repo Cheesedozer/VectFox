@@ -137,6 +137,33 @@ describe('prepareWikiContent — automatic wiki-noise stripping', () => {
         expect(result.text[0].metadata.pageTitle).toBe('real page');
     });
 
+    it('passes a Wiki Library basket source (wikiType library) through adaptive and per_page unchanged', () => {
+        // The basket materializes into the exact same sourceData shape a
+        // scrape produces, just tagged wikiType: 'library' — prepareWikiContent
+        // must treat it identically on both strategy paths.
+        const basketSource = {
+            content: `# Astarion\n\n${REAL_PROSE}\n\n---\n\n# himbofication\n\nThe male equivalent.`,
+            name: 'wiki-basket',
+            wikiType: 'library',
+            pages: [
+                { title: 'Astarion', content: REAL_PROSE },
+                { title: 'himbofication', content: 'The male equivalent.' },
+            ],
+        };
+
+        const combined = prepareWikiContent(basketSource, { strategy: 'adaptive' });
+        expect(combined.type).toBe('wiki');
+        expect(combined.wikiType).toBe('library');
+        expect(combined.text).toContain(REAL_PROSE);
+        expect(combined.name).toBe('wiki-basket');
+
+        const perPage = prepareWikiContent(basketSource, { strategy: 'per_page' });
+        expect(perPage.type).toBe('pages');
+        expect(perPage.text).toHaveLength(2);
+        expect(perPage.text[0].metadata.pageTitle).toBe('Astarion');
+        expect(perPage.text[1].text).toContain('# himbofication');
+    });
+
     it('does not touch content type outside wiki (sanity: user cleaning settings alone, unaffected by wiki-noise patterns)', () => {
         // Regression guard: cleanWikiNoise is scoped to prepareWikiContent's
         // callers only — verify a normal sentence with an incidental

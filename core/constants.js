@@ -6,7 +6,7 @@
  * Change these values here instead of hunting through the codebase.
  *
  * @author Kritblade
- * @version 3.3.1
+ * @version 4.0.0
  * ============================================================================
  */
 

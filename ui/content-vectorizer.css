@@ -1020,6 +1020,68 @@
     display: flex;
     justify-content: flex-start;
     margin-top: 4px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.vectfox-cv-wiki-source-mode {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-size: 0.9em;
+    margin-top: 2px;
+}
+
+.vectfox-cv-wiki-source-mode label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.vectfox-cv-reformat-warning {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent);
+    font-size: 0.9em;
+}
+
+.vectfox-cv-wiki-live {
+    padding: 10px 14px;
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 15%, transparent);
+    border-radius: 10px;
+}
+
+.vectfox-cv-wiki-live-counts {
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.vectfox-cv-wiki-live-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.85em;
+    opacity: 0.9;
+    list-style: none;
+}
+
+.vectfox-cv-wiki-live-list li {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: vectfox-wiki-live-in 0.25s ease;
+}
+
+@keyframes vectfox-wiki-live-in {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: none; }
 }
 
 .vectfox-cv-wiki-status {

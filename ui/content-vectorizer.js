@@ -6,7 +6,7 @@
  * settings that adapt based on selected content type.
  *
  * @author Kritblade
- * @version 3.3.1
+ * @version 4.0.0
  * ============================================================================
  */
 
@@ -38,7 +38,15 @@ import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { getCleaningSettings } from '../core/text-cleaning.js';
 import { progressTracker } from './progress-tracker.js';
 import { isFatbodyOwnedBook } from '../core/fatbody-guard.js';
-import { scrapeWiki as scrapeWikiInternal, WikiScrapeError, shouldFallbackToPlugin } from '../core/wiki-scraper.js';
+import {
+    scrapeWiki as scrapeWikiInternal,
+    WikiScrapeError,
+    shouldFallbackToPlugin,
+    regexFromString,
+    buildApiCandidates,
+    resolveE621Base,
+} from '../core/wiki-scraper.js';
+import * as wikiLibrary from '../core/wiki-library-service.js';
 
 // ============================================================================
 // STATE
@@ -105,6 +113,9 @@ export function openContentVectorizer(initialType = null) {
     currentContentType = initialType;
     currentSettings = initialType ? { ...getContentTypeDefaults(initialType) } : {};
     sourceData = null;
+    wikiSourceMode = 'scrape';
+    stashedScrapeSourceData = null;
+    currentBasketSelectionHash = null;
 
     createModal();
     bindEvents();
@@ -129,6 +140,7 @@ export function openContentVectorizer(initialType = null) {
  * Closes the modal
  */
 export function closeContentVectorizer() {
+    teardownWikiLibraryEvents();
     $('#vectfox_content_vectorizer_modal').fadeOut(200, function() {
         $(this).remove();
     });
@@ -732,26 +744,77 @@ function renderWikiSource(type) {
             <!-- Page Filter (for bulk scraping) -->
             <div class="vectfox-cv-wiki-filter">
                 <label>
-                    Page Filter
+                    Title Filter
                     <span class="vectfox-cv-optional">(optional)</span>
                 </label>
                 <input type="text" id="vectfox_cv_wiki_filter"
                        class="vectfox-input"
                        placeholder="${options.filterPlaceholder}">
                 <div class="vectfox-cv-hint">
-                    Optional regex matched against page titles (e.g. Astarion|Gale). Leave empty to scrape all pages.
+                    Optional regex applied while indexing (e.g. Astarion|Gale). Leave empty to index
+                    everything — you can search and pick pages in the Wiki Library afterwards.
                 </div>
             </div>
 
-            <!-- Scrape Button -->
-            <div class="vectfox-cv-wiki-actions">
+            <!-- Wiki Library actions -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_library_actions">
+                <button id="vectfox_cv_index_titles" class="vectfox-btn-primary"
+                        title="Fast: list every page title with categories and sizes, without downloading content. Pick pages in the Wiki Library afterwards.">
+                    <i class="fa-solid fa-list"></i> Index Titles
+                </button>
+                <button id="vectfox_cv_fetch_everything" class="vectfox-btn-secondary"
+                        title="Index and download the full content of every page (the old Scrape Wiki behavior, now saved to the Wiki Library).">
+                    <i class="fa-solid fa-download"></i> Fetch Everything
+                </button>
+                <button id="vectfox_cv_resume_indexing" class="vectfox-btn-secondary" style="display: none;"
+                        title="Continue an interrupted scrape from its saved checkpoint.">
+                    <i class="fa-solid fa-play"></i> Resume
+                </button>
+                <button id="vectfox_cv_open_library" class="vectfox-btn-secondary"
+                        title="Browse everything scraped so far: search, filter by category, pick pages, build a cross-wiki basket, manage storage.">
+                    <i class="fa-solid fa-book-open"></i> Wiki Library
+                </button>
+            </div>
+
+            <!-- Running-task controls -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_running_actions" style="display: none;">
+                <button id="vectfox_cv_stop_keep" class="vectfox-btn-secondary"
+                        title="Stop now but KEEP everything retrieved so far (a checkpoint is saved for Resume).">
+                    <i class="fa-solid fa-hand"></i> Stop &amp; Keep
+                </button>
+                <button id="vectfox_cv_cancel_scrape" class="vectfox-btn-danger"
+                        title="Abort the current request. Pages already saved to the Wiki Library are kept.">
+                    <i class="fa-solid fa-stop"></i> Cancel
+                </button>
+            </div>
+
+            <!-- Legacy one-shot scrape (only when IndexedDB is unavailable) -->
+            <div class="vectfox-cv-wiki-actions" id="vectfox_cv_wiki_legacy_actions" style="display: none;">
                 <button id="vectfox_cv_scrape_wiki" class="vectfox-btn-primary">
                     <i class="fa-solid fa-download"></i> Scrape Wiki
                 </button>
             </div>
 
+            <!-- Source mode: latest scrape vs. selection basket -->
+            <div class="vectfox-cv-wiki-source-mode" id="vectfox_cv_wiki_source_mode">
+                <label title="Vectorize what the scrape above retrieved">
+                    <input type="radio" name="vectfox_cv_wiki_source_mode" value="scrape" checked>
+                    Latest scrape
+                </label>
+                <label title="Vectorize the pages you picked in the Wiki Library basket — can span multiple wikis">
+                    <input type="radio" name="vectfox_cv_wiki_source_mode" value="basket">
+                    <span id="vectfox_cv_wiki_basket_label">Selection basket (empty)</span>
+                </label>
+            </div>
+
             <!-- Status/Preview -->
             <div class="vectfox-cv-wiki-status" id="vectfox_cv_wiki_status"></div>
+
+            <!-- Live results during scraping -->
+            <div class="vectfox-cv-wiki-live" id="vectfox_cv_wiki_live" style="display: none;">
+                <div class="vectfox-cv-wiki-live-counts" id="vectfox_cv_wiki_live_counts"></div>
+                <ul class="vectfox-cv-wiki-live-list" id="vectfox_cv_wiki_live_list"></ul>
+            </div>
             <div class="vectfox-cv-wiki-preview" id="vectfox_cv_wiki_preview" style="display: none;">
                 <div class="vectfox-cv-wiki-preview-header">
                     <i class="fa-solid fa-check-circle"></i>
@@ -853,7 +916,17 @@ function renderReformatSection() {
     const reformat = currentSettings.reformat;
 
     if (reformat?.accepted) {
+        // A basket-sourced reformat is pinned to the exact page selection it
+        // was accepted for; warn instead of silently orphaning it later
+        const selectionDrifted = reformat.selectionHash != null
+            && currentBasketSelectionHash != null
+            && reformat.selectionHash !== currentBasketSelectionHash;
         container.html(`
+            ${selectionDrifted ? `
+            <div class="vectfox-cv-reformat-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Your page selection changed since this Auto-Reformat was accepted — the reviewed entries no longer match the basket. Re-run Auto-Reformat, or discard it to chunk mechanically.</span>
+            </div>` : ''}
             <div class="vectfox-cv-reformat-accepted">
                 <i class="fa-solid fa-circle-check"></i>
                 <span>Auto-Reformat accepted. Chunking Strategy below is bypassed — the reviewed entries will be stored as-is.</span>
@@ -974,7 +1047,7 @@ async function runAutoReformat() {
             sourceText: text,
             sourceName,
             contentType: currentContentType,
-            onAccept: (acceptedRecords) => _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings }),
+            onAccept: (acceptedRecords) => _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings, selectionDescriptor: source.selectionDescriptor }),
             onDiscard: () => {
                 currentSettings.reformat = null;
                 renderReformatSection();
@@ -994,7 +1067,7 @@ async function runAutoReformat() {
  * downstream needs special-casing), freezes it in reformat-store.js keyed by
  * sourceHash, and flips currentSettings.reformat to accepted.
  */
-async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings }) {
+async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings, selectionDescriptor }) {
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
@@ -1064,9 +1137,17 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             sourceName,
             providerModel,
             schemaVersion: REFORMAT_SCHEMA_VERSION,
+            selectionDescriptor: selectionDescriptor || '',
         });
 
-        currentSettings.reformat = { accepted: true, sourceHash };
+        // Basket sources also pin the exact page selection, so a later basket
+        // edit can warn instead of silently orphaning the accepted result
+        const { getStringHash: hashString } = await import('../../../../utils.js');
+        currentSettings.reformat = {
+            accepted: true,
+            sourceHash,
+            ...(selectionDescriptor ? { selectionHash: hashString(selectionDescriptor) } : {}),
+        };
         toastr.success(`Auto-Reformat accepted: ${shapedChunks.length} chunk(s) ready. Click Vectorize to store them.`, 'VectFox');
 
         renderReformatSection();
@@ -1661,6 +1742,7 @@ function bindSourceEvents(type) {
     // Check wiki plugin availability when wiki type is selected
     if (type.sourceType === 'wiki') {
         checkWikiPluginStatus();
+        initWikiLibrarySection();
     }
 }
 
@@ -2266,20 +2348,7 @@ async function scrapeWiki() {
         };
 
         status.html('');
-
-        // Show preview
-        $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
-        $('#vectfox_cv_wiki_pages').text(pages.length);
-        $('#vectfox_cv_wiki_chars').text(combinedContent.length.toLocaleString());
-
-        // Page titles are remote-controlled strings — build the list with
-        // .text() so they can never be interpreted as HTML.
-        const pageList = $('#vectfox_cv_wiki_page_list').empty();
-        for (const page of pages) {
-            pageList.append($('<li>').text(String(page.title)));
-        }
-        $('#vectfox_cv_wiki_pages_details').prop('open', pages.length <= 15);
-        preview.show();
+        showWikiPreview(pages, combinedContent);
 
         toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
 
@@ -2364,6 +2433,501 @@ function extractWikiName(url, wikiType) {
     } catch {
         return url.substring(0, 50);
     }
+}
+
+/**
+ * Renders the shared wiki preview panel (page/char counts + title list).
+ * Page titles are remote-controlled strings — build the list with .text()
+ * so they can never be interpreted as HTML.
+ */
+function showWikiPreview(pages, combinedContent) {
+    $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
+    $('#vectfox_cv_wiki_pages').text(pages.length);
+    $('#vectfox_cv_wiki_chars').text(combinedContent.length.toLocaleString());
+
+    const pageList = $('#vectfox_cv_wiki_page_list').empty();
+    for (const page of pages) {
+        pageList.append($('<li>').text(String(page.title)));
+    }
+    $('#vectfox_cv_wiki_pages_details').prop('open', pages.length <= 15);
+    $('#vectfox_cv_wiki_preview').show();
+}
+
+// ============================================================================
+// WIKI LIBRARY SECTION
+// ============================================================================
+// The persistent scrape flow: Index Titles / Fetch Everything / Stop & Keep /
+// Cancel / Resume, with a live list of results as they land. Everything runs
+// through core/wiki-library-service.js so pages survive stops, cancels, and
+// reloads. The legacy one-shot scrapeWiki() above remains only as the
+// degraded path when IndexedDB is unavailable.
+
+let wikiLibraryUnsubs = [];
+let wikiLiveTitles = [];
+let wikiLiveRenderQueued = false;
+let wikiLibraryAvailable = null; // null = not probed yet
+let wikiSourceMode = 'scrape'; // 'scrape' | 'basket'
+let stashedScrapeSourceData = null; // scrape sourceData parked while basket mode is active
+let currentBasketSelectionHash = null; // hash of the materialized basket's selectionDescriptor
+
+function teardownWikiLibraryEvents() {
+    for (const unsub of wikiLibraryUnsubs) {
+        try { unsub(); } catch { /* already gone */ }
+    }
+    wikiLibraryUnsubs = [];
+}
+
+/**
+ * Wires the Wiki Library controls of the wiki source section. Called from
+ * bindSourceEvents each time the wiki section is (re)rendered.
+ */
+async function initWikiLibrarySection() {
+    teardownWikiLibraryEvents();
+    wikiLiveTitles = [];
+
+    if (wikiLibraryAvailable === null) {
+        wikiLibraryAvailable = await wikiLibrary.isStoreAvailable();
+    }
+    if (!wikiLibraryAvailable) {
+        // Degraded mode: the legacy in-memory one-shot flow
+        $('#vectfox_cv_wiki_library_actions').hide();
+        $('#vectfox_cv_wiki_legacy_actions').show();
+        $('#vectfox_cv_wiki_status').html('<i class="fa-solid fa-triangle-exclamation"></i> Browser storage unavailable — scrapes will not be saved (legacy mode).');
+        return;
+    }
+
+    $('#vectfox_cv_index_titles').on('click', () => runWikiLibraryTask('index'));
+    $('#vectfox_cv_fetch_everything').on('click', () => runWikiLibraryTask('full'));
+    $('#vectfox_cv_resume_indexing').on('click', () => runWikiLibraryTask('resume'));
+    $('#vectfox_cv_stop_keep').on('click', () => {
+        wikiLibrary.stopAndKeep();
+        $('#vectfox_cv_wiki_status').html('<i class="fa-solid fa-spinner fa-spin"></i> Stopping after the current batch (results are kept)…');
+    });
+    $('#vectfox_cv_cancel_scrape').on('click', () => wikiLibrary.cancelHard());
+    $('#vectfox_cv_open_library').on('click', async () => {
+        const { openWikiLibrary } = await import('./wiki-library.js');
+        await openWikiLibrary();
+    });
+    $('#vectfox_cv_wiki_type').on('change', updateWikiButtonsForType);
+    $('#vectfox_cv_wiki_url').on('change', () => { refreshWikiLibraryPanel(); });
+
+    $('input[name="vectfox_cv_wiki_source_mode"]').on('change', function() {
+        setWikiSourceMode(this.value);
+    });
+    $(`input[name="vectfox_cv_wiki_source_mode"][value="${wikiSourceMode}"]`).prop('checked', true);
+
+    wikiLibraryUnsubs.push(wikiLibrary.on('pages-added', onWikiPagesEvent));
+    wikiLibraryUnsubs.push(wikiLibrary.on('pages-fetched', onWikiPagesEvent));
+    wikiLibraryUnsubs.push(wikiLibrary.on('task-status', onWikiTaskStatus));
+    wikiLibraryUnsubs.push(wikiLibrary.on('library-updated', onWikiLibraryUpdated));
+    wikiLibraryUnsubs.push(wikiLibrary.on('basket-changed', onWikiBasketChanged));
+
+    updateWikiButtonsForType();
+    setWikiRunningUi(wikiLibrary.isBusy());
+    refreshWikiLibraryPanel();
+    refreshWikiBasketLabel();
+}
+
+/** e621 has no cheap titles-only mode — bodies arrive with the listing. */
+function updateWikiButtonsForType() {
+    const isE621 = $('#vectfox_cv_wiki_type').val() === 'e621';
+    $('#vectfox_cv_index_titles').toggle(!isE621);
+    refreshWikiLibraryPanel();
+}
+
+function setWikiRunningUi(running) {
+    $('#vectfox_cv_wiki_library_actions').toggle(!running);
+    $('#vectfox_cv_wiki_running_actions').toggle(!!running);
+}
+
+/** Streams the last few landed titles into the live list, throttled. */
+function onWikiPagesEvent(event) {
+    for (const record of event.records ?? []) {
+        wikiLiveTitles.push(record.title);
+    }
+    if (wikiLiveTitles.length > 8) {
+        wikiLiveTitles = wikiLiveTitles.slice(-8);
+    }
+    if (wikiLiveRenderQueued) {
+        return;
+    }
+    wikiLiveRenderQueued = true;
+    setTimeout(() => {
+        wikiLiveRenderQueued = false;
+        const list = $('#vectfox_cv_wiki_live_list').empty();
+        for (const title of wikiLiveTitles) {
+            list.append($('<li>').text(String(title)));
+        }
+        $('#vectfox_cv_wiki_live').show();
+    }, 250);
+}
+
+function onWikiTaskStatus({ task }) {
+    const status = $('#vectfox_cv_wiki_status');
+    if (task) {
+        setWikiRunningUi(true);
+        if (task.phase === 'titles') {
+            status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Indexing pages… ${task.done} found`);
+        } else if (task.phase === 'content') {
+            status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Fetching content ${task.done}/${task.total}…`);
+        }
+    } else {
+        setWikiRunningUi(false);
+        refreshWikiLibraryPanel();
+    }
+}
+
+function onWikiLibraryUpdated({ library }) {
+    if (library) {
+        $('#vectfox_cv_wiki_live_counts').text(
+            `${(library.titleCount ?? 0).toLocaleString()} titles / ${(library.fetchedCount ?? 0).toLocaleString()} fetched in library`);
+        $('#vectfox_cv_wiki_live').show();
+    }
+}
+
+/**
+ * Finds the stored library matching the section's current wikiType + URL
+ * input, tolerating the /api.php vs /w/api.php ambiguity by checking every
+ * endpoint candidate.
+ */
+async function findWikiLibraryForInput(wikiType, url) {
+    if (!url && wikiType !== 'e621') {
+        return null;
+    }
+    const candidates = new Set();
+    try {
+        if (wikiType === 'e621') {
+            candidates.add(wikiLibrary.deriveLibraryIdentity('e621', resolveE621Base(url)).id);
+        } else {
+            for (const apiUrl of buildApiCandidates(wikiType, url)) {
+                candidates.add(wikiLibrary.deriveLibraryIdentity(wikiType, apiUrl).id);
+            }
+        }
+    } catch {
+        return null;
+    }
+    const libraries = await wikiLibrary.listLibraries();
+    return libraries.find(lib => candidates.has(lib.id) || (url && lib.inputUrl === url)) ?? null;
+}
+
+/** Refreshes the Resume button and stored-counts line for the current input. */
+async function refreshWikiLibraryPanel() {
+    if (!wikiLibraryAvailable) {
+        return;
+    }
+    const resumeBtn = $('#vectfox_cv_resume_indexing');
+    try {
+        const wikiType = $('#vectfox_cv_wiki_type').val();
+        const url = $('#vectfox_cv_wiki_url').val()?.trim() ?? '';
+        const library = await findWikiLibraryForInput(wikiType, url);
+        if (library) {
+            onWikiLibraryUpdated({ library });
+        }
+        if (wikiLibrary.isResumable(library)) {
+            resumeBtn.data('libraryId', library.id).show();
+        } else {
+            resumeBtn.hide();
+        }
+    } catch {
+        resumeBtn.hide();
+    }
+}
+
+/**
+ * Builds the legacy wiki sourceData shape from a library's fetched pages,
+ * optionally narrowed by the section's title filter (same regex semantics
+ * as scrape-time filtering).
+ */
+async function buildWikiSourceDataFromLibrary(libraryId, filter) {
+    const library = await wikiLibrary.getLibrary(libraryId);
+    if (!library) {
+        return false;
+    }
+    const records = await wikiLibrary.getPagesByLibrary(libraryId, { fetchedOnly: true });
+    const regex = filter ? regexFromString(String(filter)) : undefined;
+    const pages = records
+        .filter(r => r.plaintext && (!regex || new RegExp(regex).test(r.title + '\n')))
+        .map(r => ({ title: r.title, content: r.plaintext }));
+    if (pages.length === 0) {
+        return false;
+    }
+
+    const combinedContent = pages.map(page =>
+        `# ${String(page.title).trim()}\n\n${String(page.content).trim()}`
+    ).join('\n\n---\n\n');
+
+    sourceData = {
+        type: 'wiki',
+        wikiType: library.wikiType,
+        url: library.inputUrl,
+        content: combinedContent,
+        pages: pages,
+        pageCount: pages.length,
+        name: library.name,
+    };
+    showWikiPreview(pages, combinedContent);
+    return true;
+}
+
+/**
+ * Runs an Index Titles / Fetch Everything / Resume task through the Wiki
+ * Library service, with plugin fallback when the browser is CORS-blocked.
+ *
+ * @param {('index'|'full'|'resume')} kind
+ */
+async function runWikiLibraryTask(kind) {
+    const wikiType = $('#vectfox_cv_wiki_type').val();
+    const url = $('#vectfox_cv_wiki_url').val().trim();
+    const filter = $('#vectfox_cv_wiki_filter').val().trim();
+
+    if (!url && wikiType !== 'e621') {
+        toastr.warning('Please enter a wiki URL or ID');
+        return;
+    }
+    if (wikiLibrary.isBusy()) {
+        toastr.warning('A Wiki Library task is already running — stop it first.');
+        return;
+    }
+
+    const status = $('#vectfox_cv_wiki_status');
+    $('#vectfox_cv_wiki_preview').hide();
+    wikiLiveTitles = [];
+    $('#vectfox_cv_wiki_live_list').empty();
+    status.html('<i class="fa-solid fa-spinner fa-spin"></i> Contacting wiki…');
+
+    try {
+        // e621's only walk mode downloads the whole corpus — confirm the cost
+        // once, before the first walk (resume/complete walks skip the dialog)
+        if (wikiType === 'e621' && kind !== 'resume') {
+            const libraryId = wikiLibrary.deriveLibraryIdentity('e621', resolveE621Base(url)).id;
+            const estimate = await wikiLibrary.estimateFullWalk(libraryId);
+            if (estimate.requests > 0) {
+                const minutes = Math.max(1, Math.round(estimate.estMs / 60000));
+                const confirmed = await callGenericPopup(
+                    `<p>Indexing the e621 wiki downloads its full corpus: roughly <b>${estimate.requests}</b> requests over <b>~${minutes} minutes</b> (the site asks for ≤1 request/second).</p>
+                     <p>Progress is saved continuously — you can <b>Stop &amp; Keep</b> at any time and resume later. For a single known tag, use the Wiki Library's exact-title quick lookup instead.</p>
+                     <p>Start the walk?</p>`,
+                    POPUP_TYPE.CONFIRM);
+                if (!confirmed) {
+                    status.html('');
+                    return;
+                }
+            }
+        }
+
+        let result;
+        if (kind === 'resume') {
+            result = await wikiLibrary.resumeEnumeration($('#vectfox_cv_resume_indexing').data('libraryId'));
+        } else {
+            result = await wikiLibrary.startEnumeration({ wikiType, url, filter });
+            if (kind === 'full' && wikiType !== 'e621' && !result.stopped) {
+                const fetchResult = await wikiLibrary.fetchEverything(result.libraryId);
+                result = { ...result, ...fetchResult };
+            }
+        }
+
+        const library = await wikiLibrary.getLibrary(result.libraryId);
+        if (result.stopped) {
+            status.html(`<i class="fa-solid fa-circle-check"></i> Stopped — ${library.titleCount.toLocaleString()} pages kept in the library. Resume when ready.`);
+            toastr.info(`Stopped and kept ${library.titleCount.toLocaleString()} pages`, 'VectFox');
+        } else if (kind === 'full' || wikiType === 'e621') {
+            const built = await buildWikiSourceDataFromLibrary(result.libraryId, filter);
+            status.html('');
+            if (built) {
+                toastr.success(`Scraped ${sourceData.pageCount} page(s), ${sourceData.content.length.toLocaleString()} chars`, 'VectFox');
+            } else {
+                status.html('<i class="fa-solid fa-circle-info"></i> Nothing matched the filter — adjust it or browse the Wiki Library.');
+            }
+        } else {
+            status.html(`<i class="fa-solid fa-circle-check"></i> ${library.titleCount.toLocaleString()} titles indexed — pick pages in the Wiki Library, or Fetch Everything.`);
+            toastr.success(`Indexed ${library.titleCount.toLocaleString()} titles`, 'VectFox');
+        }
+    } catch (e) {
+        if (e instanceof WikiScrapeError && e.code === 'aborted') {
+            status.html('<i class="fa-solid fa-ban"></i> Cancelled — pages already saved were kept in the library.');
+        } else if (e?.code === 'busy') {
+            toastr.warning(e.message);
+        } else if (wikiType !== 'e621' && shouldFallbackToPlugin(e) && await isWikiPluginAvailable(wikiType)) {
+            await runWikiPluginFallback(wikiType, url, filter, status);
+        } else {
+            console.error('VectFox: Wiki Library task failed:', e);
+            status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
+            if (shouldFallbackToPlugin(e)) {
+                status.append(renderPluginHint());
+            }
+            toastr.error('Wiki task failed: ' + e.message);
+        }
+    } finally {
+        refreshWikiLibraryPanel();
+    }
+}
+
+/**
+ * CORS-blocked wikis fall back to the external Fandom Scraper plugin —
+ * results still land in the library (no metadata, but persistent).
+ */
+async function runWikiPluginFallback(wikiType, url, filter, status) {
+    try {
+        console.warn('VectFox: Built-in wiki scraper blocked, falling back to Fandom Scraper plugin');
+        status.html('<i class="fa-solid fa-spinner fa-spin"></i> Browser scrape blocked — using Fandom Scraper plugin...');
+        const pages = await scrapeViaPlugin(wikiType, url, filter);
+        if (!pages || pages.length === 0) {
+            throw new Error('No content found');
+        }
+        await wikiLibrary.ingestPluginPages(wikiType, url, pages)
+            .catch(err => console.warn('VectFox: Could not save plugin results to the Wiki Library:', err));
+
+        const combinedContent = pages.map(page =>
+            `# ${String(page.title).trim()}\n\n${String(page.content).trim()}`
+        ).join('\n\n---\n\n');
+        sourceData = {
+            type: 'wiki',
+            wikiType: wikiType,
+            url: url,
+            content: combinedContent,
+            pages: pages,
+            pageCount: pages.length,
+            name: extractWikiName(url, wikiType),
+        };
+        status.html('');
+        showWikiPreview(pages, combinedContent);
+        toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
+    } catch (e) {
+        console.error('VectFox: Plugin fallback failed:', e);
+        status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
+        toastr.error('Failed to scrape wiki: ' + e.message);
+    }
+}
+
+/** Updates the basket radio label with live page/wiki counts. */
+async function refreshWikiBasketLabel() {
+    if (!wikiLibraryAvailable) {
+        return;
+    }
+    try {
+        const rows = await wikiLibrary.getBasket();
+        const wikis = new Set(rows.map(r => r.libraryId)).size;
+        $('#vectfox_cv_wiki_basket_label').text(rows.length === 0
+            ? 'Selection basket (empty)'
+            : `Selection basket (${rows.length} page${rows.length === 1 ? '' : 's'}, ${wikis} wiki${wikis === 1 ? '' : 's'})`);
+    } catch { /* store unavailable */ }
+}
+
+/** Keeps a basket-mode source live-synced with basket edits. */
+async function onWikiBasketChanged() {
+    await refreshWikiBasketLabel();
+    if (wikiSourceMode === 'basket') {
+        await applyBasketAsSource({ promptForUnfetched: false, quiet: true });
+    }
+}
+
+/** Switches the wiki source between the latest scrape and the basket. */
+async function setWikiSourceMode(mode) {
+    if (mode === wikiSourceMode) {
+        return;
+    }
+    wikiSourceMode = mode;
+    if (mode === 'basket') {
+        if (sourceData?.type === 'wiki' && sourceData.wikiType !== 'library') {
+            stashedScrapeSourceData = sourceData;
+        }
+        await applyBasketAsSource();
+    } else {
+        currentBasketSelectionHash = null;
+        sourceData = stashedScrapeSourceData;
+        stashedScrapeSourceData = null;
+        if (sourceData?.pages) {
+            showWikiPreview(sourceData.pages, sourceData.content);
+        } else {
+            $('#vectfox_cv_wiki_preview').hide();
+        }
+        renderReformatSection();
+    }
+}
+
+/**
+ * Materializes the selection basket into the module sourceData (the same
+ * shape a scrape produces, so vectorization and Auto-Reformat need no
+ * special-casing), offering to fetch content for pages that are title-only.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.promptForUnfetched] - Ask before fetching missing content
+ * @param {boolean} [options.quiet] - Suppress info toasts (live re-sync path)
+ * @returns {Promise<boolean>} True when sourceData was set
+ */
+async function applyBasketAsSource({ promptForUnfetched = true, quiet = false } = {}) {
+    const basket = await wikiLibrary.materializeBasket();
+    await refreshWikiBasketLabel();
+
+    if (basket.pageCount === 0 && basket.unfetchedKeys.length === 0) {
+        if (!quiet) {
+            toastr.info('The basket is empty — pick pages in the Wiki Library first', 'VectFox');
+        }
+        sourceData = null;
+        $('#vectfox_cv_wiki_preview').hide();
+        return false;
+    }
+
+    if (basket.unfetchedKeys.length > 0 && promptForUnfetched) {
+        const confirmed = await callGenericPopup(
+            `<p><b>${basket.unfetchedKeys.length}</b> selected page(s) have no content yet — only their titles are indexed.</p><p>Fetch their content now?</p>`,
+            POPUP_TYPE.CONFIRM, '', { okButton: 'Fetch content', cancelButton: 'Use fetched pages only' });
+        if (confirmed) {
+            if (wikiLibrary.isBusy()) {
+                toastr.warning('A Wiki Library task is already running — stop it first.');
+            } else {
+                try {
+                    const result = await wikiLibrary.fetchContentForKeys(basket.unfetchedKeys);
+                    toastr.success(`Fetched content for ${result.fetched} page(s)`, 'VectFox');
+                } catch (e) {
+                    toastr.error('Content fetch failed: ' + (e.message ?? e), 'VectFox');
+                }
+            }
+            return applyBasketAsSource({ promptForUnfetched: false, quiet });
+        }
+    }
+
+    if (basket.pageCount === 0) {
+        if (!quiet) {
+            toastr.warning('None of the basket pages have content yet — fetch content first', 'VectFox');
+        }
+        sourceData = null;
+        $('#vectfox_cv_wiki_preview').hide();
+        return false;
+    }
+
+    sourceData = {
+        type: 'wiki',
+        wikiType: 'library',
+        url: '',
+        content: basket.combinedContent,
+        pages: basket.pages,
+        pageCount: basket.pageCount,
+        name: basket.name,
+        selectionDescriptor: basket.selectionDescriptor,
+    };
+    const { getStringHash } = await import('../../../../utils.js');
+    currentBasketSelectionHash = getStringHash(basket.selectionDescriptor);
+    showWikiPreview(basket.pages, basket.combinedContent);
+    renderReformatSection();
+    return true;
+}
+
+/**
+ * Entry point for the Wiki Library modal's "Use basket in Vectorizer":
+ * ensures the vectorizer is open on the wiki type with basket mode selected,
+ * then materializes the basket as the source.
+ */
+export async function useBasketAsWikiSource() {
+    if ($('#vectfox_content_vectorizer_modal').length === 0) {
+        openContentVectorizer('wiki');
+    } else if (currentContentType !== 'wiki') {
+        $('#vectfox_content_vectorizer_modal').remove();
+        openContentVectorizer('wiki');
+    }
+    wikiSourceMode = 'basket';
+    $('input[name="vectfox_cv_wiki_source_mode"][value="basket"]').prop('checked', true);
+    await applyBasketAsSource();
 }
 
 // ============================================================================
@@ -3320,6 +3884,37 @@ async function startVectorization() {
             { timeOut: 8000 }
         );
         return;
+    }
+
+    // An accepted Auto-Reformat is frozen to a hash of the prepared source
+    // text. If the source drifted since accept (a changed basket selection,
+    // an edited document), the core pipeline would silently fall back to
+    // mechanical chunking — confirm that explicitly instead.
+    if (currentSettings.reformat?.accepted && isReformatSupportedType()) {
+        try {
+            const preparedText = await _resolveReformatSourceText(source);
+            const { getStringHash } = await import('../../../../utils.js');
+            if (getStringHash(preparedText) !== currentSettings.reformat.sourceHash) {
+                const proceed = await callGenericPopup(
+                    `<div style="text-align: left;">
+                        <p><strong>The content changed since Auto-Reformat was accepted.</strong></p>
+                        <p>The accepted entries no longer match this source (for example, the page selection changed), so they cannot be used for this run.</p>
+                        <p style="margin-top: 10px;">Proceed with mechanical chunking instead, or cancel and re-run Auto-Reformat.</p>
+                    </div>`,
+                    POPUP_TYPE.CONFIRM,
+                    '',
+                    { okButton: 'Chunk mechanically', cancelButton: 'Cancel' },
+                );
+                if (!proceed) {
+                    toastr.info('Vectorize cancelled', 'VectFox');
+                    return;
+                }
+                currentSettings.reformat = null;
+                renderReformatSection();
+            }
+        } catch (e) {
+            console.warn('VectFox: Could not verify Auto-Reformat freshness:', e);
+        }
     }
 
     // EventBase is the exclusive path for chat — always redirect through EventBase ingestion pipeline.
