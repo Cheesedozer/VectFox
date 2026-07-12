@@ -6,7 +6,7 @@
  * settings that adapt based on selected content type.
  *
  * @author Kritblade
- * @version 3.3.1
+ * @version 4.0.0
  * ============================================================================
  */
 

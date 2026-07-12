@@ -481,9 +481,22 @@ Restart SillyTavern.
 
 ### Wiki scraping — built-in, no plugin needed
 
-Wiki import (ChunkBase → Wiki Page) scrapes Fandom and MediaWiki wikis **directly from your browser** using the MediaWiki API — it works out of the box, with no server plugin and no `config.yaml` changes. The page filter is a **regular expression matched against page titles** (e.g. `Astarion|Gale`); leave it empty to scrape the whole wiki.
+Wiki import (ChunkBase → Wiki Page) scrapes Fandom and MediaWiki wikis **directly from your browser** using the MediaWiki API — it works out of the box, with no server plugin and no `config.yaml` changes. The title filter is a **regular expression matched against page titles** (e.g. `Astarion|Gale`); leave it empty to index the whole wiki and pick pages afterwards.
 
 The external [Fandom Scraper plugin](https://github.com/SillyTavern/SillyTavern-Fandom-Scraper) is now optional: if it is installed, VectFox automatically falls back to it for the rare wikis that block browser access (very old MediaWiki versions or wikis with cross-origin requests disabled).
+
+### 📚 Wiki Library — persistent, searchable, stop-anytime scraping (v4)
+
+Scraping is no longer an all-or-nothing gamble. Every page the scraper retrieves is saved **immediately** to a persistent library in your browser (IndexedDB), so nothing is ever lost to a cancel, a crash, or a reload:
+
+- **Index Titles** — list every page of a wiki in seconds (titles, categories, sizes, links) *without* downloading content. Then search and pick exactly the pages you want; content is fetched only for your selection.
+- **Fetch Everything** — the classic full scrape, now resumable and saved as it goes.
+- **Stop & Keep** — a real stop button: ends the scrape but keeps everything retrieved so far, with a checkpoint you can **Resume** from later. (Hard Cancel also keeps already-saved pages.)
+- **Live results** — watch titles stream in while the scrape runs, so you know the moment your page has been found.
+- **Wiki Library browser** — search titles (plain text or `/regex/`), full-text search fetched pages, and filter by wiki category, size, and fetched status with live facet counts.
+- **Selection basket** — collect pages across *multiple wikis* (e.g. a Fandom character page plus related e621 tag entries) and vectorize or Auto-Reformat exactly that set. Accepted Auto-Reformats are pinned to the selection and warn you if it changes.
+- **e621 quick lookup** — grab a single tag's wiki entry by exact title with one request, no corpus walk.
+- **Storage tab** — see what each wiki costs on disk and delete libraries you no longer need.
 
 ### Step 3: Configure VectFox
 
