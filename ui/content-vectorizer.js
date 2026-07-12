@@ -113,6 +113,9 @@ export function openContentVectorizer(initialType = null) {
     currentContentType = initialType;
     currentSettings = initialType ? { ...getContentTypeDefaults(initialType) } : {};
     sourceData = null;
+    wikiSourceMode = 'scrape';
+    stashedScrapeSourceData = null;
+    currentBasketSelectionHash = null;
 
     createModal();
     bindEvents();
@@ -792,6 +795,18 @@ function renderWikiSource(type) {
                 </button>
             </div>
 
+            <!-- Source mode: latest scrape vs. selection basket -->
+            <div class="vectfox-cv-wiki-source-mode" id="vectfox_cv_wiki_source_mode">
+                <label title="Vectorize what the scrape above retrieved">
+                    <input type="radio" name="vectfox_cv_wiki_source_mode" value="scrape" checked>
+                    Latest scrape
+                </label>
+                <label title="Vectorize the pages you picked in the Wiki Library basket — can span multiple wikis">
+                    <input type="radio" name="vectfox_cv_wiki_source_mode" value="basket">
+                    <span id="vectfox_cv_wiki_basket_label">Selection basket (empty)</span>
+                </label>
+            </div>
+
             <!-- Status/Preview -->
             <div class="vectfox-cv-wiki-status" id="vectfox_cv_wiki_status"></div>
 
@@ -901,7 +916,17 @@ function renderReformatSection() {
     const reformat = currentSettings.reformat;
 
     if (reformat?.accepted) {
+        // A basket-sourced reformat is pinned to the exact page selection it
+        // was accepted for; warn instead of silently orphaning it later
+        const selectionDrifted = reformat.selectionHash != null
+            && currentBasketSelectionHash != null
+            && reformat.selectionHash !== currentBasketSelectionHash;
         container.html(`
+            ${selectionDrifted ? `
+            <div class="vectfox-cv-reformat-warning">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Your page selection changed since this Auto-Reformat was accepted — the reviewed entries no longer match the basket. Re-run Auto-Reformat, or discard it to chunk mechanically.</span>
+            </div>` : ''}
             <div class="vectfox-cv-reformat-accepted">
                 <i class="fa-solid fa-circle-check"></i>
                 <span>Auto-Reformat accepted. Chunking Strategy below is bypassed — the reviewed entries will be stored as-is.</span>
@@ -1022,7 +1047,7 @@ async function runAutoReformat() {
             sourceText: text,
             sourceName,
             contentType: currentContentType,
-            onAccept: (acceptedRecords) => _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings }),
+            onAccept: (acceptedRecords) => _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings, selectionDescriptor: source.selectionDescriptor }),
             onDiscard: () => {
                 currentSettings.reformat = null;
                 renderReformatSection();
@@ -1042,7 +1067,7 @@ async function runAutoReformat() {
  * downstream needs special-casing), freezes it in reformat-store.js keyed by
  * sourceHash, and flips currentSettings.reformat to accepted.
  */
-async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings }) {
+async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sourceName, mergedSettings, selectionDescriptor }) {
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
@@ -1112,9 +1137,17 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             sourceName,
             providerModel,
             schemaVersion: REFORMAT_SCHEMA_VERSION,
+            selectionDescriptor: selectionDescriptor || '',
         });
 
-        currentSettings.reformat = { accepted: true, sourceHash };
+        // Basket sources also pin the exact page selection, so a later basket
+        // edit can warn instead of silently orphaning the accepted result
+        const { getStringHash: hashString } = await import('../../../../utils.js');
+        currentSettings.reformat = {
+            accepted: true,
+            sourceHash,
+            ...(selectionDescriptor ? { selectionHash: hashString(selectionDescriptor) } : {}),
+        };
         toastr.success(`Auto-Reformat accepted: ${shapedChunks.length} chunk(s) ready. Click Vectorize to store them.`, 'VectFox');
 
         renderReformatSection();
@@ -2433,6 +2466,9 @@ let wikiLibraryUnsubs = [];
 let wikiLiveTitles = [];
 let wikiLiveRenderQueued = false;
 let wikiLibraryAvailable = null; // null = not probed yet
+let wikiSourceMode = 'scrape'; // 'scrape' | 'basket'
+let stashedScrapeSourceData = null; // scrape sourceData parked while basket mode is active
+let currentBasketSelectionHash = null; // hash of the materialized basket's selectionDescriptor
 
 function teardownWikiLibraryEvents() {
     for (const unsub of wikiLibraryUnsubs) {
@@ -2475,14 +2511,21 @@ async function initWikiLibrarySection() {
     $('#vectfox_cv_wiki_type').on('change', updateWikiButtonsForType);
     $('#vectfox_cv_wiki_url').on('change', () => { refreshWikiLibraryPanel(); });
 
+    $('input[name="vectfox_cv_wiki_source_mode"]').on('change', function() {
+        setWikiSourceMode(this.value);
+    });
+    $(`input[name="vectfox_cv_wiki_source_mode"][value="${wikiSourceMode}"]`).prop('checked', true);
+
     wikiLibraryUnsubs.push(wikiLibrary.on('pages-added', onWikiPagesEvent));
     wikiLibraryUnsubs.push(wikiLibrary.on('pages-fetched', onWikiPagesEvent));
     wikiLibraryUnsubs.push(wikiLibrary.on('task-status', onWikiTaskStatus));
     wikiLibraryUnsubs.push(wikiLibrary.on('library-updated', onWikiLibraryUpdated));
+    wikiLibraryUnsubs.push(wikiLibrary.on('basket-changed', onWikiBasketChanged));
 
     updateWikiButtonsForType();
     setWikiRunningUi(wikiLibrary.isBusy());
     refreshWikiLibraryPanel();
+    refreshWikiBasketLabel();
 }
 
 /** e621 has no cheap titles-only mode — bodies arrive with the listing. */
@@ -2754,6 +2797,137 @@ async function runWikiPluginFallback(wikiType, url, filter, status) {
         status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
         toastr.error('Failed to scrape wiki: ' + e.message);
     }
+}
+
+/** Updates the basket radio label with live page/wiki counts. */
+async function refreshWikiBasketLabel() {
+    if (!wikiLibraryAvailable) {
+        return;
+    }
+    try {
+        const rows = await wikiLibrary.getBasket();
+        const wikis = new Set(rows.map(r => r.libraryId)).size;
+        $('#vectfox_cv_wiki_basket_label').text(rows.length === 0
+            ? 'Selection basket (empty)'
+            : `Selection basket (${rows.length} page${rows.length === 1 ? '' : 's'}, ${wikis} wiki${wikis === 1 ? '' : 's'})`);
+    } catch { /* store unavailable */ }
+}
+
+/** Keeps a basket-mode source live-synced with basket edits. */
+async function onWikiBasketChanged() {
+    await refreshWikiBasketLabel();
+    if (wikiSourceMode === 'basket') {
+        await applyBasketAsSource({ promptForUnfetched: false, quiet: true });
+    }
+}
+
+/** Switches the wiki source between the latest scrape and the basket. */
+async function setWikiSourceMode(mode) {
+    if (mode === wikiSourceMode) {
+        return;
+    }
+    wikiSourceMode = mode;
+    if (mode === 'basket') {
+        if (sourceData?.type === 'wiki' && sourceData.wikiType !== 'library') {
+            stashedScrapeSourceData = sourceData;
+        }
+        await applyBasketAsSource();
+    } else {
+        currentBasketSelectionHash = null;
+        sourceData = stashedScrapeSourceData;
+        stashedScrapeSourceData = null;
+        if (sourceData?.pages) {
+            showWikiPreview(sourceData.pages, sourceData.content);
+        } else {
+            $('#vectfox_cv_wiki_preview').hide();
+        }
+        renderReformatSection();
+    }
+}
+
+/**
+ * Materializes the selection basket into the module sourceData (the same
+ * shape a scrape produces, so vectorization and Auto-Reformat need no
+ * special-casing), offering to fetch content for pages that are title-only.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.promptForUnfetched] - Ask before fetching missing content
+ * @param {boolean} [options.quiet] - Suppress info toasts (live re-sync path)
+ * @returns {Promise<boolean>} True when sourceData was set
+ */
+async function applyBasketAsSource({ promptForUnfetched = true, quiet = false } = {}) {
+    const basket = await wikiLibrary.materializeBasket();
+    await refreshWikiBasketLabel();
+
+    if (basket.pageCount === 0 && basket.unfetchedKeys.length === 0) {
+        if (!quiet) {
+            toastr.info('The basket is empty — pick pages in the Wiki Library first', 'VectFox');
+        }
+        sourceData = null;
+        $('#vectfox_cv_wiki_preview').hide();
+        return false;
+    }
+
+    if (basket.unfetchedKeys.length > 0 && promptForUnfetched) {
+        const confirmed = await callGenericPopup(
+            `<p><b>${basket.unfetchedKeys.length}</b> selected page(s) have no content yet — only their titles are indexed.</p><p>Fetch their content now?</p>`,
+            POPUP_TYPE.CONFIRM, '', { okButton: 'Fetch content', cancelButton: 'Use fetched pages only' });
+        if (confirmed) {
+            if (wikiLibrary.isBusy()) {
+                toastr.warning('A Wiki Library task is already running — stop it first.');
+            } else {
+                try {
+                    const result = await wikiLibrary.fetchContentForKeys(basket.unfetchedKeys);
+                    toastr.success(`Fetched content for ${result.fetched} page(s)`, 'VectFox');
+                } catch (e) {
+                    toastr.error('Content fetch failed: ' + (e.message ?? e), 'VectFox');
+                }
+            }
+            return applyBasketAsSource({ promptForUnfetched: false, quiet });
+        }
+    }
+
+    if (basket.pageCount === 0) {
+        if (!quiet) {
+            toastr.warning('None of the basket pages have content yet — fetch content first', 'VectFox');
+        }
+        sourceData = null;
+        $('#vectfox_cv_wiki_preview').hide();
+        return false;
+    }
+
+    sourceData = {
+        type: 'wiki',
+        wikiType: 'library',
+        url: '',
+        content: basket.combinedContent,
+        pages: basket.pages,
+        pageCount: basket.pageCount,
+        name: basket.name,
+        selectionDescriptor: basket.selectionDescriptor,
+    };
+    const { getStringHash } = await import('../../../../utils.js');
+    currentBasketSelectionHash = getStringHash(basket.selectionDescriptor);
+    showWikiPreview(basket.pages, basket.combinedContent);
+    renderReformatSection();
+    return true;
+}
+
+/**
+ * Entry point for the Wiki Library modal's "Use basket in Vectorizer":
+ * ensures the vectorizer is open on the wiki type with basket mode selected,
+ * then materializes the basket as the source.
+ */
+export async function useBasketAsWikiSource() {
+    if ($('#vectfox_content_vectorizer_modal').length === 0) {
+        openContentVectorizer('wiki');
+    } else if (currentContentType !== 'wiki') {
+        $('#vectfox_content_vectorizer_modal').remove();
+        openContentVectorizer('wiki');
+    }
+    wikiSourceMode = 'basket';
+    $('input[name="vectfox_cv_wiki_source_mode"][value="basket"]').prop('checked', true);
+    await applyBasketAsSource();
 }
 
 // ============================================================================
@@ -3710,6 +3884,37 @@ async function startVectorization() {
             { timeOut: 8000 }
         );
         return;
+    }
+
+    // An accepted Auto-Reformat is frozen to a hash of the prepared source
+    // text. If the source drifted since accept (a changed basket selection,
+    // an edited document), the core pipeline would silently fall back to
+    // mechanical chunking — confirm that explicitly instead.
+    if (currentSettings.reformat?.accepted && isReformatSupportedType()) {
+        try {
+            const preparedText = await _resolveReformatSourceText(source);
+            const { getStringHash } = await import('../../../../utils.js');
+            if (getStringHash(preparedText) !== currentSettings.reformat.sourceHash) {
+                const proceed = await callGenericPopup(
+                    `<div style="text-align: left;">
+                        <p><strong>The content changed since Auto-Reformat was accepted.</strong></p>
+                        <p>The accepted entries no longer match this source (for example, the page selection changed), so they cannot be used for this run.</p>
+                        <p style="margin-top: 10px;">Proceed with mechanical chunking instead, or cancel and re-run Auto-Reformat.</p>
+                    </div>`,
+                    POPUP_TYPE.CONFIRM,
+                    '',
+                    { okButton: 'Chunk mechanically', cancelButton: 'Cancel' },
+                );
+                if (!proceed) {
+                    toastr.info('Vectorize cancelled', 'VectFox');
+                    return;
+                }
+                currentSettings.reformat = null;
+                renderReformatSection();
+            }
+        } catch (e) {
+            console.warn('VectFox: Could not verify Auto-Reformat freshness:', e);
+        }
     }
 
     // EventBase is the exclusive path for chat — always redirect through EventBase ingestion pipeline.

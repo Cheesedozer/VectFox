@@ -1024,6 +1024,34 @@
     flex-wrap: wrap;
 }
 
+.vectfox-cv-wiki-source-mode {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-size: 0.9em;
+    margin-top: 2px;
+}
+
+.vectfox-cv-wiki-source-mode label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.vectfox-cv-reformat-warning {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent);
+    font-size: 0.9em;
+}
+
 .vectfox-cv-wiki-live {
     padding: 10px 14px;
     background: var(--SmartThemeBlurTintColor);
