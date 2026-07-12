@@ -479,6 +479,12 @@ enableServerPlugins: true
 
 Restart SillyTavern.
 
+### Wiki scraping — built-in, no plugin needed
+
+Wiki import (ChunkBase → Wiki Page) scrapes Fandom and MediaWiki wikis **directly from your browser** using the MediaWiki API — it works out of the box, with no server plugin and no `config.yaml` changes. The page filter is a **regular expression matched against page titles** (e.g. `Astarion|Gale`); leave it empty to scrape the whole wiki.
+
+The external [Fandom Scraper plugin](https://github.com/SillyTavern/SillyTavern-Fandom-Scraper) is now optional: if it is installed, VectFox automatically falls back to it for the rare wikis that block browser access (very old MediaWiki versions or wikis with cross-origin requests disabled).
+
 ### Step 3: Configure VectFox
 
 1. Open **VectFox Settings** (Core tab in the extensions panel).
