@@ -304,9 +304,15 @@ function bindModalEvents() {
             return;
         }
         const estimate = await wikiLibrary.estimateFullWalk(libraryId);
-        if (estimate.unfetchedCount > 200) {
+        // requests, not unfetchedCount: an e621 wiki not yet walked reports
+        // unfetchedCount=0 (its cost is in the corpus WALK, not per-page
+        // fetches) but still needs the confirm — requests covers both cases.
+        if (estimate.requests > 4) {
+            const detail = estimate.unfetchedCount > 0
+                ? `content for <b>${estimate.unfetchedCount.toLocaleString()}</b> pages (~${estimate.requests} requests)`
+                : `the full wiki corpus (~${estimate.requests} requests, several minutes)`;
             const confirmed = await callGenericPopup(
-                `<p>This will download content for <b>${estimate.unfetchedCount.toLocaleString()}</b> pages (~${estimate.requests} requests).</p><p>You can Stop &amp; Keep at any time. Continue?</p>`,
+                `<p>This will download ${detail}.</p><p>You can Stop &amp; Keep at any time. Continue?</p>`,
                 POPUP_TYPE.CONFIRM);
             if (!confirmed) {
                 return;
@@ -720,16 +726,17 @@ async function renderStorageTab() {
         stats.append($('<span>').text(`${(library.titleCount ?? 0).toLocaleString()} titles`));
         stats.append($('<span>').text(`${(library.fetchedCount ?? 0).toLocaleString()} fetched`));
         stats.append($('<span>').text(`~${formatBytes(library.bytesApprox ?? 0)} text`));
+        const resumable = wikiLibrary.isResumable(library);
         stats.append($('<span>').text(library.enumComplete
             ? 'fully indexed'
-            : (library.checkpoint != null ? 'paused — checkpoint saved' : 'not indexed yet')));
+            : (resumable ? 'paused — checkpoint saved' : 'not indexed yet')));
         card.append(stats);
         if (library.lastError) {
             card.append($('<div class="vectfox-wl-storage-error">').text(`Last error: ${library.lastError}`));
         }
 
         const actions = $('<div class="vectfox-wl-storage-actions">');
-        if (!library.enumComplete && library.checkpoint != null) {
+        if (resumable) {
             actions.append($('<button class="vectfox-btn-sm">')
                 .html('<i class="fa-solid fa-play"></i> Resume indexing')
                 .on('click', () => runGuarded(

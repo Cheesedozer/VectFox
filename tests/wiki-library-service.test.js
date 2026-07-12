@@ -272,6 +272,39 @@ describe('fetchEverything', () => {
         expect(estimate.unfetchedCount).toBe(3);
         expect(estimate.requests).toBe(1);
     });
+
+    it('estimateFullWalk reports the e621 corpus-walk cost even before the library exists (first walk)', async () => {
+        // Regression: the confirm dialog is shown by the CALLER based on
+        // estimate.requests > 0, computed BEFORE startEnumeration creates the
+        // library row — the id-prefix fallback must still say "this is e621".
+        const estimate = await svc.estimateFullWalk('e621:e621.net');
+        expect(estimate.requests).toBeGreaterThan(0);
+        expect(estimate.titleCount).toBe(0);
+    });
+});
+
+describe('isResumable', () => {
+    it('is false for a library with no library row', () => {
+        expect(svc.isResumable(null)).toBe(false);
+    });
+
+    it('is false once enumeration is complete', () => {
+        expect(svc.isResumable({ enumComplete: true, checkpoint: { gapcontinue: 'X' }, titleCount: 5 })).toBe(false);
+    });
+
+    it('is true with an explicit continuation checkpoint', () => {
+        expect(svc.isResumable({ enumComplete: false, checkpoint: { gapcontinue: 'X' }, titleCount: 2 })).toBe(true);
+    });
+
+    it('is true when checkpoint is null but pages were already kept (Stop & Keep mid-first-window)', () => {
+        // The scenario the bug fix targets: a stop before any continuation
+        // cursor existed persists checkpoint=null, not an object.
+        expect(svc.isResumable({ enumComplete: false, checkpoint: null, titleCount: 2 })).toBe(true);
+    });
+
+    it('is false for a brand-new, never-enumerated library', () => {
+        expect(svc.isResumable({ enumComplete: false, checkpoint: null, titleCount: 0 })).toBe(false);
+    });
 });
 
 describe('e621 enumeration', () => {

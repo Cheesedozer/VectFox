@@ -944,6 +944,15 @@ describe('enumerateE621Pages', () => {
         expect(batches[0].categories).toEqual(['lore']);
     });
 
+    it('keeps the category as a literal name when category_name is a non-numeric string, instead of dropping it', async () => {
+        installE621Mock([[
+            { id: 1, title: 'weird_tag', body: 'Body.', is_deleted: false, category_name: 'artist' },
+        ]]);
+        const batches = [];
+        await enumerateE621Pages({ url: '', onBatch: (records) => batches.push(...records) });
+        expect(batches[0].categories).toEqual(['artist']);
+    });
+
     it('resumes from a persisted cursor', async () => {
         const fetchMock = installE621Mock([[e6page(400, 'tag_400', 'Body.')]]);
         await enumerateE621Pages({ url: '', resumeCursor: 500 });

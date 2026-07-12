@@ -844,12 +844,17 @@ function mapE621Item(item) {
     if (!title || !body.trim()) {
         return null;
     }
-    // The taxonomy id lives in category_id; some API versions expose it under
-    // the (misleadingly named) category_name key instead.
-    const catId = Number(item?.category_id ?? item?.category_name);
-    const categories = Number.isFinite(catId)
-        ? [E621_CATEGORY_NAMES[catId] ?? 'other']
-        : [];
+    // The taxonomy id normally lives in category_id; some API versions expose
+    // it under the (misleadingly named) category_name key instead — as
+    // either the numeric id or, on some variants, the name string itself.
+    const rawCategory = item?.category_id ?? item?.category_name;
+    let categories = [];
+    if (rawCategory !== undefined && rawCategory !== null) {
+        const catId = Number(rawCategory);
+        categories = Number.isFinite(catId)
+            ? [E621_CATEGORY_NAMES[catId] ?? 'other']
+            : [String(rawCategory)];
+    }
     return {
         title,
         url: '',

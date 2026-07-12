@@ -2623,7 +2623,7 @@ async function refreshWikiLibraryPanel() {
         if (library) {
             onWikiLibraryUpdated({ library });
         }
-        if (library && !library.enumComplete && library.checkpoint != null) {
+        if (wikiLibrary.isResumable(library)) {
             resumeBtn.data('libraryId', library.id).show();
         } else {
             resumeBtn.hide();

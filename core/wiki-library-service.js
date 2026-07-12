@@ -197,6 +197,23 @@ async function withTask(kind, libraryId, work) {
  * not the user's input — so one wiki reached via different URL spellings
  * always maps to the same library.
  */
+/**
+ * Whether a library has interrupted enumeration worth resuming. A checkpoint
+ * of `null` legitimately means "resume from the beginning" (e.g. Stop & Keep
+ * fired while the first 500-page window was still streaming in, before any
+ * continuation cursor existed) — so `checkpoint != null` alone would hide
+ * Resume for exactly the pages-were-kept-but-window-1-incomplete case.
+ * titleCount > 0 catches that: enumeration touched the library but never
+ * finished it.
+ *
+ * @param {WikiLibrary} library
+ * @returns {boolean}
+ */
+export function isResumable(library) {
+    return !!library && !library.enumComplete
+        && (library.checkpoint != null || (library.titleCount ?? 0) > 0);
+}
+
 export function deriveLibraryIdentity(wikiType, apiUrl) {
     if (wikiType === 'e621') {
         const host = new URL(apiUrl).hostname;
@@ -505,10 +522,15 @@ export async function fetchEverything(libraryId) {
  */
 export async function estimateFullWalk(libraryId) {
     const library = await getLibrary(libraryId);
-    if (library?.wikiType === 'e621') {
-        const requests = library.enumComplete ? 0 : E621_WALK_REQUEST_ESTIMATE;
+    // Fall back to the id prefix when the library doesn't exist yet (the
+    // caller previews the cost of a wiki's FIRST walk, before startEnumeration
+    // has created its row) — otherwise the e621 estimate silently reads as
+    // "0 requests" and the cost-confirm dialog never appears.
+    const wikiType = library?.wikiType ?? libraryId.split(':')[0];
+    if (wikiType === 'e621') {
+        const requests = library?.enumComplete ? 0 : E621_WALK_REQUEST_ESTIMATE;
         return {
-            titleCount: library.titleCount ?? 0,
+            titleCount: library?.titleCount ?? 0,
             unfetchedCount: 0,
             requests,
             estMs: requests * WIKI_SCRAPER_TIMINGS.e621DelayMs,
