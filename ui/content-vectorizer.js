@@ -38,6 +38,7 @@ import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { getCleaningSettings } from '../core/text-cleaning.js';
 import { progressTracker } from './progress-tracker.js';
 import { isFatbodyOwnedBook } from '../core/fatbody-guard.js';
+import { scrapeWiki as scrapeWikiInternal, WikiScrapeError, shouldFallbackToPlugin } from '../core/wiki-scraper.js';
 
 // ============================================================================
 // STATE
@@ -48,6 +49,7 @@ let currentSettings = {};
 let sourceData = null;
 let activeVectorizeAbortController = null;
 let isVectorizing = false;
+let wikiScrapeAbortController = null;
 let startFromMessage = 1;
 
 function syncStartFromMessageFromUI() {
@@ -704,9 +706,9 @@ function renderWikiSource(type) {
 
     return `
         <div class="vectfox-cv-wiki-source">
-            <!-- Plugin Status -->
+            <!-- Scraper Status -->
             <div class="vectfox-cv-wiki-plugin-status" id="vectfox_cv_wiki_plugin_status">
-                <i class="fa-solid fa-spinner fa-spin"></i> Checking plugin availability...
+                <i class="fa-solid fa-spinner fa-spin"></i> Checking scraper status...
             </div>
 
             <!-- Wiki Type Selection -->
@@ -737,7 +739,7 @@ function renderWikiSource(type) {
                        class="vectfox-input"
                        placeholder="${options.filterPlaceholder}">
                 <div class="vectfox-cv-hint">
-                    Leave empty to scrape single page, or enter comma-separated page names for bulk scrape
+                    Optional regex matched against page titles (e.g. Astarion|Gale). Leave empty to scrape all pages.
                 </div>
             </div>
 
@@ -2089,36 +2091,50 @@ async function fetchUrl() {
 // ============================================================================
 
 /**
- * Checks if the wiki scraper plugin is available
+ * Shows whether the optional Fandom Scraper plugin is installed.
+ * Scraping runs in the browser via the built-in scraper either way — the
+ * plugin is only a fallback for wikis that block browser access, so this
+ * never disables the scrape button.
  */
 async function checkWikiPluginStatus() {
     const statusEl = $('#vectfox_cv_wiki_plugin_status');
     const wikiType = $('#vectfox_cv_wiki_type').val() || 'fandom';
-    const scrapeBtn = $('#vectfox_cv_scrape_wiki');
-
-    statusEl.html('<i class="fa-solid fa-spinner fa-spin"></i> Checking plugin...');
 
     const isAvailable = await isWikiPluginAvailable(wikiType);
 
     if (isAvailable) {
         statusEl.html(`
             <i class="fa-solid fa-check-circle" style="color: var(--vectfox-success);"></i>
-            <span>${wikiType === 'fandom' ? 'Fandom' : 'MediaWiki'} scraper ready</span>
+            <span>Built-in browser scraper ready (Fandom Scraper plugin available as fallback)</span>
         `);
-        scrapeBtn.prop('disabled', false);
     } else {
         const type = getContentType('wiki');
         statusEl.html(`
-            <div class="vectfox-cv-wiki-plugin-warning">
-                <i class="fa-solid fa-exclamation-triangle" style="color: var(--vectfox-warning);"></i>
-                <span>Wiki scraping requires the Fandom Scraper plugin</span>
-                <a href="${type.sourceOptions.pluginUrl}" target="_blank" rel="noopener" class="vectfox-cv-plugin-link">
-                    <i class="fa-solid fa-external-link"></i> Install Plugin
-                </a>
-            </div>
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Built-in browser scraper ready. Optional:</span>
+            <a href="${type.sourceOptions.pluginUrl}" target="_blank" rel="noopener" class="vectfox-cv-plugin-link">
+                fallback plugin
+            </a>
+            <span>for wikis that block browser access</span>
         `);
-        scrapeBtn.prop('disabled', true);
     }
+}
+
+/**
+ * Install hint shown only after the built-in scraper was actually blocked
+ * by a wiki and no fallback plugin is installed.
+ */
+function renderPluginHint() {
+    const type = getContentType('wiki');
+    return `
+        <div class="vectfox-cv-wiki-plugin-warning">
+            <i class="fa-solid fa-exclamation-triangle" style="color: var(--vectfox-warning);"></i>
+            <span>This wiki blocks browser scraping — install the Fandom Scraper plugin to scrape it</span>
+            <a href="${type.sourceOptions.pluginUrl}" target="_blank" rel="noopener" class="vectfox-cv-plugin-link">
+                <i class="fa-solid fa-external-link"></i> Install Plugin
+            </a>
+        </div>
+    `;
 }
 
 /**
@@ -2143,9 +2159,17 @@ async function isWikiPluginAvailable(wikiType) {
 }
 
 /**
- * Scrapes wiki content using ST's fandom scraper plugin
+ * Scrapes wiki content — built-in browser scraper first, with the external
+ * Fandom Scraper plugin as a fallback for wikis that block browser access.
+ * While a scrape runs, the button becomes Cancel.
  */
 async function scrapeWiki() {
+    // A scrape is already running — this click means Cancel
+    if (wikiScrapeAbortController) {
+        wikiScrapeAbortController.abort();
+        return;
+    }
+
     const wikiType = $('#vectfox_cv_wiki_type').val();
     const url = $('#vectfox_cv_wiki_url').val().trim();
     const filter = $('#vectfox_cv_wiki_filter').val().trim();
@@ -2159,37 +2183,39 @@ async function scrapeWiki() {
     const preview = $('#vectfox_cv_wiki_preview');
     const scrapeBtn = $('#vectfox_cv_scrape_wiki');
 
+    wikiScrapeAbortController = new AbortController();
     status.html('<i class="fa-solid fa-spinner fa-spin"></i> Scraping wiki...');
     preview.hide();
-    scrapeBtn.prop('disabled', true);
+    scrapeBtn.html('<i class="fa-solid fa-stop"></i> Cancel');
 
     try {
-        const endpoint = wikiType === 'fandom'
-            ? '/api/plugins/fandom/scrape'
-            : '/api/plugins/fandom/scrape-mediawiki';
-
-        // Build request body based on wiki type
-        let requestBody;
-        if (wikiType === 'fandom') {
-            // Extract fandom ID from URL
-            const fandomId = extractFandomId(url);
-            requestBody = { fandom: fandomId, filter: filter };
-        } else {
-            requestBody = { url: url, filter: filter };
+        let pages;
+        try {
+            pages = await scrapeWikiInternal({
+                wikiType,
+                url,
+                filter,
+                signal: wikiScrapeAbortController.signal,
+                onProgress: (progress) => {
+                    if (progress.phase === 'titles') {
+                        status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Listing pages… ${progress.done} found`);
+                    } else if (progress.phase === 'content') {
+                        status.html(`<i class="fa-solid fa-spinner fa-spin"></i> Fetching content ${progress.done}/${progress.total}…`);
+                    }
+                },
+            });
+        } catch (e) {
+            if (!shouldFallbackToPlugin(e)) {
+                throw e;
+            }
+            if (!await isWikiPluginAvailable(wikiType)) {
+                e.showPluginHint = true;
+                throw e;
+            }
+            console.warn('VectFox: Built-in wiki scraper blocked, falling back to Fandom Scraper plugin:', e.message);
+            status.html('<i class="fa-solid fa-spinner fa-spin"></i> Browser scrape blocked — using Fandom Scraper plugin...');
+            pages = await scrapeViaPlugin(wikiType, url, filter);
         }
-
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(error || `HTTP ${response.status}`);
-        }
-
-        const pages = await response.json();
 
         if (!pages || pages.length === 0) {
             throw new Error('No content found');
@@ -2211,7 +2237,6 @@ async function scrapeWiki() {
         };
 
         status.html('');
-        scrapeBtn.prop('disabled', false);
 
         // Show preview
         $('#vectfox_cv_wiki_title').text(`${pages.length} page(s) scraped`);
@@ -2222,11 +2247,54 @@ async function scrapeWiki() {
         toastr.success(`Scraped ${pages.length} page(s), ${combinedContent.length.toLocaleString()} chars`, 'VectFox');
 
     } catch (e) {
-        console.error('VectFox: Wiki scrape failed:', e);
-        status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
-        scrapeBtn.prop('disabled', false);
-        toastr.error('Failed to scrape wiki: ' + e.message);
+        if (e instanceof WikiScrapeError && e.code === 'aborted') {
+            console.log('VectFox: Wiki scrape cancelled');
+            status.html('<i class="fa-solid fa-ban"></i> Scrape cancelled');
+        } else {
+            console.error('VectFox: Wiki scrape failed:', e);
+            status.html(`<i class="fa-solid fa-times" style="color: var(--vectfox-danger);"></i> ${e.message}`);
+            if (e.showPluginHint) {
+                status.append(renderPluginHint());
+            }
+            toastr.error('Failed to scrape wiki: ' + e.message);
+        }
+    } finally {
+        wikiScrapeAbortController = null;
+        scrapeBtn.html('<i class="fa-solid fa-download"></i> Scrape Wiki');
     }
+}
+
+/**
+ * Scrapes wiki content using the external Fandom Scraper server plugin
+ * (fallback path — same endpoints and bodies as before the built-in scraper).
+ */
+async function scrapeViaPlugin(wikiType, url, filter) {
+    const endpoint = wikiType === 'fandom'
+        ? '/api/plugins/fandom/scrape'
+        : '/api/plugins/fandom/scrape-mediawiki';
+
+    // Build request body based on wiki type
+    let requestBody;
+    if (wikiType === 'fandom') {
+        // Extract fandom ID from URL
+        const fandomId = extractFandomId(url);
+        requestBody = { fandom: fandomId, filter: filter };
+    } else {
+        requestBody = { url: url, filter: filter };
+    }
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
 }
 
 /**

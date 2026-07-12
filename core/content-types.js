@@ -338,13 +338,13 @@ export const CONTENT_TYPES = {
         id: 'wiki',
         name: 'Wiki Page',
         icon: 'fa-book-open',
-        description: 'Scrape Fandom or MediaWiki pages',
+        description: 'Scrape Fandom or MediaWiki wikis directly from your browser (server plugin optional, used as fallback)',
 
         features: {
             keywordExtraction: true,
             scopeControl: true,
             sectionHeaders: true,
-            requiresPlugin: true,
+            pluginFallback: true,
             bulkScrape: true,
         },
 
@@ -362,9 +362,9 @@ export const CONTENT_TYPES = {
         sourceOptions: {
             types: [
                 { id: 'fandom', name: 'Fandom Wiki', placeholder: 'https://baldursgate.fandom.com/ or just "baldursgate"' },
-                { id: 'mediawiki', name: 'MediaWiki / Wikipedia', placeholder: 'https://en.wikipedia.org/wiki/Article_Name' },
+                { id: 'mediawiki', name: 'MediaWiki', placeholder: 'https://minecraft.wiki/ or any MediaWiki base URL' },
             ],
-            filterPlaceholder: 'Astarion, Gale, Shadowheart (comma-separated page names)',
+            filterPlaceholder: 'Astarion|Gale|Shadowheart (regex on page titles)',
             pluginUrl: 'https://github.com/SillyTavern/SillyTavern-Fandom-Scraper',
         },
     },

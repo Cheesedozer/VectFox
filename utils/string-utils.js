@@ -7,6 +7,27 @@
  * @module stringUtils
  */
 
+// Shared state for decodeHtmlEntities: lazily created decoder element and memoized results
+let entityDecoderEl = null;
+const entityDecodeCache = new Map();
+
+// Node fallback map for named entities (browser path uses the DOM and covers everything)
+const NAMED_ENTITIES = {
+  nbsp: '\u00a0', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  mdash: '—', ndash: '–', hellip: '…', deg: '°',
+  times: '×', middot: '·', laquo: '«', raquo: '»',
+  copy: '©', reg: '®', trade: '™', plusmn: '±',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  sbquo: '‚', bdquo: '„', dagger: '†', Dagger: '‡',
+  bull: '•', prime: '′', Prime: '″', minus: '−',
+  frac12: '½', frac14: '¼', frac34: '¾',
+  sup2: '²', sup3: '³', micro: 'µ', sect: '§',
+  para: '¶', eacute: 'é', egrave: 'è', agrave: 'à',
+  ccedil: 'ç', ntilde: 'ñ', uuml: 'ü', ouml: 'ö', auml: 'ä',
+};
+
+const ENTITY_TOKEN = /&(?:#\d+|#x[0-9a-f]+|[a-zA-Z][a-zA-Z0-9]*);/gi;
+
 /**
  * String Manipulation Utilities
  */
@@ -255,6 +276,51 @@ const StringUtils = {
       '&#x2F;': '/'
     };
     return str.replace(/&(?:amp|lt|gt|quot|#39|#x2F);/g, entity => map[entity]);
+  },
+
+  /**
+   * Decode all HTML entities (named, decimal, hex) to their characters.
+   * Only entity-shaped tokens are decoded — surrounding text is never
+   * parsed as markup, so this is safe on untrusted input.
+   *
+   * @param {string} str - String containing HTML entities
+   * @returns {string} Decoded string
+   */
+  decodeHtmlEntities(str) {
+    if (!str || typeof str !== 'string' || !str.includes('&')) {
+      return str ?? '';
+    }
+
+    return str.replace(ENTITY_TOKEN, token => {
+      const cached = entityDecodeCache.get(token);
+      if (cached !== undefined) return cached;
+
+      let decoded;
+      if (typeof document !== 'undefined') {
+        if (!entityDecoderEl) {
+          entityDecoderEl = document.createElement('textarea');
+        }
+        entityDecoderEl.innerHTML = token;
+        decoded = entityDecoderEl.value;
+      } else {
+        // Node (test) environment: numeric entities + common named entities
+        const numeric = token.match(/^&#(x?)([0-9a-f]+);$/i);
+        if (numeric) {
+          const codePoint = parseInt(numeric[2], numeric[1] ? 16 : 10);
+          try {
+            decoded = String.fromCodePoint(codePoint);
+          } catch {
+            decoded = token;
+          }
+        } else {
+          const name = token.slice(1, -1);
+          decoded = NAMED_ENTITIES[name] ?? token;
+        }
+      }
+
+      entityDecodeCache.set(token, decoded);
+      return decoded;
+    });
   },
 
   /**

@@ -851,3 +851,45 @@ describe('SetOps', () => {
         expect(SetOps.isDisjoint(setA, setB)).toBe(false);
     });
 });
+
+// =============================================================================
+// STRING UTILS TESTS
+// =============================================================================
+
+describe('StringUtils.decodeHtmlEntities', () => {
+    let StringUtils;
+
+    beforeEach(async () => {
+        ({ default: StringUtils } = await import('../utils/string-utils.js'));
+    });
+
+    it('decodes named entities', () => {
+        expect(StringUtils.decodeHtmlEntities('Tom &amp; Jerry&nbsp;&mdash;&hellip;')).toBe('Tom & Jerry\u00a0—…');
+    });
+
+    it('decodes decimal and hex numeric entities', () => {
+        expect(StringUtils.decodeHtmlEntities('&#39;quoted&#x27; &#8212;')).toBe("'quoted' —");
+    });
+
+    it('only decodes entity tokens, never surrounding text', () => {
+        expect(StringUtils.decodeHtmlEntities('a &lt;b&gt; c')).toBe('a <b> c');
+        // The decoded angle brackets are plain text output, not parsed markup
+        expect(StringUtils.decodeHtmlEntities('&lt;script&gt;')).toBe('<script>');
+    });
+
+    it('passes unknown entities and stray ampersands through unchanged', () => {
+        expect(StringUtils.decodeHtmlEntities('&notarealentity12345; & &&')).toBe('&notarealentity12345; & &&');
+    });
+
+    it('handles empty and non-string input', () => {
+        expect(StringUtils.decodeHtmlEntities('')).toBe('');
+        expect(StringUtils.decodeHtmlEntities(null)).toBe('');
+        expect(StringUtils.decodeHtmlEntities('no entities')).toBe('no entities');
+    });
+
+    it('decodes double-encoded entities one level per call', () => {
+        const once = StringUtils.decodeHtmlEntities('&amp;#39;');
+        expect(once).toBe('&#39;');
+        expect(StringUtils.decodeHtmlEntities(once)).toBe("'");
+    });
+});

@@ -1,0 +1,423 @@
+/**
+ * Unit tests for core/wiki-scraper.js
+ *
+ * The built-in browser wiki scraper must (a) speak the MediaWiki Action API
+ * correctly (pagination, batching, rate limits) and (b) reproduce the
+ * SillyTavern-Fandom-Scraper plugin's output exactly, including its quirks
+ * (regexFromString invalid-flag fallback, title+'\n' filter matching,
+ * first-occurrence-only string replaces). Mocks fetch — same convention as
+ * reformat-extractor.test.js.
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// core/log.js reads extension_settings for verbosity/domain gating
+vi.mock('../../../../extensions.js', () => ({
+    extension_settings: { vectfox: {} },
+}));
+
+import {
+    scrapeWiki,
+    discoverApiEndpoint,
+    buildApiCandidates,
+    regexFromString,
+    getFandomId,
+    wikiToText,
+    shouldFallbackToPlugin,
+    WikiScrapeError,
+    WIKI_SCRAPER_TIMINGS,
+} from '../core/wiki-scraper.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function jsonResponse(body, { status = 200, headers = {} } = {}) {
+    const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        headers: { get: name => lower[name.toLowerCase()] ?? null },
+        json: async () => body,
+    };
+}
+
+const SITEINFO = { query: { general: { sitename: 'Test Wiki' } } };
+
+/**
+ * Fetch mock speaking enough of the MediaWiki Action API for the scraper:
+ * siteinfo probe, allpages enumeration (with continuation), revisions content.
+ *
+ * @param {string[][]} titlePages - allpages results, one array per continuation page
+ * @param {Function} contentFor - title -> wikitext (return undefined to mark missing)
+ */
+function installApiMock(titlePages, contentFor = title => `Content of ${title}.`) {
+    const fetchMock = vi.fn(async (url) => {
+        const params = new URL(url).searchParams;
+
+        if (params.get('meta') === 'siteinfo') {
+            return jsonResponse(SITEINFO);
+        }
+
+        if (params.get('list') === 'allpages') {
+            const index = params.get('apcontinue') ? Number(params.get('apcontinue')) : 0;
+            const body = {
+                query: { allpages: titlePages[index].map((title, i) => ({ pageid: index * 1000 + i, ns: 0, title })) },
+            };
+            if (index + 1 < titlePages.length) {
+                body.continue = { apcontinue: String(index + 1), continue: '-||' };
+            }
+            return jsonResponse(body);
+        }
+
+        if (params.get('prop') === 'revisions') {
+            const titles = params.get('titles').split('|');
+            const pages = {};
+            titles.forEach((title, i) => {
+                const wikitext = contentFor(title);
+                pages[wikitext === undefined ? `-${i + 1}` : String(i + 1)] = wikitext === undefined
+                    ? { ns: 0, title, missing: '' }
+                    : { pageid: i + 1, ns: 0, title, revisions: [{ slots: { main: { contentmodel: 'wikitext', '*': wikitext } } }] };
+            });
+            return jsonResponse({ query: { pages } });
+        }
+
+        throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+}
+
+beforeEach(() => {
+    vi.restoreAllMocks();
+    // Zero out politeness delays so tests run instantly; short discovery timeout
+    Object.assign(WIKI_SCRAPER_TIMINGS, {
+        enumDelayMs: 0,
+        batchDelayMs: 0,
+        rateLimitDefaultMs: 0,
+        rateLimitMaxDelayMs: 0,
+        discoverTimeoutMs: 1000,
+    });
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
+
+// ---------------------------------------------------------------------------
+// Ported plugin helpers — parity with SillyTavern-Fandom-Scraper
+// ---------------------------------------------------------------------------
+
+describe('regexFromString', () => {
+    it('parses a bare pattern with no flags', () => {
+        const re = regexFromString('Astarion|Gale');
+        expect(re).toBeInstanceOf(RegExp);
+        expect(re.source).toBe('Astarion|Gale');
+        expect(re.flags).toBe('');
+    });
+
+    it('parses /pattern/flags form', () => {
+        const re = regexFromString('/gale/i');
+        expect(re.source).toBe('gale');
+        expect(re.flags).toBe('i');
+        expect(re.test('Gale')).toBe(true);
+    });
+
+    it('falls back to RegExp(fullInput, "i") on invalid flags (plugin quirk)', () => {
+        const re = regexFromString('/foo/zz');
+        expect(re).toBeInstanceOf(RegExp);
+        expect(re.flags).toBe('i');
+        // The full input, slashes included, becomes the pattern
+        expect(re.test('/foo/zz')).toBe(true);
+    });
+
+    it('returns undefined on unparseable input', () => {
+        expect(regexFromString('')).toBeUndefined();
+        expect(regexFromString('(')).toBeUndefined();
+        expect(regexFromString(undefined)).toBeUndefined();
+    });
+});
+
+describe('getFandomId', () => {
+    it('extracts the subdomain from a full URL', () => {
+        expect(getFandomId('https://fallout.fandom.com/wiki/Fallout')).toBe('fallout');
+    });
+
+    it('passes a bare id through, trimmed', () => {
+        expect(getFandomId('  fallout  ')).toBe('fallout');
+    });
+});
+
+describe('buildApiCandidates', () => {
+    it('builds the fandom endpoint from a bare id, full URL, or schemeless host', () => {
+        const expected = ['https://fallout.fandom.com/api.php'];
+        expect(buildApiCandidates('fandom', 'fallout')).toEqual(expected);
+        expect(buildApiCandidates('fandom', 'https://fallout.fandom.com/wiki/Fallout')).toEqual(expected);
+        expect(buildApiCandidates('fandom', 'fallout.fandom.com')).toEqual(expected);
+    });
+
+    it('tries /api.php then /w/api.php for a bare mediawiki origin', () => {
+        expect(buildApiCandidates('mediawiki', 'https://example.com')).toEqual([
+            'https://example.com/api.php',
+            'https://example.com/w/api.php',
+        ]);
+    });
+
+    it('strips article paths and prepends https:// when missing', () => {
+        expect(buildApiCandidates('mediawiki', 'example.com/wiki/Main_Page')).toEqual([
+            'https://example.com/api.php',
+            'https://example.com/w/api.php',
+        ]);
+    });
+
+    it('prefers a script-path prefix from the URL, deduplicated', () => {
+        expect(buildApiCandidates('mediawiki', 'https://example.com/w/index.php')).toEqual([
+            'https://example.com/w/index.php/api.php',
+            'https://example.com/api.php',
+            'https://example.com/w/api.php',
+        ]);
+        expect(buildApiCandidates('mediawiki', 'https://example.com/w/')).toEqual([
+            'https://example.com/w/api.php',
+            'https://example.com/api.php',
+        ]);
+    });
+
+    it('uses a pasted api.php URL as the first candidate', () => {
+        expect(buildApiCandidates('mediawiki', 'https://example.com/w/api.php')[0])
+            .toBe('https://example.com/w/api.php');
+    });
+
+    it('throws an api-coded error on empty or invalid input', () => {
+        expect(() => buildApiCandidates('mediawiki', '  ')).toThrowError(WikiScrapeError);
+        try {
+            buildApiCandidates('mediawiki', '');
+        } catch (e) {
+            expect(e.code).toBe('api');
+        }
+    });
+});
+
+describe('wikiToText', () => {
+    it('converts links, bold, headers, and templates like the plugin', () => {
+        const text = wikiToText("'''Bold''' [[Page|alt text]] [[Plain Link]] {{Infobox|key=value}} == Header ==");
+        expect(text).not.toContain("'''");
+        expect(text).toContain('alt text');
+        expect(text).toContain('Plain Link');
+        expect(text).not.toContain('{{');
+        expect(text).not.toContain('==');
+    });
+
+    it('removes Category: lines', () => {
+        const text = wikiToText('Real content\nCategory:Characters\nMore content');
+        expect(text).toContain('Real content');
+        expect(text).toContain('More content');
+        expect(text).not.toContain('Category:');
+    });
+
+    it('decodes double-encoded entities via the second decode pass', () => {
+        // &amp;#39; -> first decode -> &#39; -> second decode -> '
+        expect(wikiToText('It&amp;#39;s here')).toBe("It's here");
+    });
+
+    it('strips residual HTML tags', () => {
+        expect(wikiToText('before <span class="x">inside</span> after')).toBe('before inside after');
+    });
+
+    it('keeps the first-occurrence-only replaces first-occurrence-only (plugin parity)', () => {
+        // Two empty bracket pairs: the plugin only removes the first one
+        expect(wikiToText('a () b () c')).toBe('a  b () c');
+    });
+});
+
+describe('shouldFallbackToPlugin', () => {
+    it('is true only for network and api errors', () => {
+        expect(shouldFallbackToPlugin(new WikiScrapeError('network', 'x'))).toBe(true);
+        expect(shouldFallbackToPlugin(new WikiScrapeError('api', 'x'))).toBe(true);
+        expect(shouldFallbackToPlugin(new WikiScrapeError('rate-limited', 'x'))).toBe(false);
+        expect(shouldFallbackToPlugin(new WikiScrapeError('not-found', 'x'))).toBe(false);
+        expect(shouldFallbackToPlugin(new WikiScrapeError('aborted', 'x'))).toBe(false);
+        expect(shouldFallbackToPlugin(new Error('generic'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Endpoint discovery
+// ---------------------------------------------------------------------------
+
+describe('discoverApiEndpoint', () => {
+    it('falls through candidates in order and returns the first valid API', async () => {
+        const fetchMock = vi.fn(async (url) => {
+            if (url.startsWith('https://example.com/api.php')) {
+                return jsonResponse('Not found', { status: 404 });
+            }
+            return jsonResponse(SITEINFO);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const apiUrl = await discoverApiEndpoint('mediawiki', 'https://example.com');
+        expect(apiUrl).toBe('https://example.com/w/api.php');
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('classifies as network when every candidate fetch throws (CORS/DNS)', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+        await expect(discoverApiEndpoint('mediawiki', 'https://example.com'))
+            .rejects.toMatchObject({ code: 'network' });
+    });
+
+    it('classifies as api when the host responds but no candidate is a MediaWiki API', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse('nope', { status: 404 })));
+        await expect(discoverApiEndpoint('mediawiki', 'https://example.com'))
+            .rejects.toMatchObject({ code: 'api' });
+    });
+
+    it('throws aborted when the signal is already aborted', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(SITEINFO)));
+        const controller = new AbortController();
+        controller.abort();
+        await expect(discoverApiEndpoint('fandom', 'fallout', { signal: controller.signal }))
+            .rejects.toMatchObject({ code: 'aborted' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Full scrape orchestration
+// ---------------------------------------------------------------------------
+
+describe('scrapeWiki', () => {
+    it('paginates allpages with apcontinue and requests non-redirect main-namespace pages', async () => {
+        const fetchMock = installApiMock([['Alpha', 'Beta'], ['Gamma']]);
+
+        const pages = await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+
+        expect(pages.map(p => p.title)).toEqual(['Alpha', 'Beta', 'Gamma']);
+        expect(pages[0].content).toBe('Content of Alpha.');
+
+        const allpagesCalls = fetchMock.mock.calls.map(c => c[0]).filter(u => u.includes('list=allpages'));
+        expect(allpagesCalls).toHaveLength(2);
+        expect(allpagesCalls[0]).toContain('apfilterredir=nonredirects');
+        expect(allpagesCalls[0]).toContain('apnamespace=0');
+        expect(allpagesCalls[0]).toContain('origin=*');
+        expect(allpagesCalls[1]).toContain('apcontinue=1');
+    });
+
+    it('applies the title filter with plugin semantics (matched against title + newline)', async () => {
+        installApiMock([['Alpha', 'Beta', 'Alphabet']]);
+
+        const pages = await scrapeWiki({ wikiType: 'fandom', url: 'testwiki', filter: 'Alpha' });
+        expect(pages.map(p => p.title)).toEqual(['Alpha', 'Alphabet']);
+
+        // Plugin quirk: '$' anchors fail against exact titles because a
+        // newline is appended before matching — preserved for parity.
+        await expect(scrapeWiki({ wikiType: 'fandom', url: 'testwiki', filter: 'Alpha$' }))
+            .rejects.toMatchObject({ code: 'not-found' });
+    });
+
+    it('fetches content in batches of 50 titles joined with %7C', async () => {
+        const titles = Array.from({ length: 120 }, (_, i) => `Page ${i + 1}`);
+        const fetchMock = installApiMock([titles]);
+        const progress = [];
+
+        const pages = await scrapeWiki({
+            wikiType: 'fandom',
+            url: 'testwiki',
+            onProgress: e => { if (e.phase === 'content') progress.push(e.done); },
+        });
+
+        expect(pages).toHaveLength(120);
+        const revisionCalls = fetchMock.mock.calls.map(c => c[0]).filter(u => u.includes('prop=revisions'));
+        expect(revisionCalls).toHaveLength(3);
+        const firstBatchTitles = new URL(revisionCalls[0]).searchParams.get('titles').split('|');
+        expect(firstBatchTitles).toHaveLength(50);
+        expect(revisionCalls[0]).toContain('%7C');
+        expect(progress).toEqual([50, 100, 120]);
+    });
+
+    it('skips missing pages and pages that convert to empty content', async () => {
+        installApiMock([['Kept', 'Missing', 'Empty']], (title) => {
+            if (title === 'Missing') return undefined;
+            if (title === 'Empty') return '{{OnlyATemplate}}';
+            return `Content of ${title}.`;
+        });
+
+        const pages = await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+        expect(pages.map(p => p.title)).toEqual(['Kept']);
+    });
+
+    it('follows the normalized-title mapping in revision responses', async () => {
+        const fetchMock = vi.fn(async (url) => {
+            const params = new URL(url).searchParams;
+            if (params.get('meta') === 'siteinfo') return jsonResponse(SITEINFO);
+            if (params.get('list') === 'allpages') {
+                return jsonResponse({ query: { allpages: [{ pageid: 1, ns: 0, title: 'foo bar' }] } });
+            }
+            return jsonResponse({
+                query: {
+                    normalized: [{ from: 'foo bar', to: 'Foo bar' }],
+                    pages: { 1: { pageid: 1, ns: 0, title: 'Foo bar', revisions: [{ slots: { main: { '*': 'Normalized content.' } } }] } },
+                },
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const pages = await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+        expect(pages).toEqual([{ title: 'Foo bar', content: 'Normalized content.' }]);
+    });
+
+    it('retries after a 429 honoring Retry-After, then succeeds', async () => {
+        let rateLimitedOnce = false;
+        const fetchMock = vi.fn(async (url) => {
+            const params = new URL(url).searchParams;
+            if (params.get('meta') === 'siteinfo') return jsonResponse(SITEINFO);
+            if (params.get('list') === 'allpages') {
+                if (!rateLimitedOnce) {
+                    rateLimitedOnce = true;
+                    return jsonResponse('slow down', { status: 429, headers: { 'Retry-After': '0' } });
+                }
+                return jsonResponse({ query: { allpages: [{ pageid: 1, ns: 0, title: 'Alpha' }] } });
+            }
+            return jsonResponse({
+                query: { pages: { 1: { pageid: 1, ns: 0, title: 'Alpha', revisions: [{ slots: { main: { '*': 'Alpha content.' } } }] } } },
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const pages = await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+        expect(pages).toHaveLength(1);
+        const allpagesCalls = fetchMock.mock.calls.map(c => c[0]).filter(u => u.includes('list=allpages'));
+        expect(allpagesCalls).toHaveLength(2);
+    });
+
+    it('gives up with rate-limited after persistent 429s (no plugin fallback)', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse('slow down', { status: 429, headers: { 'Retry-After': '0' } })));
+
+        let caught;
+        try {
+            await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(WikiScrapeError);
+        expect(caught.code).toBe('rate-limited');
+        expect(shouldFallbackToPlugin(caught)).toBe(false);
+    });
+
+    it('reports not-found when the wiki has no pages', async () => {
+        installApiMock([[]]);
+        await expect(scrapeWiki({ wikiType: 'fandom', url: 'testwiki' }))
+            .rejects.toMatchObject({ code: 'not-found' });
+    });
+
+    it('maps unexpected network failures to fallback-eligible network errors', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+
+        let caught;
+        try {
+            await scrapeWiki({ wikiType: 'fandom', url: 'testwiki' });
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught.code).toBe('network');
+        expect(shouldFallbackToPlugin(caught)).toBe(true);
+    });
+});
