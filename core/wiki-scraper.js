@@ -33,6 +33,7 @@ export const WIKI_SCRAPER_TIMINGS = {
     rateLimitDefaultMs: 5000,   // backoff when 429 has no usable Retry-After
     rateLimitMaxDelayMs: 30000, // cap on Retry-After honoring
     discoverTimeoutMs: 10000,   // per-candidate endpoint discovery timeout
+    e621DelayMs: 1100,          // pause between e621 requests (site asks ≤1 req/s)
 };
 
 /**
@@ -425,6 +426,216 @@ async function fetchContents(apiUrl, titles, { onProgress, signal } = {}) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// e621 adapter
+//
+// e621/e926 are Danbooru-lineage boorus, not MediaWiki — endpoint discovery
+// correctly fails on them. Their own JSON API (/wiki_pages.json) is CORS-open
+// (Access-Control-Allow-Origin: *) and returns clean per-tag wiki bodies in
+// DText markup, with none of the post/score/announcement noise an HTML
+// scraper would pick up. There is no plugin fallback for this wiki type.
+// ---------------------------------------------------------------------------
+
+const E621_PAGE_LIMIT = 320; // API max per request
+const E621_ALLOWED_HOSTS = new Set(['e621.net', 'e926.net']);
+// Starting cursor above any real wiki-page id. A cursorless request uses the
+// site's default ordering (recently-updated, NOT id) — mixing that first page
+// with b<id> cursors silently skips most of the wiki (verified live: the
+// default first page bottomed out at id ~758 and pagination never saw the
+// rest). Passing page=b<sentinel> from the very first request keeps every
+// response in sequential id-descending mode.
+const E621_MAX_ID_SENTINEL = 2147483647;
+
+/**
+ * Resolves user input to an e621-family base URL.
+ * Accepts '' (defaults to e621.net), a bare host, or any URL on an allowed
+ * host; rejects everything else so this adapter is never pointed at an
+ * arbitrary site that happens to expose a lookalike endpoint.
+ *
+ * @param {string} input - Empty string, host, or URL
+ * @returns {string} Base URL, e.g. 'https://e621.net'
+ * @throws {WikiScrapeError} code 'api' for non-e621 hosts
+ */
+export function resolveE621Base(input) {
+    const trimmed = String(input ?? '').trim();
+    if (!trimmed) {
+        return 'https://e621.net';
+    }
+    const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    let hostname;
+    try {
+        hostname = new URL(withScheme).hostname.toLowerCase().replace(/^www\./, '');
+    } catch {
+        throw new WikiScrapeError('api', `Invalid e621 URL: ${input}`);
+    }
+    if (!E621_ALLOWED_HOSTS.has(hostname)) {
+        throw new WikiScrapeError('api', `The e621 wiki type only supports e621.net / e926.net (got "${hostname}"). Use the MediaWiki type for other sites.`);
+    }
+    return `https://${hostname}`;
+}
+
+/**
+ * Converts e621 DText markup to plaintext, keeping display text:
+ *  - "[[title|display]]" → display; "[[title]]" → title
+ *  - "{{tag search|label}}" → label; "{{tag}}" → tag
+ *  - '"label":url' / '"label":[url]' external links → label
+ *  - line-leading "h1."–"h6." (incl. "h4#anchor.") → markdown "#"–"######"
+ *  - inline [b][i][u][s][o][sup][sub][spoiler][color=…] tags stripped, text kept
+ *  - [quote]/[section(,expanded)(=Title)]/[code]/[table]/[nodtext] block
+ *    markers stripped (a section title, if present, becomes its own line)
+ *  - "thumb #12345" removed ("post #12345" is kept — it's a factual reference)
+ *  - 3+ consecutive newlines collapsed
+ *
+ * @param {string} dtext - Raw DText body
+ * @returns {string} Plaintext
+ */
+export function dtextToPlaintext(dtext) {
+    let text = String(dtext ?? '').replace(/\r\n/g, '\n');
+
+    // Wiki links and tag-search links, piped form first
+    text = text.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2');
+    text = text.replace(/\[\[([^\]]+)\]\]/g, '$1');
+    text = text.replace(/\{\{([^}|]*)\|([^}]*)\}\}/g, '$2');
+    text = text.replace(/\{\{([^}]+)\}\}/g, '$1');
+
+    // External links: "label":https://… , "label":/path , "label":[any url]
+    text = text.replace(/"([^"\n]+)":\[[^\]]*\]/g, '$1');
+    text = text.replace(/"([^"\n]+)":(?:https?:\/\/|\/)\S+/g, '$1');
+
+    // Headers: h4. / h4#anchor. at line start → markdown
+    text = text.replace(/^h([1-6])(?:#[^.\n]*)?\.[ \t]*/gm, (_, n) => `${'#'.repeat(Number(n))} `);
+
+    // Section blocks — keep an expanded/named section's title as its own line
+    text = text.replace(/\[section(?:,expanded)?=([^\]]*)\]/gi, '\n$1\n');
+    text = text.replace(/\[\/?(?:section(?:,expanded)?|quote|code|table|thead|tbody|tr|th|td|nodtext)\]/gi, '');
+
+    // Inline formatting tags — strip markers, keep text
+    text = text.replace(/\[\/?(?:b|i|u|s|o|sup|sub|spoiler)\]/gi, '');
+    text = text.replace(/\[color=[^\]]*\]|\[\/color\]/gi, '');
+
+    // Thumbnail references are pure image plumbing; plain "post #N" stays
+    text = text.replace(/\bthumb #\d+\b/g, '');
+
+    return text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Scrapes e621/e926 tag-wiki pages via /wiki_pages.json.
+ *
+ * Always walks the full wiki-page corpus via Danbooru sequential ("b<id>")
+ * cursor pagination and applies the filter regex client-side — the same
+ * unanchored-substring semantics as the MediaWiki path's enumerateTitles.
+ * There is a real temptation to short-circuit this using e621's own
+ * search[title]=<name> (a fast, reliable EXACT match, verified live), but
+ * that changes matching semantics: an unanchored filter like "bimbo|himbo"
+ * is meant to substring-match longer titles ("bimbofication"), while
+ * search[title] would instead resolve it to the unrelated pages literally
+ * titled "bimbo" and "himbo" (both real, distinct e621 pages) — a silent
+ * wrong-result regression, not just a perf tradeoff. So this stays a full
+ * scan; e621's corpus is large (page ids run past 107,000, so a full scan is
+ * 300+ requests and several minutes even at the courtesy rate limit) — the
+ * 'titles' progress tick keeps the caller informed while it runs.
+ *
+ * The numeric `page` param is server-capped at 750 pages in; the cursor form
+ * is uncapped and stable under concurrent edits. Starting the cursor at
+ * E621_MAX_ID_SENTINEL matters: a cursorless first request uses the site's
+ * default ordering (recently-updated, not id), which silently drops most of
+ * the corpus once cursors switch to id-based paging (verified live).
+ *
+ * Bodies arrive in the same response as titles, so unlike the MediaWiki path
+ * there is no second content-fetch phase; progress is reported as the
+ * 'titles' phase only.
+ *
+ * @param {object} options
+ * @param {string} [options.url] - '' for e621.net, or an e621/e926 URL
+ * @param {string} [options.filter] - Regex string applied to page titles
+ *        (same semantics as the MediaWiki path — e621 tag titles are
+ *        lowercase_with_underscores)
+ * @param {Function} [options.onProgress] - Called with {phase, done, total}
+ * @param {AbortSignal} [options.signal]
+ * @returns {Promise<Array<{title: string, content: string}>>} Plaintext pages
+ * @throws {WikiScrapeError}
+ */
+export async function scrapeE621({ url, filter, onProgress, signal } = {}) {
+    const base = resolveE621Base(url);
+    const regex = filter ? regexFromString(String(filter)) : undefined;
+    const pages = [];
+    let cursor = E621_MAX_ID_SENTINEL;
+
+    for (;;) {
+        if (signal?.aborted) {
+            throw new WikiScrapeError('aborted', 'Wiki scrape cancelled');
+        }
+
+        const params = new URLSearchParams({
+            limit: String(E621_PAGE_LIMIT),
+            page: `b${cursor}`,
+        });
+        const data = await fetchApiJson(`${base}/wiki_pages.json?${params}`, { signal });
+
+        // Bare array normally; Danbooru-lineage APIs answer an empty result
+        // set as {"wiki_pages": []}
+        const items = Array.isArray(data) ? data
+            : Array.isArray(data?.wiki_pages) ? data.wiki_pages : [];
+        if (items.length === 0) {
+            break;
+        }
+
+        let minId = Infinity;
+        for (const item of items) {
+            const id = Number(item?.id);
+            if (Number.isFinite(id) && id < minId) {
+                minId = id;
+            }
+            if (item?.is_deleted) {
+                continue;
+            }
+            const title = typeof item?.title === 'string' ? item.title.trim() : '';
+            const body = typeof item?.body === 'string' ? item.body : '';
+            if (!title || !body.trim()) {
+                continue;
+            }
+            // Same matching semantics as enumerateTitles (title + trailing newline)
+            if (regex && !new RegExp(regex).test(title + '\n')) {
+                continue;
+            }
+            pages.push({ title, content: body });
+        }
+
+        onProgress?.({ phase: 'titles', done: pages.length, total: null });
+
+        // No usable cursor or no forward progress → stop rather than loop
+        if (!Number.isFinite(minId) || minId >= cursor) {
+            break;
+        }
+        cursor = minId;
+
+        if (items.length < E621_PAGE_LIMIT) {
+            break;
+        }
+        if (WIKI_SCRAPER_TIMINGS.e621DelayMs > 0) {
+            await AsyncUtils.sleep(WIKI_SCRAPER_TIMINGS.e621DelayMs);
+        }
+    }
+
+    const converted = [];
+    for (const page of pages) {
+        const content = dtextToPlaintext(page.content);
+        if (content) {
+            converted.push({ title: page.title, content });
+        }
+    }
+
+    if (converted.length === 0) {
+        throw new WikiScrapeError('not-found', filter
+            ? 'No e621 wiki pages matched the filter — check the filter regex (e621 titles are lowercase_with_underscores).'
+            : 'No e621 wiki pages found.');
+    }
+
+    log.lifecycle(`[WikiScraper] Scraped ${converted.length} e621 wiki pages`);
+    return converted;
+}
+
 /**
  * Maps any thrown error to a WikiScrapeError with the right code.
  */
@@ -445,8 +656,9 @@ function toWikiScrapeError(error) {
  * Scrapes a wiki entirely from the browser.
  *
  * @param {object} options
- * @param {string} options.wikiType - 'fandom' or 'mediawiki'
- * @param {string} options.url - Wiki URL, base URL, or (fandom) bare wiki id
+ * @param {string} options.wikiType - 'fandom', 'mediawiki', or 'e621'
+ * @param {string} options.url - Wiki URL, base URL, or (fandom) bare wiki id;
+ *        may be empty for 'e621' (defaults to e621.net)
  * @param {string} [options.filter] - Regex string applied to page titles
  * @param {Function} [options.onProgress] - Called with {phase, done, total}
  * @param {AbortSignal} [options.signal] - Abort the scrape
@@ -455,6 +667,10 @@ function toWikiScrapeError(error) {
  */
 export async function scrapeWiki({ wikiType, url, filter, onProgress, signal } = {}) {
     try {
+        if (wikiType === 'e621') {
+            return await scrapeE621({ url, filter, onProgress, signal });
+        }
+
         onProgress?.({ phase: 'discover', done: 0, total: null });
         const apiUrl = await discoverApiEndpoint(wikiType, url, { signal });
         log.lifecycle(`[WikiScraper] Scraping via ${apiUrl}`);

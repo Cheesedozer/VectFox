@@ -850,8 +850,12 @@ function generateCollectionId(contentType, source, settings) {
  * @param {object} settings - Vectorization settings including keyword options
  * @param {object} preparedContent - Prepared content data
  * @param {object} VectFoxSettings - Full VectFox extension settings (includes custom_stopwords)
+ *
+ * Exported for tests (tests/enrich-chunks.test.js) — production callers stay
+ * inside this module, same convention as reformat-extractor.js's
+ * mergeDuplicateEntities.
  */
-function enrichChunks(chunks, contentType, source, settings, preparedContent, VectFoxSettings) {
+export function enrichChunks(chunks, contentType, source, settings, preparedContent, VectFoxSettings) {
     // Get keyword extraction settings
     const keywordLevel = settings.keywordLevel || 'balanced';
     const keywordBaseWeight = settings.keywordBaseWeight || 1.5;
@@ -940,6 +944,14 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent, Ve
                 const importanceBonus = 0.2 + ((importance - 1) / 9) * 0.6;
                 keywords.push({ text: text.toLowerCase(), weight: keywordBaseWeight + importanceBonus });
             }
+        }
+
+        // Wiki per_page chunks carry the page title in chunk-level metadata
+        // (prepareWikiContent) but historically never surfaced it as entryName,
+        // so the Database Browser showed untitled chunks and hybrid-search's
+        // title boost never fired for wiki content.
+        if (!entryName && chunk.metadata?.pageTitle) {
+            entryName = chunk.metadata.pageTitle;
         }
 
         // Add character name as keyword with higher weight (it's the main subject)

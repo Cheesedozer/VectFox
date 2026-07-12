@@ -117,11 +117,18 @@ describe('reformatDocument — batching', () => {
         ]));
         vi.stubGlobal('fetch', fetchMock);
 
-        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+        const progressCalls = [];
+        const result = await reformatDocument({
+            text: doc,
+            contentType: 'document',
+            settings: baseSettings({ reformat_batch_chars: 6000 }),
+            onProgress: (done, total, phase) => progressCalls.push([done, total, phase]),
+        });
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(result.chunks).toHaveLength(1);
         expect(result.chunks[0].name).toBe('Topic');
+        expect(progressCalls).toEqual([[1, 1, 'extract']]);
 
         vi.unstubAllGlobals();
     });
@@ -317,6 +324,32 @@ describe('reformatDocument — duplicate merge integration', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Traits sanitation on the live extraction path
+// ---------------------------------------------------------------------------
+
+describe('reformatDocument — traits sanitation', () => {
+    it('a model reply that pastes the entry body into traits reaches the caller sanitized', async () => {
+        const doc = '# Himbofication\n\nThe process of transforming into a dumb brute.';
+        const entryBody = 'The process of transforming into an individual dumb brute or stud, perfectly happy to work out and perform physical tasks mindlessly. Frequently involves an exaggerated, hypersexualized male form.';
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([
+            {
+                entry_type: 'concept', name: 'Himbofication', aliases: [], affiliation: '',
+                traits: [entryBody, 'male equivalent of bimbofication'],
+                relationships: [], keywords: [], body: entryBody,
+            },
+        ]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(result.chunks).toHaveLength(1);
+        expect(result.chunks[0].traits).toEqual(['male equivalent of bimbofication']);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Optional cross-batch linking pass
 // ---------------------------------------------------------------------------
 
@@ -368,7 +401,7 @@ describe('reformatDocument — linking pass', () => {
             text: doc,
             contentType: 'document',
             settings: baseSettings({ reformat_batch_chars: 6000, reformat_enable_linking_pass: true }),
-            onProgress: (done, total) => progressCalls.push([done, total]),
+            onProgress: (done, total, phase) => progressCalls.push([done, total, phase]),
         });
 
         // 1 extraction batch + 1 linking batch
@@ -382,8 +415,9 @@ describe('reformatDocument — linking pass', () => {
         // record's real name (not the alias/lowercase form the triple used)
         expect(capital.relationships).toEqual([{ target: 'Victory Plaza', type: 'site of executions' }]);
 
-        // progress denominator doubles when linking is enabled, and completes
-        expect(progressCalls[progressCalls.length - 1]).toEqual([2, 2]);
+        // each phase reports its own 1..totalBatches sequence with a phase tag —
+        // a single-batch doc must never surface as "N/2 batches" in the UI
+        expect(progressCalls).toEqual([[1, 1, 'extract'], [1, 1, 'link']]);
 
         vi.unstubAllGlobals();
     });

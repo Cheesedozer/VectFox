@@ -18,6 +18,9 @@ vi.mock('../../../../extensions.js', () => ({
 
 import {
     scrapeWiki,
+    scrapeE621,
+    resolveE621Base,
+    dtextToPlaintext,
     discoverApiEndpoint,
     buildApiCandidates,
     regexFromString,
@@ -97,6 +100,7 @@ beforeEach(() => {
         rateLimitDefaultMs: 0,
         rateLimitMaxDelayMs: 0,
         discoverTimeoutMs: 1000,
+        e621DelayMs: 0,
     });
 });
 
@@ -419,5 +423,204 @@ describe('scrapeWiki', () => {
         }
         expect(caught.code).toBe('network');
         expect(shouldFallbackToPlugin(caught)).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// e621 adapter
+// ---------------------------------------------------------------------------
+
+describe('resolveE621Base', () => {
+    it('defaults empty input to e621.net', () => {
+        expect(resolveE621Base('')).toBe('https://e621.net');
+        expect(resolveE621Base('   ')).toBe('https://e621.net');
+        expect(resolveE621Base(undefined)).toBe('https://e621.net');
+    });
+
+    it('accepts bare hosts, full URLs, and the e926 mirror (normalizing to https)', () => {
+        expect(resolveE621Base('e621.net')).toBe('https://e621.net');
+        expect(resolveE621Base('http://e621.net/wiki_pages?title=x')).toBe('https://e621.net');
+        expect(resolveE621Base('https://www.e926.net/')).toBe('https://e926.net');
+    });
+
+    it('rejects non-e621 hosts with an api-coded error', () => {
+        expect(() => resolveE621Base('https://danbooru.donmai.us'))
+            .toThrowError(expect.objectContaining({ code: 'api' }));
+    });
+});
+
+describe('dtextToPlaintext', () => {
+    it.each([
+        ['wiki link', 'see [[feminization]] for more', 'see feminization for more'],
+        ['piped wiki link', 'look [[skimpy|skimpily]] dressed', 'look skimpily dressed'],
+        ['tag search link', 'try {{bimbofication footwear|these posts}}', 'try these posts'],
+        ['bare tag search', 'try {{bimbofication}}', 'try bimbofication'],
+        ['external quoted link', 'from "the guide":https://e621.net/help/tags today', 'from the guide today'],
+        ['bracketed quoted link', 'from "the guide":[https://e621.net/help/tags] today', 'from the guide today'],
+        ['inline formatting', '[b]Note:[/b] [i]hyperfeminine[/i] and [u]hypersexual[/u]', 'Note: hyperfeminine and hypersexual'],
+        ['color tags', '[color=pink]bright[/color] hues', 'bright hues'],
+        ['thumb removed, post kept', 'thumb #1802283 relates to post #12345', 'relates to post #12345'],
+    ])('converts %s', (_label, input, expected) => {
+        expect(dtextToPlaintext(input)).toBe(expected);
+    });
+
+    it('converts h-headers (including anchored) to markdown headers', () => {
+        const input = 'h2.Related tags\nSome text.\nh4#seealso. See also\nMore text.';
+        expect(dtextToPlaintext(input)).toBe('## Related tags\nSome text.\n#### See also\nMore text.');
+    });
+
+    it('strips quote/code/section blocks keeping inner text and section titles', () => {
+        const input = '[quote]Someone said this.[/quote]\n[section,expanded=History]The tag dates to 2012.[/section]\n[code]raw[/code]';
+        const out = dtextToPlaintext(input);
+        expect(out).toContain('Someone said this.');
+        expect(out).toContain('History');
+        expect(out).toContain('The tag dates to 2012.');
+        expect(out).toContain('raw');
+        expect(out).not.toMatch(/\[\/?(?:quote|section|code)/i);
+    });
+
+    it('collapses runs of 3+ newlines left by removed markup', () => {
+        expect(dtextToPlaintext('thumb #1 thumb #2\n\n\n\nActual text.')).toBe('Actual text.');
+    });
+});
+
+describe('scrapeE621', () => {
+    /**
+     * Fetch mock speaking /wiki_pages.json with Danbooru b<id> cursor
+     * pagination. `batches` is an array of item arrays: the first serves the
+     * cursorless request, each next serves the following cursor request.
+     */
+    function installE621Mock(batches, { emptyShape = [] } = {}) {
+        let call = 0;
+        const fetchMock = vi.fn(async (url) => {
+            const parsed = new URL(url);
+            expect(parsed.pathname).toBe('/wiki_pages.json');
+            expect(parsed.searchParams.get('limit')).toBe('320');
+            const batch = batches[call] ?? emptyShape;
+            call++;
+            return jsonResponse(batch);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    }
+
+    function page(id, title, body, extra = {}) {
+        return { id, title, body, is_deleted: false, ...extra };
+    }
+
+    it('fetches pages, converts DText, and returns {title, content}', async () => {
+        installE621Mock([[
+            page(100, 'himbofication', 'The male equivalent of [[bimbofication]].'),
+            page(99, 'brown_fur', 'thumb #123 Fur that is [i]brown[/i].'),
+        ]]);
+
+        const pages = await scrapeE621({ url: '' });
+        expect(pages).toEqual([
+            { title: 'himbofication', content: 'The male equivalent of bimbofication.' },
+            { title: 'brown_fur', content: 'Fur that is brown.' },
+        ]);
+    });
+
+    it('paginates with b<lowest-id> cursors and stops on a short batch', async () => {
+        const batch1 = Array.from({ length: 320 }, (_, i) => page(1000 - i, `tag_${1000 - i}`, `Body ${i}.`));
+        const batch2 = [page(500, 'tag_500', 'Last body.')];
+        const fetchMock = installE621Mock([batch1, batch2]);
+
+        const pages = await scrapeE621({ url: '' });
+        expect(pages).toHaveLength(321);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        const firstUrl = new URL(fetchMock.mock.calls[0][0]);
+        const secondUrl = new URL(fetchMock.mock.calls[1][0]);
+        // Even the first request must be in b-cursor mode: a cursorless request
+        // uses the site's default (recently-updated) ordering, which silently
+        // breaks id-based pagination.
+        expect(firstUrl.searchParams.get('page')).toBe('b2147483647');
+        expect(secondUrl.searchParams.get('page')).toBe('b681'); // lowest id of batch 1
+    });
+
+    it('handles the {"wiki_pages": []} empty-result shape', async () => {
+        const full = Array.from({ length: 320 }, (_, i) => page(400 - i, `tag_${400 - i}`, 'Body.'));
+        let call = 0;
+        vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(call++ === 0 ? full : { wiki_pages: [] })));
+
+        const pages = await scrapeE621({ url: '' });
+        expect(pages).toHaveLength(320);
+    });
+
+    it('skips deleted and empty-bodied pages', async () => {
+        installE621Mock([[
+            page(10, 'kept', 'Real content.'),
+            page(9, 'deleted_page', 'Content.', { is_deleted: true }),
+            page(8, 'empty_page', '   '),
+            page(7, '', 'No title.'),
+        ]]);
+
+        const pages = await scrapeE621({ url: '' });
+        expect(pages).toEqual([{ title: 'kept', content: 'Real content.' }]);
+    });
+
+    it('applies the regex title filter with the shared title+newline semantics', async () => {
+        installE621Mock([[
+            page(3, 'bimbofication', 'A.'),
+            page(2, 'himbofication', 'B.'),
+            page(1, 'brown_fur', 'C.'),
+        ]]);
+
+        const pages = await scrapeE621({ url: '', filter: 'bimbo|himbo' });
+        expect(pages.map(p => p.title)).toEqual(['bimbofication', 'himbofication']);
+    });
+
+    it('reports titles-phase progress with the accepted page count', async () => {
+        installE621Mock([[page(1, 'only_tag', 'Body.')]]);
+        const progress = [];
+        await scrapeE621({ url: '', onProgress: p => progress.push(p) });
+        expect(progress).toEqual([{ phase: 'titles', done: 1, total: null }]);
+    });
+
+    it('honors 429 rate limiting via the shared retry helper', async () => {
+        let call = 0;
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            if (call++ === 0) {
+                return jsonResponse('slow down', { status: 429, headers: { 'Retry-After': '0' } });
+            }
+            return jsonResponse([page(1, 'recovered', 'Body.')]);
+        }));
+
+        const pages = await scrapeE621({ url: '' });
+        expect(pages).toEqual([{ title: 'recovered', content: 'Body.' }]);
+    });
+
+    it('throws not-found when nothing matches the filter', async () => {
+        installE621Mock([[page(1, 'brown_fur', 'Body.')]]);
+        await expect(scrapeE621({ url: '', filter: 'nonexistent_tag' }))
+            .rejects.toMatchObject({ code: 'not-found' });
+    });
+
+    it('aborts via the caller signal', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        await expect(scrapeE621({ url: '', signal: controller.signal }))
+            .rejects.toMatchObject({ code: 'aborted' });
+    });
+
+    it('is routed through scrapeWiki via wikiType e621 (no MediaWiki discovery, no plugin fallback)', async () => {
+        const fetchMock = installE621Mock([[page(1, 'himbofication', 'The male equivalent of [[bimbofication]].')]]);
+
+        const pages = await scrapeWiki({ wikiType: 'e621', url: '' });
+        expect(pages).toEqual([{ title: 'himbofication', content: 'The male equivalent of bimbofication.' }]);
+        // no siteinfo/allpages probing happened — straight to wiki_pages.json
+        expect(fetchMock.mock.calls.every(c => c[0].includes('/wiki_pages.json'))).toBe(true);
+    });
+
+    it('rejects non-e621 hosts without plugin fallback eligibility', async () => {
+        let caught;
+        try {
+            await scrapeWiki({ wikiType: 'e621', url: 'https://danbooru.donmai.us' });
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(WikiScrapeError);
+        expect(caught.code).toBe('api');
     });
 });
