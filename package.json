@@ -10,7 +10,8 @@
     "test:ui": "vitest --ui",
     "test:e2e": "node scripts/run-e2e-logged.mjs",
     "test:e2e:no-log": "playwright test",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "install-plugin": "node scripts/install-similharity-plugin.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

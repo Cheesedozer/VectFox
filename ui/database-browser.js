@@ -243,6 +243,9 @@ function createBrowserModal() {
                         Collections created outside VECTFOX won't appear here.
                         <a href="https://github.com/KritBlade/VectFox/tree/Similharity-Plugin#step-2-install-plugin-via-git-recommended" target="_blank">Install the plugin</a> for full filesystem scanning.</span>
                     </div>
+                    <button class="vectfox-btn vectfox-btn-sm" id="vectfox_plugin_setup_guide_btn" style="white-space:nowrap;">
+                        🛠 Setup guide
+                    </button>
                 </div>
 
                 <!-- Browser Tabs -->
@@ -605,6 +608,20 @@ function bindBrowserEvents() {
     _applyPersonaVisibility();
     renderCollections();
     if ($("#vectfox_tab_bulk").hasClass("active")) renderBulkList();
+  });
+
+  // Guided plugin setup from the missing-plugin warning banner
+  $("#vectfox_plugin_setup_guide_btn").on("click", async function (e) {
+    e.stopPropagation();
+    const { showPluginSetupGuide } = await import("./plugin-setup-guide.js");
+    await showPluginSetupGuide();
+    // The guide's "Check again" may have flipped availability — refresh the banner.
+    const { checkPluginAvailable } = await import("../core/collection-loader.js");
+    if (await checkPluginAvailable()) {
+      browserState.pluginAvailable = true;
+      $("#vectfox_plugin_warning_banner").hide();
+      await refreshCollections(true);
+    }
   });
 
   // Resync button - clears registry and rescans from disk
