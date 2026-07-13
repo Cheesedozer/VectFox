@@ -98,7 +98,12 @@ let browserState = {
     collectionType: "all", // 'all', 'chat', 'file', 'lorebook'
     searchQuery: "",
     onlyActiveForChat: false, // when true, only show collections active for the current chat (matches the 🔒 badge)
+    // Display-only bypass of the persona filter (weaker than superadmin: isOwn
+    // stays false for foreign collections, so activation/locks are untouched).
+    // Deliberately NOT persisted — resets off on every browser open.
+    showAllPersonas: false,
   },
+  allCollections: [], // unfiltered listing, cached so the persona toggle re-applies without a backend round-trip
   settings: null,
   // Bulk operations state
   bulkSelected: new Set(),
@@ -137,6 +142,9 @@ export async function openDatabaseBrowser() {
   }
 
   browserState.isOpen = true;
+  // "Show all" is deliberately per-open: default back to the persona-scoped
+  // view so a shared install never lingers in the everything-visible state.
+  browserState.filters.showAllPersonas = false;
   try {
     // Check plugin availability
     browserState.pluginAvailable = await checkPluginAvailable();
@@ -235,6 +243,9 @@ function createBrowserModal() {
                         Collections created outside VECTFOX won't appear here.
                         <a href="https://github.com/KritBlade/VectFox/tree/Similharity-Plugin#step-2-install-plugin-via-git-recommended" target="_blank">Install the plugin</a> for full filesystem scanning.</span>
                     </div>
+                    <button class="vectfox-btn vectfox-btn-sm" id="vectfox_plugin_setup_guide_btn" style="white-space:nowrap;">
+                        🛠 Setup guide
+                    </button>
                 </div>
 
                 <!-- Browser Tabs -->
@@ -306,6 +317,12 @@ function createBrowserModal() {
                                    style="display:flex; gap:6px; align-items:center; white-space:nowrap; cursor:pointer; font-size:0.85em;">
                                 <input type="checkbox" id="vectfox_only_active_toggle">
                                 🔒 Active here only
+                            </label>
+                            <label id="vectfox_show_all_toggle_label"
+                                   title="Show collections created by every persona, not just the current one. Display-only: foreign collections stay inactive for this chat."
+                                   style="display:flex; gap:6px; align-items:center; white-space:nowrap; cursor:pointer; font-size:0.85em;">
+                                <input type="checkbox" id="vectfox_show_all_toggle">
+                                👥 Show all
                             </label>
                         </div>
 
@@ -573,6 +590,38 @@ function bindBrowserEvents() {
     e.stopPropagation();
     browserState.filters.onlyActiveForChat = $(this).prop("checked");
     renderCollections();
+  });
+
+  // "Show all" toggle — display-only bypass of the persona filter. Re-applies
+  // from the cached unfiltered listing, no backend round-trip. With superadmin
+  // the filter is already bypassed unconditionally, so lock the toggle on.
+  if (browserState.settings?.superadmin === true) {
+    $("#vectfox_show_all_toggle").prop("checked", true).prop("disabled", true);
+    $("#vectfox_show_all_toggle_label").attr(
+      "title",
+      "superadmin is enabled in settings.json — every collection is always shown.",
+    ).css("opacity", "0.6");
+  }
+  $("#vectfox_show_all_toggle").on("change", function (e) {
+    e.stopPropagation();
+    browserState.filters.showAllPersonas = $(this).prop("checked");
+    _applyPersonaVisibility();
+    renderCollections();
+    if ($("#vectfox_tab_bulk").hasClass("active")) renderBulkList();
+  });
+
+  // Guided plugin setup from the missing-plugin warning banner
+  $("#vectfox_plugin_setup_guide_btn").on("click", async function (e) {
+    e.stopPropagation();
+    const { showPluginSetupGuide } = await import("./plugin-setup-guide.js");
+    await showPluginSetupGuide();
+    // The guide's "Check again" may have flipped availability — refresh the banner.
+    const { checkPluginAvailable } = await import("../core/collection-loader.js");
+    if (await checkPluginAvailable()) {
+      browserState.pluginAvailable = true;
+      $("#vectfox_plugin_warning_banner").hide();
+      await refreshCollections(true);
+    }
   });
 
   // Resync button - clears registry and rescans from disk
@@ -870,10 +919,38 @@ function _filterCollectionsByCurrentPersona(collections) {
   });
 }
 
+/**
+ * Returns a warning line when the collection was created by a different
+ * persona (only reachable via "Show all"/superadmin), or '' for own/unknown
+ * collections. Uses the ownership lookup built in renderCollections().
+ *
+ * @param {string} collectionKey - registryKey or bare collection ID
+ * @returns {string}
+ */
+function _foreignOwnershipWarning(collectionKey) {
+  const ownership = browserState.ownershipById?.get(collectionKey);
+  if (!ownership || ownership.isOwn) return "";
+  return `⚠ This collection was created by persona "${ownership.handle || "unknown"}", not you.`;
+}
+
+/**
+ * Applies (or bypasses) the persona visibility filter to the cached unfiltered
+ * listing. Split out from refreshCollections so the "Show all" toggle can
+ * re-apply it without a backend round-trip.
+ */
+function _applyPersonaVisibility() {
+  const allCollections = browserState.allCollections || [];
+  browserState.collections =
+    browserState.filters.showAllPersonas || browserState.settings?.superadmin === true
+      ? allCollections
+      : _filterCollectionsByCurrentPersona(allCollections);
+}
+
 async function refreshCollections(withScan = false) {
   try {
     const allCollections = await loadAllCollections(browserState.settings, withScan);
-    browserState.collections = _filterCollectionsByCurrentPersona(allCollections);
+    browserState.allCollections = allCollections;
+    _applyPersonaVisibility();
 
     if (allCollections.length !== browserState.collections.length) {
       const hidden = allCollections.length - browserState.collections.length;
@@ -920,10 +997,21 @@ export function renderCollections() {
   // BEFORE the filter pass so "Active here only" can consult it without
   // re-computing per card. See Doc/collection_helper.md:54.
   const isActiveById = new Map();
+  // Ownership lookup for the 👤 owner badge and foreign-collection warnings —
+  // same single pass over getCollectionListing (no per-card calls). Kept on
+  // browserState so card action handlers can consult it later.
+  const ownershipById = new Map();
   for (const entry of getCollectionListing(browserState.settings)) {
     isActiveById.set(entry.collectionId, entry.isActive);
     isActiveById.set(entry.registryKey, entry.isActive);
+    const ownership = {
+      isOwn: entry.isOwn,
+      handle: entry.meta?.creatorHandle || _extractHandleFromCollectionId(entry.collectionId) || "",
+    };
+    ownershipById.set(entry.collectionId, ownership);
+    ownershipById.set(entry.registryKey, ownership);
   }
+  browserState.ownershipById = ownershipById;
 
     // Apply filters
     let filtered = browserState.collections.filter(c => {
@@ -994,7 +1082,7 @@ export function renderCollections() {
   // reused here by the card renderer (entry.isActive lookups, no per-card calls).
 
   // Render collection cards
-  const cardsHtml = filtered.map((c) => renderCollectionCard(c, isActiveById)).join("");
+  const cardsHtml = filtered.map((c) => renderCollectionCard(c, isActiveById, ownershipById)).join("");
   container.html(cardsHtml);
 
   // Bind card events
@@ -1014,7 +1102,7 @@ export function renderCollections() {
  *   to a direct isCollectionActiveForContext call.
  * @returns {string} Card HTML
  */
-function renderCollectionCard(collection, isActiveById = null) {
+function renderCollectionCard(collection, isActiveById = null, ownershipById = null) {
   // Map collection types to icon functions
   const typeIconMap = {
     chat: icons.messageSquare,
@@ -1113,6 +1201,25 @@ function renderCollectionCard(collection, isActiveById = null) {
     lockBadge = `<span class="vectfox-badge vectfox-badge-lock" title="${lockTitle}">🔒</span>`;
   }
 
+  // Owner badge — who created this collection. Foreign persona-scoped
+  // collections (visible via "Show all" / superadmin) always show their
+  // creator's handle; own collections show "You" only while the persona
+  // filter is bypassed, to keep the default view uncluttered.
+  let ownerBadge = "";
+  if (ownershipById) {
+    const ownership =
+      ownershipById.get(collection.registryKey || `${collection.backend}:${collection.id}`) ||
+      ownershipById.get(collection.id);
+    if (ownership) {
+      const safeHandle = StringUtils.escapeHtml(ownership.handle || "unknown");
+      if (!ownership.isOwn) {
+        ownerBadge = `<span class="vectfox-badge vectfox-badge-owner" title="Created by persona '${safeHandle}'">👤 ${safeHandle}</span>`;
+      } else if (browserState.filters.showAllPersonas || browserState.settings?.superadmin === true) {
+        ownerBadge = `<span class="vectfox-badge vectfox-badge-owner vectfox-badge-owner-self" title="Created by your current persona">👤 You</span>`;
+      }
+    }
+  }
+
   // Use registryKey for unique identification (source:id format)
   const uniqueKey = collection.registryKey || collection.id;
 
@@ -1136,6 +1243,7 @@ function renderCollectionCard(collection, isActiveById = null) {
                     ${typeIcon} ${safeName}
                 </span>
                 <div class="vectfox-collection-badges">
+                    ${ownerBadge}
                     ${scopeBadge}
                     ${backendBadge}
                     ${sourceBadge}
@@ -1399,6 +1507,13 @@ function bindCollectionCardEvents() {
       const currentEnabled = $(this).data("enabled");
       const newEnabled = !currentEnabled;
 
+      // Foreign collections are only reachable via "Show all"/superadmin —
+      // guard state changes on them behind an explicit confirm.
+      const foreignWarning = _foreignOwnershipWarning(collectionKey);
+      if (foreignWarning && !confirm(`${foreignWarning}\n\n${newEnabled ? "Enable" : "Pause"} it anyway?`)) {
+        return;
+      }
+
       setCollectionEnabled(collectionKey, newEnabled);
 
       // Update UI
@@ -1425,8 +1540,10 @@ function bindCollectionCardEvents() {
 
       if (!collection) return;
 
+      const foreignWarning = _foreignOwnershipWarning(collectionKey);
       const confirmed = confirm(
-        `Delete collection "${collection.name}"?\n\n` +
+        (foreignWarning ? `${foreignWarning}\n\n` : "") +
+          `Delete collection "${collection.name}"?\n\n` +
           `This will remove ${collection.chunkCount} chunks from the vector index.\n` +
           `This action cannot be undone.`,
       );
@@ -3594,8 +3711,16 @@ function bindBulkEvents() {
     .on("click", async function () {
       if (browserState.bulkSelected.size === 0) return;
 
+      const foreignCount = [...browserState.bulkSelected].filter(
+        (key) => _foreignOwnershipWarning(key) !== "",
+      ).length;
+      const foreignLine = foreignCount > 0
+        ? `⚠ ${foreignCount} of these were created by OTHER personas, not you.\n\n`
+        : "";
+
       const confirmed = confirm(
         `⚠️ DELETE ${browserState.bulkSelected.size} COLLECTION(S)?\n\n` +
+          foreignLine +
           `This will permanently delete all vectors in these collections.\n` +
           `This action CANNOT be undone!\n\n` +
           `Type "DELETE" to confirm.`,

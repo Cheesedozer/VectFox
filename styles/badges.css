@@ -83,6 +83,21 @@
     background: color-mix(in srgb, #a78bfa 15%, transparent);
 }
 
+/* Owner badge — creator persona of a collection (visible with "Show all") */
+.vectfox-badge-owner {
+    color: #fb923c;  /* Orange — stands out: foreign persona's data */
+    border-color: #fb923c;
+    background: color-mix(in srgb, #fb923c 8%, transparent);
+    font-size: 0.68em;
+    letter-spacing: 0.5px;
+}
+
+.vectfox-badge-owner-self {
+    color: color-mix(in srgb, var(--SmartThemeBodyColor) 60%, transparent);
+    border-color: color-mix(in srgb, var(--SmartThemeBodyColor) 35%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
+}
+
 /* ============================================================================
  * ACTIVATION BADGES (Triggers, Conditions, Always Active) - ROYGBIV STYLE
  * ============================================================================ */

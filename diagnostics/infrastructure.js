@@ -196,7 +196,7 @@ export async function checkServerPlugin() {
             return {
                 name: 'VectFox Plugin',
                 status: 'warning',
-                message: 'Plugin not installed (optional - enables Qdrant, advanced features)',
+                message: 'Plugin not installed (optional - enables Qdrant, advanced features). Run "npm run install-plugin" in the VectFox folder to set it up.',
                 fixable: false,
                 category: 'infrastructure'
             };
@@ -224,7 +224,7 @@ export async function checkServerPlugin() {
         return {
             name: 'VectFox Plugin',
             status: 'warning',
-            message: 'Plugin not available (standard mode only)',
+            message: 'Plugin not available (standard mode only). Run "npm run install-plugin" in the VectFox folder to set it up.',
             category: 'infrastructure'
         };
     }

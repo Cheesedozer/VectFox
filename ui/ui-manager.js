@@ -2858,6 +2858,17 @@ function bindSettingsEvents(settings, callbacks) {
             // Show/hide Qdrant settings
             if (settings.vector_backend === 'qdrant') {
                 $('#VectFox_qdrant_settings').show();
+
+                // Qdrant hard-requires the Similharity server plugin (no native
+                // fallback, unlike standard). If it's not reachable, walk the
+                // user through installing it instead of failing later.
+                (async () => {
+                    const { checkPluginAvailable } = await import('../core/collection-loader.js');
+                    if (await checkPluginAvailable()) return;
+                    toastr.warning('The Qdrant backend requires the Similharity server plugin, which was not detected.', 'VectFox');
+                    const { showPluginSetupGuide } = await import('./plugin-setup-guide.js');
+                    await showPluginSetupGuide();
+                })().catch(() => { /* guide is best-effort — backend change itself already applied */ });
             } else {
                 $('#VectFox_qdrant_settings').hide();
             }

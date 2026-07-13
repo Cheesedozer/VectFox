@@ -1058,6 +1058,13 @@ async function streamEmbeddingsAndWrite(backend, collectionId, items, textString
 
 /**
  * Deletes vector items from a collection
+ *
+ * Deliberately does NOT invalidate the Auto-Reformat cache: inserted chunk
+ * hashes can differ from cached chunk text (glossary injection mutates text
+ * before insert), so hash-matching is unsound, and a partial delete doesn't
+ * mean the source was never reformatted. The reuse-vs-rerun prompt in
+ * runAutoReformat covers this case.
+ *
  * @param {string} collectionId - The collection to delete from
  * @param {number[]} hashes - The hashes of the items to delete
  * @param {object} settings VectFox settings object
@@ -1477,6 +1484,10 @@ export async function purgeAllVectorIndexes(settings) {
     try {
         const backend = await getBackend(settings);
         await backend.purgeAllVectorIndexes(settings);
+        // Every collection on this backend is gone — drop the Auto-Reformat
+        // freezes that were vectorized into it (see reformat-store.js).
+        const { invalidateAllVectorizedReformatCaches } = await import('./reformat-store.js');
+        invalidateAllVectorizedReformatCaches(settings?.vector_backend || 'standard');
         log.lifecycle('VectFox: Purged all vector indexes');
         toastr.success('All vector indexes purged', 'Purge successful');
     } catch (error) {

@@ -980,6 +980,51 @@ async function _resolveReformatSourceText(source) {
 }
 
 /**
+ * Asks the user what to do with an existing Auto-Reformat freeze for the
+ * same source content: reuse it (free, instant) or re-run the LLM pass.
+ * Escape/Cancel must never trigger a paid LLM run.
+ *
+ * @param {import('../core/reformat-store.js').ReformatCacheEntry} existing
+ * @returns {Promise<'reuse'|'rerun'|'cancel'>}
+ */
+async function _promptReuseOrRerun(existing) {
+    const acceptedDate = existing.acceptedAt ? new Date(existing.acceptedAt).toLocaleString() : 'unknown date';
+    const { getCollectionRegistry } = await import('../core/collection-loader.js');
+    const registry = getCollectionRegistry();
+    // Registry entries may be registry-keyed ("backend:id") — match on the bare ID.
+    const liveCollections = (Array.isArray(existing.vectorizedInto) ? existing.vectorizedInto : [])
+        .filter(id => registry.some(key => key === id || String(key).endsWith(`:${id}`)));
+    const vectorizedLine = liveCollections.length > 0
+        ? `Vectorized into ${liveCollections.length} collection(s).`
+        : 'Not vectorized into any collection yet.';
+
+    const html = `
+        <h3>Already Reformatted</h3>
+        <p>This exact content already has a saved Auto-Reformat result:</p>
+        <ul style="text-align:left;">
+            <li><strong>${StringUtils.escapeHtml(existing.sourceName || 'Unnamed source')}</strong> — ${existing.chunks.length} chunks</li>
+            <li>Accepted ${StringUtils.escapeHtml(acceptedDate)}${existing.providerModel ? ` (${StringUtils.escapeHtml(existing.providerModel)})` : ''}</li>
+            <li>${vectorizedLine}</li>
+        </ul>
+        <p><strong>Reuse</strong> is instant and free. <strong>Re-run</strong> invokes the LLM again and
+        replaces the saved result when you accept the new one.</p>
+    `;
+
+    // Same three-way convention as showTokenizerMismatchModal (core/tokenizer-lock.js):
+    // OK/first button → true|1, customButtons → 2+, cancel/Escape → false|null.
+    const choice = await callGenericPopup(html, POPUP_TYPE.TEXT, '', {
+        okButton: 'Reuse saved result',
+        cancelButton: 'Cancel',
+        customButtons: ['Re-run fresh (uses LLM)'],
+        wide: false,
+    });
+
+    if (choice === true || choice === 1) return 'reuse';
+    if (choice === 2) return 'rerun';
+    return 'cancel';
+}
+
+/**
  * Runs the Auto-Reformat LLM pass and opens the review modal. Reused for
  * both the initial "Run Auto-Reformat" click and "Re-run Auto-Reformat".
  */
@@ -1007,11 +1052,21 @@ async function runAutoReformat() {
         const { getReformatCache } = await import('../core/reformat-store.js');
         const existing = getReformatCache(sourceHash);
         if (existing?.chunks?.length) {
-            currentSettings.reformat = { accepted: true, sourceHash };
-            renderReformatSection();
-            updateChunkingSection(getContentType(currentContentType));
-            toastr.info(`This exact content was already reformatted (${existing.chunks.length} chunks) — reusing the saved result.`, 'VectFox');
-            return;
+            const choice = await _promptReuseOrRerun(existing);
+            if (choice === 'reuse') {
+                currentSettings.reformat = { accepted: true, sourceHash };
+                renderReformatSection();
+                updateChunkingSection(getContentType(currentContentType));
+                toastr.info(`Reusing the saved Auto-Reformat result (${existing.chunks.length} chunks).`, 'VectFox');
+                return;
+            }
+            if (choice === 'cancel') {
+                renderReformatSection();
+                return;
+            }
+            // 'rerun' — fall through to a fresh LLM pass. The old entry is left
+            // in place: _finalizeReformatAccept overwrites it on accept, and a
+            // discarded re-run leaves the old freeze usable.
         }
 
         container.html('<div class="vectfox-cv-loading"><i class="fa-solid fa-spinner fa-spin"></i> Running Auto-Reformat...</div>');
@@ -1130,6 +1185,12 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             );
         }
 
+        // Stamp this generation's runId onto every chunk so DB-side chunks can
+        // be traced back to the freeze that produced them (see reformat-store.js).
+        const acceptedAt = Date.now();
+        const runId = `${sourceHash}_${acceptedAt}`;
+        shapedChunks.forEach(c => { c.metadata.reformatRunId = runId; });
+
         saveReformatCache(sourceHash, {
             chunks: shapedChunks,
             originalText: text,
@@ -1138,6 +1199,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             providerModel,
             schemaVersion: REFORMAT_SCHEMA_VERSION,
             selectionDescriptor: selectionDescriptor || '',
+            acceptedAt,
         });
 
         // Basket sources also pin the exact page selection, so a later basket

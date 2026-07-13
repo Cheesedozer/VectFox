@@ -58,6 +58,9 @@ vi.mock('../core/glossary-extractor.js', () => ({
 }));
 vi.mock('../core/reformat-store.js', () => ({
     getReformatCache: vi.fn(() => null),
+    recordReformatVectorization: vi.fn(),
+    invalidateReformatCacheForCollections: vi.fn(() => ({ invalidated: 0, unlinked: 0 })),
+    invalidateAllVectorizedReformatCaches: vi.fn(() => 0),
 }));
 vi.mock('../ui/progress-tracker.js', () => ({
     progressTracker: { start: vi.fn(), update: vi.fn(), finish: vi.fn() },

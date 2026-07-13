@@ -29,7 +29,7 @@ import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, extr
 import { cleanText, cleanContentOrNull, cleanWikiNoise } from './text-cleaning.js';
 import { prepareLorebookContent } from './lorebook-content-preparer.js';
 import { extractGlossary, injectGlossary } from './glossary-extractor.js';
-import { getReformatCache } from './reformat-store.js';
+import { getReformatCache, recordReformatVectorization, invalidateReformatCacheForCollections } from './reformat-store.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import { getCurrentChatId } from '../../../../../script.js';
@@ -107,6 +107,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         // place (already {text, metadata} shaped, ready for enrichChunks() below).
         const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki'];
         let chunks;
+        let usedFrozenReformat = false;
         if (REFORMAT_SUPPORTED_TYPES.includes(contentType) && settings.reformat?.accepted && settings.reformat?.sourceHash) {
             // Guard against a stale pointer: settings.reformat.sourceHash was computed
             // against whatever source was loaded WHEN the user accepted the reformat.
@@ -131,6 +132,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 const frozen = getReformatCache(settings.reformat.sourceHash);
                 if (frozen?.chunks?.length) {
                     chunks = frozen.chunks;
+                    usedFrozenReformat = true;
                     log.lifecycle(`VectFox: Using frozen Auto-Reformat chunks for "${sourceName}" (${chunks.length} chunks) — LLM not re-invoked`);
                 } else {
                     log.warn(`VectFox: Auto-Reformat marked accepted but no frozen cache found for hash ${settings.reformat.sourceHash} — falling back to mechanical chunking`);
@@ -216,6 +218,11 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
                 log.lifecycle(`VectFox: Continue mode — ${skipped} chunks already in DB, ${finalChunks.length} remaining`);
                 progressTracker.updateChunks(finalChunks.length);
                 if (finalChunks.length === 0) {
+                    // The frozen chunks are already fully present in this collection —
+                    // link it so delete-time invalidation still finds the cache entry.
+                    if (usedFrozenReformat) {
+                        recordReformatVectorization(settings.reformat.sourceHash, collectionId);
+                    }
                     progressTracker.complete(true, 'Already up to date — no new chunks to insert');
                     return { success: true, chunkCount: 0, collectionId };
                 }
@@ -350,6 +357,12 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         // Register collection in the registry so it's discoverable
         registerCollection(registryKey);
         log.lifecycle(`VectFox: Registered collection ${registryKey}`);
+
+        // Link the frozen Auto-Reformat result to this collection so deleting
+        // the collection later invalidates the cache (see reformat-store.js).
+        if (usedFrozenReformat) {
+            recordReformatVectorization(settings.reformat.sourceHash, collectionId);
+        }
 
 
         throwIfAborted();
@@ -1031,5 +1044,8 @@ export async function deleteContentCollection(collectionId, callerSettings = nul
     }
     const effectiveSettings = resolveEffectiveSettings(baseSettings);
     await purgeVectorIndex(collectionId, effectiveSettings);
+    // The collection's vectors are gone — drop any Auto-Reformat freeze whose
+    // last vectorized copy lived here, so the next reformat is a real run.
+    invalidateReformatCacheForCollections([collectionId]);
     log.lifecycle(`VectFox: Deleted collection: ${collectionId} (routed via ${effectiveSettings.vector_backend})`);
 }

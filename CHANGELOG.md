@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Auto-Reformat cache fixes
+
+- **Fixed:** deleting vectorized content from the database no longer leaves the
+  Auto-Reformat "freeze" behind — previously a later Auto-Reformat run on the
+  same source would "instantly complete" claiming saved content even though its
+  vectors were gone. Cache entries now track which collections they were
+  vectorized into and are invalidated when the last of those collections is
+  deleted (single delete, bulk delete, lorebook reindex, and purge-all).
+- Auto-Reformat on already-reformatted content now asks: **Reuse saved result**
+  (instant, free) / **Re-run fresh** (invokes the LLM again) / Cancel — instead
+  of silently reusing.
+
+### Database Browser
+
+- New **👥 Show all** toggle beside the search box: shows collections created
+  by every persona, not just the current one (the backend always stored them
+  all; the browser view was persona-scoped). Display-only — foreign collections
+  stay inactive for your chats. Cards show a 👤 owner badge, destructive
+  actions on another persona's collection warn first, and the toggle resets on
+  each open. Also widens the Bulk and Search tabs while enabled. The
+  undocumented `superadmin: true` settings flag still bypasses the filter
+  permanently and now renders the toggle locked-on.
+
 ## 4.0.0 — Wiki Library
 
 A ground-up rework of how wiki scraping, filtering, and selection work. The
