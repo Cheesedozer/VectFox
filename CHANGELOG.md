@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Performance
+
+- **Full-collection metadata is now cached.** `getSavedHashes(..., includeMetadata=true)`
+  previously re-downloaded the ENTIRE collection (hashes + full metadata for
+  every chunk) on every call — and `rearrangeChat` could call it twice in one
+  message retrieval (summary-chunk expansion, then force-link resolution) any
+  time summarization or force-links are in use. Now cached per collection for
+  the session, invalidated on insert/delete/purge/purgeAll and on chunk edits
+  (Database Browser's chunk-visualizer save), so the cache never serves stale
+  data. Biggest win for large collections with summarization enabled, where
+  this sat directly on the per-message retrieval path.
+- **Stop-word Set is no longer rebuilt per chunk.** Bulk content vectorization
+  (documents, wiki scrapes, large lorebooks) rebuilt the full locale-union
+  stop-word Set from scratch for every single chunk during keyword extraction.
+  The locale-derived portion (mode-dependent, not settings-dependent) is now
+  memoized per CJK tokenizer mode; only the small custom-stopwords/macro
+  overlay is still computed fresh per call, since it can legitimately vary
+  with the active character/persona.
+- **Cleaning regexes are no longer recompiled per call.** `cleanText()` (run
+  per lorebook entry, character field, document/wiki page, and chat message)
+  recompiled every enabled cleaning pattern's RegExp and rebuilt the active-
+  pattern list from settings on every call. Both are now cached — regexes by
+  a content-addressed key (pattern+flags) that self-invalidates on edit, and
+  the active-pattern list keyed to the settings object's identity so it stays
+  correct across any way the cleaning settings can change.
+
 ### Auto-Reformat depth-loss fixes
 
 Multi-subsection topics could lose most of their content: the model would

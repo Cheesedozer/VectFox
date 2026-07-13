@@ -219,38 +219,68 @@ function getEffectiveHeaderSize(config, level, settings) {
     return config.headerSize;
 }
 
+// Locale-union stop-word Set (allowlist deletions applied), memoized per CJK
+// tokenizer mode. This part never depends on per-call settings — only `mode`
+// selects it — so it's safe to build once and reuse. Extracted from
+// getCombinedStopwords because that function runs PER CHUNK during bulk
+// content vectorization (enrichChunks maps every chunk through it), and
+// rebuilding this union from scratch each time was the actual hot-path cost:
+// buildStopSet copies every locale's stop-word array (hundreds–thousands of
+// entries for CJK modes) into a fresh Set on every call.
+const _baseStopSetCache = new Map(); // mode -> Set
+
+function _getBaseStopSet(mode) {
+    let base = _baseStopSetCache.get(mode);
+    if (base) return base;
+
+    base = buildStopSet(stopLocalesForMode(mode));
+    // Allowlists take precedence over stop words: a character explicitly kept
+    // by a language allowlist must not be filtered as a stop word, regardless
+    // of what the general stop-word lists say. Mode-independent, so baked
+    // into the cached base rather than re-applied on every call.
+    for (const c of JAPANESE_SINGLE_CHAR_ALLOWLIST) base.delete(c);
+    for (const c of TRADITIONAL_CHINESE_SINGLE_CHAR_ALLOWLIST) base.delete(c);
+    for (const c of SIMPLIFIED_CHINESE_SINGLE_CHAR_ALLOWLIST) base.delete(c);
+
+    _baseStopSetCache.set(mode, base);
+    return base;
+}
+
 /**
  * Get combined stopwords (default + custom from settings)
  * Processes ST macros like {{char}}, {{user}} in custom stopwords
+ *
+ * The returned Set MUST be treated as read-only by callers: when there are no
+ * custom stopwords, this returns the shared cached base Set directly (not a
+ * copy) to avoid an allocation per call — mutating it would corrupt every
+ * other caller's result. Custom-stopword expansion (settings/macro-dependent,
+ * so never cached) always gets a fresh cloned Set before mutating.
+ *
  * @param {object} settings - VectFox settings (optional)
  * @returns {Set<string>} Combined stopwords set
  */
 function getCombinedStopwords(settings = null) {
     const mode = settings?.cjk_tokenizer_mode || getCjkTokenizerMode();
-    const combined = buildStopSet(stopLocalesForMode(mode));
+    const base = _getBaseStopSet(mode);
 
-    // Add custom stopwords if settings provided
-    if (settings && settings.custom_stopwords && typeof settings.custom_stopwords === 'string') {
-        // Process ST macros ({{char}}, {{user}}, etc.) before splitting
-        let processedString = substituteParams(settings.custom_stopwords);
-        processedString = processedString.toLowerCase();
-
-        const customWords = processedString
-            .split(',')
-            .map(w => w.trim())
-            .filter(w => w.length > 0);
-
-        for (const word of customWords) {
-            combined.add(word);
-        }
+    const customStopwordsRaw = settings?.custom_stopwords;
+    if (!customStopwordsRaw || typeof customStopwordsRaw !== 'string' || !customStopwordsRaw.trim()) {
+        return base;
     }
 
-    // Allowlists take precedence over stop words: a character explicitly kept
-    // by a language allowlist must not be filtered as a stop word, regardless
-    // of what the general stop-word lists say.
-    for (const c of JAPANESE_SINGLE_CHAR_ALLOWLIST) combined.delete(c);
-    for (const c of TRADITIONAL_CHINESE_SINGLE_CHAR_ALLOWLIST) combined.delete(c);
-    for (const c of SIMPLIFIED_CHINESE_SINGLE_CHAR_ALLOWLIST) combined.delete(c);
+    // Custom words are settings/macro-dependent (substituteParams resolves
+    // {{char}}/{{user}} against the CURRENTLY active character) — never
+    // cached, and applied to a clone so the shared base stays pristine.
+    const combined = new Set(base);
+    const processedString = substituteParams(customStopwordsRaw).toLowerCase();
+    const customWords = processedString
+        .split(',')
+        .map(w => w.trim())
+        .filter(w => w.length > 0);
+
+    for (const word of customWords) {
+        combined.add(word);
+    }
 
     return combined;
 }

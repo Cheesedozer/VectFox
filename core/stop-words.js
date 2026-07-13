@@ -270,7 +270,9 @@ export function isStopWord(token, localeKeys) {
 
 /**
  * Build a mutable union Set from a list of locale keys.
- * Used by getCombinedStopwords (called once per settings change, not in the hot path).
+ * Used by keyword-boost.js's getCombinedStopwords, which memoizes the result
+ * per CJK tokenizer mode — this function itself runs at most once per mode
+ * per session, not per chunk.
  * @param {string[]} localeKeys
  * @returns {Set<string>}
  */

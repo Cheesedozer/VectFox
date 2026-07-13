@@ -70,6 +70,49 @@ async function _invalidateCorpusStats(collectionId, reason) {
         // a stack trace mid-write is not.
     }
 }
+
+/**
+ * Session cache for getSavedHashes(collectionId, settings, includeMetadata=true) —
+ * the full-collection metadata variant used by chat-vectorization.js's
+ * expandSummaryChunks/fetchForceLinkedChunks on every message retrieval that
+ * surfaces a summary/force-linked chunk. Uncached, that call downloads the
+ * ENTIRE collection (hashes via backend.getSavedHashes + a second full
+ * /chunks/list metadata fetch) from scratch on every message — the exact
+ * full-collection scan vector search exists to avoid, and it can fire twice
+ * in one rearrangeChat call (expandSummaryChunks then fetchForceLinkedChunks).
+ *
+ * Deliberately NOT applied to the includeMetadata=false (plain hashes) path —
+ * insertVectorItems' dedup-by-hash logic reads that path and needs a fresh
+ * result on every call, not a cached one.
+ *
+ * Same lazy-rebuild invalidation policy as corpus-stats.js: entries are
+ * dropped on write, not eagerly rebuilt, so the cost lands on the next read.
+ */
+const _savedHashesMetaCache = new Map(); // collectionId -> {hashes, metadata}
+const _savedHashesMetaInflight = new Map(); // collectionId -> Promise (dedupe concurrent fetches)
+
+/**
+ * Clears the getSavedHashes(..., true) cache. Mirrors clearCorpusStatsCache's
+ * shape (collectionId or omit-for-all) so both caches invalidate the same way
+ * from the same call sites.
+ * @param {string} [collectionId]
+ */
+export function clearSavedHashesMetaCache(collectionId) {
+    if (collectionId) {
+        _savedHashesMetaCache.delete(collectionId);
+        _savedHashesMetaInflight.delete(collectionId);
+    } else {
+        _savedHashesMetaCache.clear();
+        _savedHashesMetaInflight.clear();
+    }
+}
+
+function _invalidateSavedHashesMetaCache(collectionId, reason) {
+    if (!collectionId) return;
+    if (!_savedHashesMetaCache.has(collectionId) && !_savedHashesMetaInflight.has(collectionId)) return;
+    clearSavedHashesMetaCache(collectionId);
+    log.trace(`[SavedHashesMeta] Invalidated cache for ${collectionId} (${reason})`);
+}
 import AsyncUtils from '../utils/async-utils.js';
 import StringUtils from '../utils/string-utils.js';
 import {
@@ -704,14 +747,44 @@ export function throwIfSourceInvalid(settings) {
  * @returns {Promise<number[]|{hashes: number[], metadata: object[]}>} Saved hashes or full data
  */
 export async function getSavedHashes(collectionId, settings, includeMetadata = false) {
+    if (!includeMetadata) {
+        const backend = await getBackend(settings);
+        return await backend.getSavedHashes(collectionId, settings);
+    }
+
+    const cached = _savedHashesMetaCache.get(collectionId);
+    if (cached) return cached;
+
+    const inflight = _savedHashesMetaInflight.get(collectionId);
+    if (inflight) return inflight;
+
+    const promise = _fetchSavedHashesWithMetadata(collectionId, settings)
+        .then(result => {
+            // Only cache the full {hashes, metadata} shape — the hashes-only
+            // fallback (plugin call failed) must not poison the next call
+            // into skipping metadata forever.
+            if (result && typeof result === 'object' && !Array.isArray(result)) {
+                _savedHashesMetaCache.set(collectionId, result);
+            }
+            return result;
+        })
+        .finally(() => {
+            _savedHashesMetaInflight.delete(collectionId);
+        });
+    _savedHashesMetaInflight.set(collectionId, promise);
+    return promise;
+}
+
+/**
+ * Uncached full fetch backing getSavedHashes(..., true) — hashes from the
+ * backend plus full metadata from the unified /chunks/list plugin endpoint
+ * (works across all backends). Split out so the cache wrapper above can
+ * dedupe concurrent calls and skip this entirely on a warm cache.
+ */
+async function _fetchSavedHashesWithMetadata(collectionId, settings) {
     const backend = await getBackend(settings);
     const hashes = await backend.getSavedHashes(collectionId, settings);
 
-    if (!includeMetadata) {
-        return hashes;
-    }
-
-    // Use unified chunks API to get full metadata (works with all backends)
     try {
         const backendName = settings.vector_backend || 'standard';
         const response = await fetch('/api/plugins/similharity/chunks/list', {
@@ -958,6 +1031,7 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
         // Stale-stats fix: chunks just changed → next BM25 corpus-IDF query
         // must rebuild instead of returning pre-write df values. Fire-and-forget.
         _invalidateCorpusStats(collectionId, `insert ${items.length} item(s)`);
+        _invalidateSavedHashesMetaCache(collectionId, `insert ${items.length} item(s)`);
     } catch (error) {
         // VEC-18: Record error
         recordError(settings?.vector_backend || 'standard', error);
@@ -1082,6 +1156,7 @@ export async function deleteVectorItems(collectionId, hashes, settings) {
         recordDelete(settings?.vector_backend || 'standard', hashes.length);
         // Stale-stats fix: corpus shrank.
         _invalidateCorpusStats(collectionId, `delete ${hashes?.length || 0} hash(es)`);
+        _invalidateSavedHashesMetaCache(collectionId, `delete ${hashes?.length || 0} hash(es)`);
         return result;
     } catch (error) {
         // VEC-18: Record error
@@ -1447,6 +1522,7 @@ export async function purgeVectorIndex(collectionId, settings) {
         log.lifecycle(`VectFox: Purged vector index for collection ${collectionId}`);
         // Stale-stats fix: entire collection is gone.
         _invalidateCorpusStats(collectionId, 'purge');
+        _invalidateSavedHashesMetaCache(collectionId, 'purge');
         return true;
     } catch (error) {
         // VEC-33: Invalidate health cache on operation error
@@ -1488,6 +1564,8 @@ export async function purgeAllVectorIndexes(settings) {
         // freezes that were vectorized into it (see reformat-store.js).
         const { invalidateAllVectorizedReformatCaches } = await import('./reformat-store.js');
         invalidateAllVectorizedReformatCaches(settings?.vector_backend || 'standard');
+        // Every collection is gone — drop cached full-collection metadata too.
+        clearSavedHashesMetaCache();
         log.lifecycle('VectFox: Purged all vector indexes');
         toastr.success('All vector indexes purged', 'Purge successful');
     } catch (error) {
@@ -1521,7 +1599,9 @@ export async function listChunks(collectionId, settings, options = {}) {
  */
 export async function updateChunkText(collectionId, hash, newText, settings) {
     const backend = await getBackend(settings);
-    return await backend.updateChunkText(collectionId, hash, newText, settings);
+    const result = await backend.updateChunkText(collectionId, hash, newText, settings);
+    _invalidateSavedHashesMetaCache(collectionId, `update chunk text (hash ${hash})`);
+    return result;
 }
 
 /**
@@ -1533,5 +1613,7 @@ export async function updateChunkText(collectionId, hash, newText, settings) {
  */
 export async function updateChunkMetadata(collectionId, hash, metadata, settings) {
     const backend = await getBackend(settings);
-    return await backend.updateChunkMetadata(collectionId, hash, metadata, settings);
+    const result = await backend.updateChunkMetadata(collectionId, hash, metadata, settings);
+    _invalidateSavedHashesMetaCache(collectionId, `update chunk metadata (hash ${hash})`);
+    return result;
 }
