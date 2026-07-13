@@ -440,10 +440,12 @@ const MAX_FUZZY_SOURCE_CHARS = 50000;
 
 /**
  * Strips punctuation and collapses whitespace for loose text comparison.
+ * Exported for the duplicate-merge's body-containment check in
+ * reformat-extractor.js — same normalization both sides.
  * @param {string} s
  * @returns {string}
  */
-function normalizeForMatch(s) {
+export function normalizeForMatch(s) {
     return String(s || '')
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s]/gu, ' ')
@@ -464,6 +466,16 @@ function normalizeForMatch(s) {
  * @returns {boolean}
  */
 function isNameGroundedInSource(name, sourceText, threshold) {
+    // Compound sub-entry names ("Male Sympathizers: Demographic Composition",
+    // "The Ashen Circle — Treatment Under Imperial Law") are grounded when each
+    // component is — the joined form never appears verbatim in the source.
+    // Split on ":", em/en dashes, and SPACED hyphens only; intra-name hyphens
+    // ("Jean-Luc") must not split.
+    const compoundParts = String(name || '').split(/\s*(?::|—|–|\s-\s)\s*/).map(p => p.trim()).filter(Boolean);
+    if (compoundParts.length > 1) {
+        return compoundParts.every(part => isNameGroundedInSource(part, sourceText, threshold));
+    }
+
     const normName = normalizeForMatch(name);
     if (!normName) return false;
     const normSource = normalizeForMatch(sourceText);
@@ -587,8 +599,11 @@ Output ONLY a JSON array. Each element must have exactly these fields:
 
 HOW TO WRITE THE BODY — facts are sacred, wording is not:
 - Preserve every FACT faithfully. Never invent details, numbers, names, or relationships that aren't in the text, and never omit a named detail that IS in the text.
+- COMPLETENESS IS THE CONTRACT: taken together, your entries' bodies must account for essentially ALL information in the TEXT — every fact, figure, named law or act, price, date, quota, and list item must land in exactly one entry's body. A reader who has only your entries should be missing nothing the TEXT stated. Splitting information across entries is fine; dropping it is not.
+- There is NO length limit on body. A dense section produces a LONG body — multiple paragraphs when needed. Never sacrifice facts for brevity; a body that is shorter than its source section is only acceptable when the source was repetitive or padded.
+- Enumerations and lists (vocabularies, named laws, price lists, rosters, categorized terms): reproduce EVERY item together with its stated meaning or gloss. Never compress a list to "terms such as X and Y" or "various laws" — each dropped item is a factual omission.
 - REWRITE the prose — do not copy the source's wording or sentence structure. Write clean, grammatical, third-person encyclopedic prose. Fix the source's grammar, spelling, and punctuation errors instead of reproducing them.
-- Keep each body focused and declarative: one subject per entry, plain statements of what is true. Untangle nested conditionals from the source into separate plain sentences instead of reproducing "X or Y can occur with Z or W" chains.
+- Keep each body focused and declarative: one subject per entry, plain statements of what is true. "Focused" means one subject — it is NOT a brevity instruction. Untangle nested conditionals from the source into separate plain sentences instead of reproducing "X or Y can occur with Z or W" chains.
 - The output is world lore, not site documentation. Source material often contains editorial meta-instructions aimed at the site's editors or taggers — tagging rules ("if X is not apparent please use Y instead", "should NOT be tagged with..."), image/post counts, upload notes, moderation notices, site announcements, and navigation text. NEVER copy these into any field. When a meta-instruction contains a real definitional fact, restate that fact as a plain description of the subject itself and discard the instruction framing. When it contains no lore, drop it entirely.
 - The body must be INFORMATIONAL, not instructional: it describes what something IS, like an encyclopedia — it never tells the reader what to do, how to tag, or how to narrate.
 
@@ -596,6 +611,7 @@ CRITICAL RULES:
 - If a section names multiple distinct entities (e.g. several people in a roster, several factions in a table), give EACH one its own array element — never merge multiple named entities into a single entry.
 - If a section is genuinely about one topic with no distinct named sub-entities, emit ONE entry of type "concept" for that whole section rather than fragmenting it.
 - TOPIC HIERARCHY: if a section or page covers an overarching topic that has several distinct named variants, subtypes, or subtopics EACH discussed substantially in their own right (a paragraph or more), emit ONE parent entry of type "concept" for the overall topic PLUS one entry per substantial sub-topic. Connect each sub-entry to its parent with a relationship {"target": "<parent entry's name>", "type": "subtopic of"} (use "variant of" when the sub-entry is an alternate form of the parent rather than a subdivision). Name the parent using wording that actually appears in the source (its page title or heading). A subtype mentioned only in a one-line list item does NOT get its own entry — it stays in the parent's body.
+- ENTITY SUB-ENTRIES: the hierarchy rule applies to NAMED ENTITIES too. When a character/organization/location/item's section has several substantial subsections (a paragraph or more each — e.g. its structure, its membership, its treatment under law, the terminology used about it), emit the entity's own entry PLUS one "concept" sub-entry per substantial subsection, each with {"target": "<entity name>", "type": "subtopic of"}. Name each sub-entry "<Entity name>: <Subsection title>" so it is retrievable on its own. Folding a subsection into the entity's body is only acceptable when the subsection is brief (a sentence or two). NEVER cover a multi-subsection entity with one short entry that summarizes only the first subsection — that silently destroys the rest.
 - traits: at most 10 per entry, each a phrase of roughly 3-8 words. Traits are quick-scan labels; the body carries the prose. WRONG: "traits": ["Bulwark is the lead hero of Ironclad Agency, based in New York City, whose Spark lets her transform her hide into indestructible metal"] — that is body text. RIGHT: "traits": ["lead hero of Ironclad Agency", "Transformation-type Spark: Fortress"].
 - A relationship MUST point at another entry via "target". A capability or description with no named target (e.g. "maintains extensive files on citizens") is a TRAIT, not a relationship. Do not repeat the affiliation field as a relationship.
 - Extract every relationship the text actually states between entries — if entity A's section mentions entity B, that connection belongs in A's relationships (and usually B's too).
@@ -621,6 +637,24 @@ Correct output (parent concept + one sub-entry for the subtype that got its own 
 [
   {"entry_type":"concept","name":"Spark Classification System","aliases":[],"affiliation":"","traits":["four categories: Emitter, Transformation, Mutant, Accumulation"],"relationships":[],"keywords":[{"text":"Spark types","importance":7},{"text":"classification","importance":4}],"body":"The Spark Classification System sorts Sparks into four categories: Emitter, Transformation, Mutant, and Accumulation."},
   {"entry_type":"concept","name":"Transformation Sparks","aliases":[],"affiliation":"","traits":["temporary self-transformation","reverts on lost focus or consciousness"],"relationships":[{"target":"Spark Classification System","type":"subtopic of"}],"keywords":[{"text":"Transformation","importance":8},{"text":"temporary change","importance":6}],"body":"Transformation Sparks temporarily change the user's own body while active; the change reverts when the user loses focus or consciousness. Unlike Mutant-type Sparks, whose changes are permanent, Transformation effects never persist."}
+]
+
+EXAMPLE — a named entity whose section has several substantial subsections (entity sub-entries; note EVERY figure and EVERY list item survives, and the bodies are as long as the facts require):
+Input excerpt:
+"## The Ashen Circle
+The Ashen Circle is an outlawed guild of ember-mages operating from the ruined city of Cinderfall.
+### Membership and Recruitment
+The Circle recruits exclusively among mages burned out by Guild service. Initiates surrender their former names and receive ash-names. An estimated 300 members operate in cells of five to seven, coordinating through dead drops at abandoned shrines.
+### Treatment Under Imperial Law
+Membership is punishable under the Edict of Coals of 1147: a first offense brings branding and a fine of 500 crowns, while repeat offenders face the Pyre Courts, where conviction rates exceed 90%. Informants receive a 50-crown bounty per confirmed member.
+### Terms Used Against Members
+Citizens deride members as 'cinders' (worthless residue), 'ashlickers' (implying servility to dead fire), and 'greyskins' (from the ash markings). Imperial documents use the clinical term 'combustion risks'."
+Correct output (the entity entry PLUS one sub-entry per substantial subsection — the WRONG output here would be a single short Ashen Circle entry that only says it is an outlawed guild, silently dropping the membership figures, the Edict penalties, and the slur list):
+[
+  {"entry_type":"organization","name":"The Ashen Circle","aliases":[],"affiliation":"","traits":["outlawed guild of ember-mages","based in ruined Cinderfall"],"relationships":[{"target":"Cinderfall","type":"located in"}],"keywords":[{"text":"ember-mages","importance":8},{"text":"outlawed guild","importance":7}],"body":"The Ashen Circle is an outlawed guild of ember-mages operating from the ruined city of Cinderfall."},
+  {"entry_type":"concept","name":"The Ashen Circle: Membership and Recruitment","aliases":[],"affiliation":"","traits":["recruits burned-out Guild mages","cells of five to seven","around 300 members"],"relationships":[{"target":"The Ashen Circle","type":"subtopic of"}],"keywords":[{"text":"ash-names","importance":8},{"text":"recruitment","importance":6},{"text":"dead drops","importance":5}],"body":"The Ashen Circle recruits exclusively among mages burned out by Guild service. Initiates surrender their former names and receive ash-names. An estimated 300 members operate in cells of five to seven, coordinating through dead drops at abandoned shrines."},
+  {"entry_type":"concept","name":"The Ashen Circle: Treatment Under Imperial Law","aliases":[],"affiliation":"","traits":["outlawed by Edict of Coals of 1147","tried in Pyre Courts","informant bounty system"],"relationships":[{"target":"The Ashen Circle","type":"subtopic of"}],"keywords":[{"text":"Edict of Coals","importance":9},{"text":"Pyre Courts","importance":8},{"text":"bounty","importance":5}],"body":"Membership in the Ashen Circle is punishable under the Edict of Coals of 1147. A first offense brings branding and a fine of 500 crowns; repeat offenders face the Pyre Courts, where conviction rates exceed 90%. Informants receive a bounty of 50 crowns per confirmed member."},
+  {"entry_type":"concept","name":"The Ashen Circle: Terms Used Against Members","aliases":[],"affiliation":"","traits":["derogatory civilian slang","clinical Imperial terminology"],"relationships":[{"target":"The Ashen Circle","type":"subtopic of"}],"keywords":[{"text":"cinders","importance":7},{"text":"ashlickers","importance":7},{"text":"greyskins","importance":7},{"text":"combustion risks","importance":6}],"body":"Citizens deride members of the Ashen Circle as 'cinders' (worthless residue), 'ashlickers' (implying servility to dead fire), and 'greyskins' (from the ash markings). Imperial documents use the clinical term 'combustion risks'."}
 ]
 
 {{continuationNote}}
@@ -703,4 +737,181 @@ TEXT:
 ${text}
 
 Output ONLY the JSON array, no commentary, no markdown code fences.`;
+}
+
+// ---------------------------------------------------------------------------
+// Coverage check + repair prompt (under-extraction guardrail)
+// ---------------------------------------------------------------------------
+
+// A section with fewer distinctive fact tokens than this is too small to
+// score reliably — treat it as covered rather than generating noisy repairs.
+const COVERAGE_MIN_FACT_TOKENS = 3;
+// Cap the missing-facts list per section so the repair prompt stays bounded.
+const COVERAGE_MAX_REPORTED_FACTS = 20;
+
+/** Same header pattern as core/chunking.js's `section` strategy. */
+const COVERAGE_HEADER_REGEX = /^(#{1,6})\s+(.+)$/gm;
+
+/**
+ * Splits batch text into header-delimited sections (whole text = one section
+ * when it has no headers), mirroring the batching packer's section strategy.
+ * @param {string} text
+ * @returns {Array<{title: string, text: string}>}
+ */
+function _splitCoverageSections(text) {
+    const sections = [];
+    let lastIndex = 0;
+    COVERAGE_HEADER_REGEX.lastIndex = 0;
+    let match;
+    while ((match = COVERAGE_HEADER_REGEX.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            const before = text.slice(lastIndex, match.index).trim();
+            if (before) sections.push(before);
+        }
+        lastIndex = match.index;
+    }
+    if (lastIndex < text.length) {
+        const rest = text.slice(lastIndex).trim();
+        if (rest) sections.push(rest);
+    }
+    if (sections.length === 0 && text.trim()) sections.push(text.trim());
+
+    return sections.map(s => {
+        const firstLine = s.split('\n').map(l => l.trim()).find(Boolean) || 'section';
+        return { title: firstLine.replace(/^#{1,6}\s+/, '').replace(/\*+/g, '').trim(), text: s };
+    });
+}
+
+/**
+ * Extracts the "fact tokens" of a section — the details a faithful extraction
+ * cannot drop: figures, quoted terms, proper-noun phrases, and rare long
+ * words. Deterministic and language-light by design (no LLM, no stop-word
+ * dependency) — this is a recall probe, not an NLP pass.
+ * @param {string} text
+ * @returns {string[]} Deduplicated raw tokens (pre-normalization)
+ */
+function _extractFactTokens(text) {
+    const tokens = new Set();
+
+    // Figures: $ amounts, percentages, multi-digit numbers, years, ranges.
+    for (const m of text.matchAll(/\$\s?\d[\d,.]*|\d[\d,.]*\s?%|\d{2,}(?:[.,]\d+)*/g)) {
+        tokens.add(m[0].trim());
+    }
+
+    // Quoted terms: double quotes (straight/curly) and curly single quotes;
+    // straight single quotes only when they delimit a standalone term, so
+    // apostrophes ("it's") don't match.
+    for (const m of text.matchAll(/"([^"\n]{2,60})"|“([^”\n]{2,60})”|‘([^’\n]{2,60})’/g)) {
+        tokens.add((m[1] || m[2] || m[3]).trim());
+    }
+    for (const m of text.matchAll(/(?<=^|[\s(])'([^'\n]{2,60})'(?=[\s).,;:!?]|$)/gm)) {
+        tokens.add(m[1].trim());
+    }
+
+    // Proper-noun phrases: 2+ capitalized words, allowing lowercase connectors
+    // ("Federal Identification Security Act", "Edict of Coals"). Same-line
+    // whitespace only — \s would chain capitalized words across line breaks
+    // (a header + the next sentence's first word is not a phrase).
+    for (const m of text.matchAll(/\b[A-Z][\w'’-]*(?:[ \t]+(?:of|the|and|in|for|under|on|to)[ \t]+[A-Z][\w'’-]*|[ \t]+[A-Z][\w'’-]*)+\b/g)) {
+        tokens.add(m[0].trim());
+    }
+
+    // Rare long lowercase words ("marginalia", "ostracism") — the signal for
+    // prose sections that carry few numbers or names.
+    for (const m of text.matchAll(/\b[a-z][a-z'’-]{7,}\b/g)) {
+        tokens.add(m[0].trim());
+    }
+
+    return [...tokens];
+}
+
+/**
+ * Under-extraction guardrail: measures how much of each source section's
+ * distinctive content actually landed in the extracted entries, and returns
+ * the sections that fall below `threshold`. This is what catches the failure
+ * mode where a model collapses a multi-subsection topic into one short entry
+ * (observed: a 4-subsection organization profile reduced to a 656-char body,
+ * silently dropping the other three subsections).
+ *
+ * Purely deterministic (regex fact tokens vs. normalized entry text) — cheap
+ * enough to run on every batch, and its false positives cost only one extra
+ * repair call while false negatives cost permanently lost lore.
+ *
+ * @param {string} batchText - The batch's source text
+ * @param {object[]} entries - Validated entries extracted so far for this batch/chain
+ * @param {number} [threshold=0.5] - Minimum covered-token ratio per section
+ * @returns {Array<{title: string, text: string, coverage: number, missingFacts: string[]}>}
+ *          Sections below threshold, in document order (empty = all covered)
+ */
+export function computeBatchCoverage(batchText, entries, threshold = 0.5) {
+    if (!batchText || typeof batchText !== 'string') return [];
+
+    const corpusParts = [];
+    for (const e of (Array.isArray(entries) ? entries : [])) {
+        if (!e || typeof e !== 'object') continue;
+        corpusParts.push(e.name || '', ...(e.aliases || []), ...(e.traits || []), e.body || '');
+        for (const kw of e.keywords || []) {
+            corpusParts.push(typeof kw === 'string' ? kw : kw?.text || '');
+        }
+    }
+    const corpus = ' ' + normalizeForMatch(corpusParts.join(' ')) + ' ';
+
+    const flagged = [];
+    for (const section of _splitCoverageSections(batchText)) {
+        const factTokens = _extractFactTokens(section.text);
+        if (factTokens.length < COVERAGE_MIN_FACT_TOKENS) continue;
+
+        const missing = [];
+        let covered = 0;
+        for (const token of factTokens) {
+            const norm = normalizeForMatch(token);
+            if (!norm) { covered++; continue; }
+            if (corpus.includes(norm)) covered++;
+            else missing.push(token);
+        }
+
+        const coverage = covered / factTokens.length;
+        if (coverage < threshold) {
+            flagged.push({
+                title: section.title,
+                text: section.text,
+                coverage,
+                missingFacts: missing.slice(0, COVERAGE_MAX_REPORTED_FACTS),
+            });
+        }
+    }
+    return flagged;
+}
+
+/**
+ * Builds the one-shot repair prompt for sections computeBatchCoverage flagged.
+ * Reuses the FULL extraction template (schema, rules, examples — LLM calls are
+ * stateless, so the repair call needs everything the first call had) and rides
+ * the {{continuationNote}} slot to explain what's missing, exactly like the
+ * oversized-section continuation mechanism does.
+ *
+ * @param {Array<{title: string, text: string, missingFacts: string[]}>} flaggedSections
+ * @param {object} [options]
+ * @param {string} [options.customPrompt] - Same override as buildReformatPrompt
+ * @param {string[]} [options.alreadyExtractedNames] - Names extracted from this batch so far
+ * @returns {string}
+ */
+export function buildRepairPrompt(flaggedSections, { customPrompt = '', alreadyExtractedNames = [] } = {}) {
+    const sections = Array.isArray(flaggedSections) ? flaggedSections : [];
+    const namesList = alreadyExtractedNames.length ? alreadyExtractedNames.join(', ') : '(none)';
+    const missingLines = sections
+        .map(s => `- "${s.title}": ${s.missingFacts?.length ? s.missingFacts.join('; ') : '(most of the section)'}`)
+        .join('\n');
+
+    const repairNote = `NOTE — REPAIR PASS: A previous extraction over this document under-captured the TEXT below. Entries already extracted: ${namesList}. Coverage analysis found these facts missing from every existing entry:
+${missingLines}
+Extract entries that capture ALL information in the TEXT below, especially the missing facts listed above. Sub-entries of an already-extracted entry are welcome — name them "<Existing entry's name>: <Subsection title>" with a relationship {"target": "<Existing entry's name>", "type": "subtopic of"}. Do NOT re-emit an existing entry's content that was already captured; only cover what is missing.
+
+`;
+
+    const template = (customPrompt && customPrompt.trim()) ? customPrompt : DEFAULT_REFORMAT_PROMPT;
+    const text = sections.map(s => s.text).join('\n\n');
+    return template
+        .replace(/\{\{continuationNote\}\}/g, repairNote)
+        .replace(/\{\{text\}\}/g, text);
 }

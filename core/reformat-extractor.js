@@ -31,8 +31,11 @@ import {
     validateReformattedChunk,
     buildReformatPrompt,
     buildLinkingPrompt,
+    buildRepairPrompt,
+    computeBatchCoverage,
     computeNameVerification,
     computeKeywordVerification,
+    normalizeForMatch,
 } from './reformat-schema.js';
 import { log } from './log.js';
 
@@ -40,12 +43,13 @@ import { log } from './log.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MAX_TOKENS = 8000;
+const DEFAULT_MAX_TOKENS = 16000;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 90000;
 const DEFAULT_BATCH_CHARS = 6000;
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_NAME_FUZZY_THRESHOLD = 0.8;
+const DEFAULT_COVERAGE_THRESHOLD = 0.5;
 
 // ---------------------------------------------------------------------------
 // Config resolution (independent copy of agentic-retrieval.js's
@@ -461,15 +465,61 @@ function _groupIntoChains(batches) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Parses, validates, and grounding-verifies one LLM reply, appending the
+ * surviving records to `results` and their names to `alreadyExtractedNames`.
+ * Shared by the main extraction call and the coverage repair call — both
+ * replies carry the exact same record shape and guardrails.
+ * @returns {number} How many records were appended
+ */
+function _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel }) {
+    const threshold = settings.reformat_name_fuzzy_threshold ?? DEFAULT_NAME_FUZZY_THRESHOLD;
+
+    const rawArray = _parseReformatArray(reply, chainIndex);
+    const validatedForBatch = [];
+    for (let j = 0; j < rawArray.length; j++) {
+        const { ok, errors, chunk } = validateReformattedChunk(rawArray[j]);
+        if (!ok) {
+            log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: validation failed — ${errors.join('; ')} — skipped`);
+            continue;
+        }
+        if (errors.length > 0) {
+            log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: coercion warnings — ${errors.join('; ')}`);
+        }
+        validatedForBatch.push(chunk);
+    }
+
+    const verification = computeNameVerification(validatedForBatch, batch.text, threshold);
+    const keywordVerification = computeKeywordVerification(validatedForBatch, batch.text);
+    validatedForBatch.forEach((chunk, j) => {
+        results.push({
+            ...chunk,
+            _nameGrounded: verification[j]?.nameGrounded ?? true,
+            _ungroundedAliases: verification[j]?.ungroundedAliases ?? [],
+            _ungroundedKeywords: keywordVerification[j]?.ungroundedKeywords ?? [],
+        });
+        alreadyExtractedNames.push(chunk.name);
+    });
+    return validatedForBatch.length;
+}
+
+/**
  * Processes one chain (a normal batch, or an ordered run of continuation
  * batches for one oversized section) sequentially, threading the running
  * "already extracted" name list into each continuation's prompt.
+ *
+ * After each batch, an under-extraction guardrail (computeBatchCoverage)
+ * checks that the batch's distinctive facts actually landed in the extracted
+ * records; flagged sections get ONE repair call (no loop) asking the model to
+ * cover specifically what it dropped. Repair failures are non-fatal, same
+ * policy as batch failures.
  */
 async function _processChain(chain, settings, chainIndex, warnings) {
     const results = [];
     let failedCount = 0;
+    let repairCalls = 0;
     const alreadyExtractedNames = [];
-    const threshold = settings.reformat_name_fuzzy_threshold ?? DEFAULT_NAME_FUZZY_THRESHOLD;
+    const repairEnabled = settings.reformat_enable_repair_pass !== false;
+    const coverageThreshold = settings.reformat_coverage_threshold ?? DEFAULT_COVERAGE_THRESHOLD;
 
     for (let i = 0; i < chain.length; i++) {
         const batch = chain[i];
@@ -485,40 +535,43 @@ async function _processChain(chain, settings, chainIndex, warnings) {
                 warnings.push(`${batchLabel}: response was truncated by the model's output limit — some entries from this section may be missing. Consider lowering "Batch size (chars)" in Auto-Reformat settings.`);
             }
 
-            const rawArray = _parseReformatArray(reply, chainIndex);
-            const validatedForBatch = [];
-            for (let j = 0; j < rawArray.length; j++) {
-                const { ok, errors, chunk } = validateReformattedChunk(rawArray[j]);
-                if (!ok) {
-                    log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: validation failed — ${errors.join('; ')} — skipped`);
-                    continue;
-                }
-                if (errors.length > 0) {
-                    log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: coercion warnings — ${errors.join('; ')}`);
-                }
-                validatedForBatch.push(chunk);
-            }
-
-            const verification = computeNameVerification(validatedForBatch, batch.text, threshold);
-            const keywordVerification = computeKeywordVerification(validatedForBatch, batch.text);
-            validatedForBatch.forEach((chunk, j) => {
-                results.push({
-                    ...chunk,
-                    _nameGrounded: verification[j]?.nameGrounded ?? true,
-                    _ungroundedAliases: verification[j]?.ungroundedAliases ?? [],
-                    _ungroundedKeywords: keywordVerification[j]?.ungroundedKeywords ?? [],
-                });
-                alreadyExtractedNames.push(chunk.name);
-            });
+            _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel });
         } catch (err) {
             if (err instanceof ReformatFatalError) throw err;
             failedCount++;
             warnings.push(`${batchLabel} failed: ${err?.message || err} — skipped, other batches continue.`);
             log.warn(`[Auto-Reformat] ${batchLabel} failed:`, err?.message || err);
+            continue;
+        }
+
+        if (!repairEnabled) continue;
+        const flagged = computeBatchCoverage(batch.text, results, coverageThreshold);
+        if (flagged.length === 0) continue;
+
+        const flaggedTitles = flagged.map(s => `"${s.title}"`).join(', ');
+        log.lifecycle(`[Auto-Reformat] ${batchLabel}: ${flagged.length} under-captured section(s) (${flaggedTitles}) — issuing repair call`);
+        try {
+            const repairPrompt = buildRepairPrompt(flagged, {
+                customPrompt: settings.reformat_custom_prompt,
+                alreadyExtractedNames: [...alreadyExtractedNames],
+            });
+            const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex);
+            repairCalls++;
+            const added = _ingestReply(repairReply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel: `${batchLabel} (repair)` });
+            log.lifecycle(`[Auto-Reformat] ${batchLabel}: repair call added ${added} record(s)`);
+
+            const stillFlagged = computeBatchCoverage(batch.text, results, coverageThreshold);
+            if (stillFlagged.length > 0) {
+                warnings.push(`${batchLabel}: section(s) still under-captured after a repair pass: ${stillFlagged.map(s => `"${s.title}"`).join(', ')} — review these entries for missing detail.`);
+            }
+        } catch (err) {
+            if (err instanceof ReformatFatalError) throw err;
+            warnings.push(`${batchLabel}: repair call for under-captured section(s) ${flaggedTitles} failed: ${err?.message || err} — the original extraction is kept.`);
+            log.warn(`[Auto-Reformat] ${batchLabel} repair call failed:`, err?.message || err);
         }
     }
 
-    return { results, failedCount };
+    return { results, failedCount, repairCalls };
 }
 
 // ---------------------------------------------------------------------------
@@ -536,6 +589,46 @@ function _entityKeys(record) {
 function _relationshipKey(rel) {
     if (typeof rel === 'string') return rel.trim().toLowerCase();
     return `${(rel?.target || '').trim().toLowerCase()}|${(rel?.type || '').trim().toLowerCase()}`;
+}
+
+/**
+ * Lossless body merge: keeps the longer body as the primary prose, then
+ * appends the other body's paragraphs (falling back to sentences for
+ * single-paragraph bodies) whose normalized text isn't already contained in
+ * the merged result. Complementary facts from two extractions of the same
+ * entity both survive; near-duplicate prose is still dropped. Replaces the
+ * old longest-body-wins policy, which silently discarded every fact that
+ * only the shorter body carried.
+ * @param {string} bodyA
+ * @param {string} bodyB
+ * @returns {string}
+ */
+function _mergeBodies(bodyA, bodyB) {
+    const a = (bodyA || '').trim();
+    const b = (bodyB || '').trim();
+    if (!a) return b;
+    if (!b) return a;
+
+    const [primary, secondary] = b.length > a.length ? [b, a] : [a, b];
+
+    let merged = primary;
+    let mergedNorm = normalizeForMatch(merged);
+
+    const paragraphs = secondary.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    for (const para of paragraphs) {
+        const fragments = paragraphs.length > 1
+            ? [para]
+            : para.split(/(?<=[.!?。！？])\s+/).map(s => s.trim()).filter(Boolean);
+        const novel = fragments.filter(f => {
+            const norm = normalizeForMatch(f);
+            return norm && !mergedNorm.includes(norm);
+        });
+        if (novel.length === 0) continue;
+        const addition = novel.join(' ');
+        merged += '\n\n' + addition;
+        mergedNorm += ' ' + normalizeForMatch(addition);
+    }
+    return merged;
 }
 
 /** Case-insensitive union of two string arrays, keeping first-seen casing. */
@@ -566,8 +659,10 @@ function _unionStrings(a, b) {
  *
  * Merge policy: union aliases/traits (case-insensitive), union keywords by
  * text keeping max importance, union relationships by target+type, first
- * non-empty affiliation, LONGEST body wins (concatenating would put
- * redundant/contradictory prose into the embedded + injected text).
+ * non-empty affiliation. Bodies merge LOSSLESSLY via _mergeBodies — longer
+ * body is primary, the other body's non-duplicate paragraphs/sentences are
+ * appended (the old longest-wins policy silently discarded complementary
+ * facts when two sections described the same entity from different angles).
  * Grounding flags: _nameGrounded ORs; _ungrounded* lists union.
  *
  * @param {object[]} chunks - Validated records (post _processChain), document order
@@ -600,7 +695,7 @@ export function mergeDuplicateEntities(chunks) {
         existing.traits = _unionStrings(existing.traits || [], record.traits || []);
 
         if (!existing.affiliation && record.affiliation) existing.affiliation = record.affiliation;
-        if ((record.body || '').length > (existing.body || '').length) existing.body = record.body;
+        existing.body = _mergeBodies(existing.body, record.body);
 
         const relSeen = new Set((existing.relationships || []).map(_relationshipKey));
         for (const rel of record.relationships || []) {
@@ -749,6 +844,7 @@ export async function reformatDocument({ text, contentType, settings, onProgress
     const warnings = [];
     let batchesProcessed = 0;
     let batchesFailed = 0;
+    let totalRepairCalls = 0;
 
     const concurrency = Math.max(1, Math.min(8, settings.reformat_concurrency || DEFAULT_CONCURRENCY));
     const linkingEnabled = Boolean(settings.reformat_enable_linking_pass);
@@ -761,9 +857,10 @@ export async function reformatDocument({ text, contentType, settings, onProgress
             err.name = 'AbortError';
             throw err;
         }
-        const { results, failedCount } = await _processChain(chain, settings, chainIndex, warnings);
+        const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings);
         batchesProcessed += chain.length;
         batchesFailed += failedCount;
+        totalRepairCalls += repairCalls;
         onProgress?.(batchesProcessed, totalBatches, 'extract');
         return results;
     });
@@ -795,7 +892,7 @@ export async function reformatDocument({ text, contentType, settings, onProgress
         });
     }
 
-    log.lifecycle(`[Auto-Reformat] Complete: ${chunks.length} entries extracted from ${totalBatches} batch(es), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
+    log.lifecycle(`[Auto-Reformat] Complete: ${chunks.length} entries extracted from ${totalBatches} batch(es), ${totalRepairCalls} coverage repair call(s), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
 
     return { chunks, warnings, batchesProcessed, batchesFailed, totalBatches };
 }

@@ -683,6 +683,11 @@ export function renderSettings(containerId, settings, callbacks) {
                             </label>
                             <input id="VectFox_reformat_timeout_ms" type="number" class="vectfox-input" min="10000" step="1000" style="width:140px;" />
 
+                            <label class="checkbox_label" style="margin-top:10px;" title="After each extraction batch, a deterministic coverage check verifies the source's distinctive facts (figures, quoted terms, named laws, section headers) actually landed in the extracted entries. Under-captured sections get ONE follow-up LLM call asking the model to cover specifically what it dropped. Extra calls are only spent when loss is detected.">
+                                <input type="checkbox" id="VectFox_reformat_enable_repair_pass" />
+                                <small>Coverage Repair Pass (recommended)</small>
+                            </label>
+
                             <label class="checkbox_label" style="margin-top:10px;" title="Runs a second LLM pass over the document that cross-references every extracted entry against every section, backfilling relationships the single-pass extraction missed (entities mentioned in each other's sections but extracted separately). Doubles the number of LLM calls per document.">
                                 <input type="checkbox" id="VectFox_reformat_enable_linking_pass" />
                                 <small>Relationship Linking Pass (2x LLM calls)</small>
@@ -2768,6 +2773,14 @@ function bindSettingsEvents(settings, callbacks) {
         .on('change input', function() {
             const v = Number($(this).val());
             settings.reformat_timeout_ms = Math.max(10000, v || 90000);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#VectFox_reformat_enable_repair_pass')
+        .prop('checked', settings.reformat_enable_repair_pass !== false)
+        .on('change', function() {
+            settings.reformat_enable_repair_pass = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });
