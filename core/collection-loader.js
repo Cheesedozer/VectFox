@@ -310,6 +310,18 @@ export async function deleteCollection(collectionId, settings, registryKey = nul
         }
     }
 
+    // Step 5: Invalidate any Auto-Reformat freeze whose last vectorized copy
+    // lived in this collection — otherwise the next Auto-Reformat of the same
+    // source "instantly completes" by reusing chunks whose vectors are gone.
+    if (vectorsDeleted || registryDeleted) {
+        try {
+            const { invalidateReformatCacheForCollections } = await import('./reformat-store.js');
+            invalidateReformatCacheForCollections([collectionId]);
+        } catch {
+            // Best-effort — don't fail the whole delete if this breaks.
+        }
+    }
+
     const success = vectorsDeleted && registryDeleted && metadataDeleted;
 
     if (success) {
