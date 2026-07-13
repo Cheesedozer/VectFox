@@ -660,6 +660,12 @@ export function renderSettings(containerId, settings, callbacks) {
                             <input type="range" id="VectFox_reformat_batch_chars" class="vectfox-slider" min="2000" max="12000" step="500" />
                             <small class="VectFox_hint">Target input size per LLM call. Long documents are split into multiple batches at header boundaries; lower this if a section is so dense the model truncates its output.</small>
 
+                            <label for="VectFox_reformat_max_output_tokens" style="margin-top:10px; display:block;">
+                                <small>Max Output Tokens: <span id="VectFox_reformat_max_output_tokens_val">16000</span></small>
+                            </label>
+                            <input type="range" id="VectFox_reformat_max_output_tokens" class="vectfox-slider" min="2000" max="32000" step="1000" />
+                            <small class="VectFox_hint">max_tokens sent to the LLM per call. If a batch's response gets cut off (finish_reason "length" — shown as a warning after the run), raise this before lowering Batch Size. Full-fidelity bodies with hierarchy sub-entries need more headroom than a compressed summary would.</small>
+
                             <label for="VectFox_reformat_max_body_chars" style="margin-top:10px; display:block;">
                                 <small>Max Entry Size: <span id="VectFox_reformat_max_body_chars_val">2000</span> chars</small>
                             </label>
@@ -2764,6 +2770,7 @@ function bindSettingsEvents(settings, callbacks) {
         });
     };
     bindReformatSlider('#VectFox_reformat_batch_chars', '#VectFox_reformat_batch_chars_val', 'reformat_batch_chars', 6000);
+    bindReformatSlider('#VectFox_reformat_max_output_tokens', '#VectFox_reformat_max_output_tokens_val', 'reformat_max_output_tokens', 16000);
     bindReformatSlider('#VectFox_reformat_max_body_chars', '#VectFox_reformat_max_body_chars_val', 'reformat_max_body_chars', 2000);
     bindReformatSlider('#VectFox_reformat_name_fuzzy_threshold', '#VectFox_reformat_name_fuzzy_threshold_val', 'reformat_name_fuzzy_threshold', 0.8);
     bindReformatSlider('#VectFox_reformat_concurrency', '#VectFox_reformat_concurrency_val', 'reformat_concurrency', 2);
