@@ -333,12 +333,14 @@ const defaultSettings = {
     reformat_model: '',                 // '' → inherit summarize_model
     reformat_vllm_url: '',              // '' → inherit summarize_vllm_url
     reformat_batch_chars: 6000,         // Target input chars per LLM call (packer)
-    reformat_max_output_tokens: 8000,
+    reformat_max_output_tokens: 16000,  // Output headroom for full-fidelity bodies; models with lower caps still warn via finish_reason
     reformat_temperature: 0.2,
     reformat_timeout_ms: 90000,
     reformat_concurrency: 2,            // Parallel batch chains
     reformat_max_body_chars: 2000,      // Oversize-entity ceiling — falls back to the adaptive splitter above this
     reformat_name_fuzzy_threshold: 0.8, // Hallucination guardrail — min similarity to count a name as source-grounded
+    reformat_enable_repair_pass: true,  // Coverage check + one repair LLM call per under-captured batch
+    reformat_coverage_threshold: 0.5,   // Hidden/power-user — min fact-token recall per section before repair triggers
     reformat_enable_linking_pass: false, // Second LLM pass linking entities across batches — doubles LLM calls per document
     reformat_custom_prompt: '',
 

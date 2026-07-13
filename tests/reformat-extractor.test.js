@@ -219,7 +219,7 @@ describe('mergeDuplicateEntities', () => {
         ...overrides,
     });
 
-    it('merges same-name records of the same entry_type, unioning fields with longest body winning', () => {
+    it('merges same-name records of the same entry_type, unioning fields with bodies merged losslessly', () => {
         const merged = mergeDuplicateEntities([
             gestapo({
                 affiliation: 'The Reich',
@@ -255,8 +255,38 @@ describe('mergeDuplicateEntities', () => {
         // max importance wins for duplicated keyword text
         expect(g.keywords).toContainEqual({ text: 'secret police', importance: 9 });
         expect(g.keywords).toContainEqual({ text: 'terror', importance: 5 });
-        expect(g.body).toMatch(/much longer body/);
+        // longer body leads; the shorter bodies' non-duplicate prose survives too
+        expect(g.body).toMatch(/^This is the much longer body/);
+        expect(g.body).toContain('Short body.');
         expect(g._nameGrounded).toBe(true); // OR across copies
+    });
+
+    it('merges bodies losslessly: complementary facts from both copies survive, contained prose is not duplicated', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({
+                body: 'The Gestapo conducts political investigations across the Reich. It reports directly to Oberkatze.',
+            }),
+            gestapo({
+                body: 'The Gestapo conducts political investigations across the Reich. Its budget of 40 million marks is the largest of any security agency.',
+            }),
+        ]);
+
+        expect(merged).toHaveLength(1);
+        const body = merged[0].body;
+        // both unique facts present exactly once
+        expect(body).toContain('It reports directly to Oberkatze.');
+        expect(body).toContain('budget of 40 million marks');
+        // the shared sentence is not duplicated
+        expect(body.match(/conducts political investigations/g)).toHaveLength(1);
+    });
+
+    it('drops a shorter body entirely when it is already contained in the longer one', () => {
+        const longBody = 'The Gestapo conducts political investigations. It operates outside procedural constraints.';
+        const merged = mergeDuplicateEntities([
+            gestapo({ body: longBody }),
+            gestapo({ body: 'The Gestapo conducts political investigations.' }),
+        ]);
+        expect(merged[0].body).toBe(longBody);
     });
 
     it('merges via alias bridge and records the divergent name as an alias', () => {
@@ -318,6 +348,131 @@ describe('reformatDocument — duplicate merge integration', () => {
         expect(result.chunks).toHaveLength(1);
         expect(result.chunks[0].traits.length).toBeGreaterThanOrEqual(2);
         expect(result.warnings.some(w => /Merged \d+ duplicate/i.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Coverage repair pass (under-extraction guardrail)
+// ---------------------------------------------------------------------------
+
+describe('reformatDocument — coverage repair pass', () => {
+    // Miniature of the observed real-world failure: multi-subsection profile,
+    // model output covers only the first subsection.
+    const doc = [
+        '# Male Sympathizers',
+        '',
+        '## Definition and Organizational Structure',
+        '',
+        'Male Sympathizers are a decentralized network of female citizens advocating equality. They communicate through encrypted messaging and library book marginalia.',
+        '',
+        '## Social Stigmatization and Pejorative Terms',
+        '',
+        'The linguistic arsenal includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
+    ].join('\n');
+
+    const thinEntry = {
+        entry_type: 'organization', name: 'Male Sympathizers', aliases: [], affiliation: '',
+        traits: [], relationships: [], keywords: [],
+        body: 'Male Sympathizers are a decentralized network of female citizens advocating equality. They communicate through encrypted messaging and library book marginalia.',
+    };
+    const repairEntry = {
+        entry_type: 'concept', name: 'Male Sympathizers: Social Stigmatization and Pejorative Terms',
+        aliases: [], affiliation: '',
+        traits: [], relationships: [{ target: 'Male Sympathizers', type: 'subtopic of' }], keywords: [],
+        body: 'The linguistic arsenal against sympathizers includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
+    };
+
+    it('detects an under-captured section, issues one repair call, and appends its entries', async () => {
+        const fetchMock = vi.fn(async (url, opts) => {
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            if (/REPAIR PASS/.test(prompt)) {
+                return mockChatCompletionResponse([repairEntry]);
+            }
+            return mockChatCompletionResponse([thinEntry]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2); // extraction + one repair
+        const repairPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => /REPAIR PASS/.test(p));
+        // the repair prompt names what was missed and carries the flagged section text
+        expect(repairPrompt).toContain('Social Stigmatization and Pejorative Terms');
+        expect(repairPrompt).toContain('male-lover');
+        expect(repairPrompt).toContain('Male Sympathizers'); // already-extracted names
+        // both the thin entry and the repaired sub-entry reach the caller
+        expect(result.chunks.map(c => c.name)).toEqual([
+            'Male Sympathizers',
+            'Male Sympathizers: Social Stigmatization and Pejorative Terms',
+        ]);
+        // repair succeeded → no residual under-capture warning
+        expect(result.warnings.some(w => /still under-captured/i.test(w))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('warns when coverage is still low after the repair call, without looping', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2); // exactly one repair attempt, no loop
+        expect(result.warnings.some(w => /still under-captured/i.test(w) && /Social Stigmatization/.test(w))).toBe(true);
+        expect(result.chunks).toHaveLength(1);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('a failed repair call is a non-fatal warning and the original extraction survives', async () => {
+        let sawRepair = false;
+        const fetchMock = vi.fn(async (url, opts) => {
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            if (/REPAIR PASS/.test(prompt)) {
+                sawRepair = true;
+                return { ok: false, status: 400, statusText: 'bad request', text: async () => 'model rejected prompt' };
+            }
+            return mockChatCompletionResponse([thinEntry]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(sawRepair).toBe(true);
+        expect(result.chunks).toHaveLength(1); // extraction output intact
+        expect(result.batchesFailed).toBe(0);
+        expect(result.warnings.some(w => /repair call/i.test(w) && /failed/i.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('can be disabled via reformat_enable_repair_pass: false — no coverage calls at all', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({
+            text: doc,
+            contentType: 'document',
+            settings: baseSettings({ reformat_batch_chars: 6000, reformat_enable_repair_pass: false }),
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(result.chunks).toHaveLength(1);
+        expect(result.warnings.some(w => /under-captured/i.test(w))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('spends no repair call when the extraction already covers every section', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry, repairEntry]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1); // full coverage first try — no repair
+        expect(result.chunks).toHaveLength(2);
 
         vi.unstubAllGlobals();
     });

@@ -727,3 +727,64 @@ describe('Edge Cases', () => {
         expect(keywords).toEqual([]);
     });
 });
+
+// ============================================================================
+// getCombinedStopwords caching (base Set memoized per CJK mode; correctness
+// of the settings/macro-dependent custom-stopwords overlay must survive it)
+// ============================================================================
+
+describe('getCombinedStopwords caching (via extractLorebookKeywords)', () => {
+    it('does not leak one call\'s custom stopwords into a later call with no custom stopwords', () => {
+        const withCustom = extractLorebookKeywords(
+            { key: ['dragon', 'leakword'] },
+            { custom_stopwords: 'leakword' },
+        );
+        expect(withCustom).not.toContain('leakword');
+
+        // A subsequent call with NO custom_stopwords must not still filter
+        // 'leakword' — that would mean the shared cached base Set was mutated
+        // in place by the first call instead of cloned before adding customs.
+        const withoutCustom = extractLorebookKeywords(
+            { key: ['dragon', 'leakword'] },
+            {},
+        );
+        expect(withoutCustom).toContain('leakword');
+    });
+
+    it('does not leak one settings object\'s custom stopwords into a sibling call with different custom stopwords', () => {
+        const a = extractLorebookKeywords(
+            { key: ['alpha', 'beta'] },
+            { custom_stopwords: 'alpha' },
+        );
+        const b = extractLorebookKeywords(
+            { key: ['alpha', 'beta'] },
+            { custom_stopwords: 'beta' },
+        );
+        expect(a).not.toContain('alpha');
+        expect(a).toContain('beta'); // 'beta' from A's custom list must not appear
+        expect(b).toContain('alpha'); // 'alpha' from B's custom list must not appear
+        expect(b).not.toContain('beta');
+    });
+
+    it('re-substitutes {{char}}/{{user}} macros on every call rather than caching a stale expansion', () => {
+        // Same raw custom_stopwords string, but the active character changes
+        // between calls (simulated via the substituteParams mock's fixed
+        // TestCharacter/TestUser output vs. a literal word matching that output).
+        const settings = { custom_stopwords: '{{char}}' };
+        const first = extractLorebookKeywords({ key: ['testcharacter', 'wizard'] }, settings);
+        expect(first).not.toContain('testcharacter'); // {{char}} → "TestCharacter" per the mock
+
+        // A second call with a DIFFERENT settings object (no custom_stopwords)
+        // must see 'testcharacter' as a normal, non-filtered word — proving
+        // the macro expansion from the first call wasn't baked into a shared cache.
+        const second = extractLorebookKeywords({ key: ['testcharacter', 'wizard'] }, {});
+        expect(second).toContain('testcharacter');
+    });
+
+    it('base stopword filtering (no custom words) is unaffected by caching across repeated calls', () => {
+        for (let i = 0; i < 3; i++) {
+            const keywords = extractLorebookKeywords({ key: ['the', 'dragon', 'and'] }, {});
+            expect(keywords).toEqual(['dragon']);
+        }
+    });
+});

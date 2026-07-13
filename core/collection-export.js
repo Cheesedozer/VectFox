@@ -19,7 +19,7 @@
 
 import { extension_settings } from '../../../../extensions.js';
 import { getRequestHeaders, saveSettingsDebounced } from '../../../../../script.js';
-import { getSavedHashes, insertVectorItems, purgeVectorIndex } from './core-vector-api.js';
+import { getSavedHashes, insertVectorItems, purgeVectorIndex, clearSavedHashesMetaCache } from './core-vector-api.js';
 import {
     getCollectionMeta,
     setCollectionMeta,
@@ -600,13 +600,16 @@ async function insertChunksWithVectors(collectionId, chunks, settings, onBatchPr
     // Stale-stats fix: this writer bypasses core-vector-api.js's insertVectorItems
     // (it hits /chunks/insert directly with pre-computed vectors), so the cache
     // invalidation in that path doesn't fire here. Clear corpus-IDF cache so the
-    // next BM25 query rebuilds with the just-inserted chunks counted in df.
+    // next BM25 query rebuilds with the just-inserted chunks counted in df, and
+    // the cached full-collection metadata (getSavedHashes(..., true)) so summary
+    // expansion / force-links see the imported chunks instead of a stale list.
     // Best-effort + dynamic import — failure must not break the import flow.
     if (chunks.length > 0) {
         try {
-            const mod = await import('./corpus-stats.js');
-            mod.clearCorpusStatsCache(collectionId);
+            const statsMod = await import('./corpus-stats.js');
+            statsMod.clearCorpusStatsCache(collectionId);
         } catch (_) { /* silent: stale stats are acceptable, write failure is not */ }
+        clearSavedHashesMetaCache(collectionId);
     }
 }
 

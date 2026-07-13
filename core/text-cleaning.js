@@ -521,7 +521,25 @@ export function saveCleaningSettings(settings) {
         extension_settings.vectfox = {};
     }
     extension_settings.vectfox.cleaning = settings;
+    // Every settings mutator (addCustomPattern, updateCustomPattern,
+    // removeCustomPattern, toggleBuiltinPattern, importPatterns, and both UI
+    // call sites) ends here — but several of them fetch the settings object,
+    // mutate an array ON it in place (e.g. addCustomPattern's
+    // `settings.customPatterns.push(...)`), then call this with that SAME
+    // object, so its identity doesn't change. Explicit invalidation here
+    // catches that case; the identity check in getActivePatterns below
+    // catches the other shape (something replacing extension_settings.vectfox
+    // .cleaning wholesale without going through this function).
+    _activePatternsCache = null;
 }
+
+// Memoized getActivePatterns() result, keyed by the identity of the settings
+// object it was built from. cleanText()/cleanContentOrNull() call
+// getActivePatterns() on every lorebook entry, character field, document/
+// wiki page, and chat message; without this, the same small settings-derived
+// array was being rebuilt from scratch on every single one of those calls.
+let _activePatternsCache = null;
+let _activePatternsCacheSourceRef = null;
 
 /**
  * Gets all active patterns (builtin + custom)
@@ -529,6 +547,10 @@ export function saveCleaningSettings(settings) {
  */
 export function getActivePatterns() {
     const settings = getCleaningSettings();
+    if (_activePatternsCache && _activePatternsCacheSourceRef === settings) {
+        return _activePatternsCache;
+    }
+
     const patterns = [];
 
     // If using a preset, get its patterns
@@ -555,12 +577,39 @@ export function getActivePatterns() {
         }
     }
 
+    _activePatternsCache = patterns;
+    _activePatternsCacheSourceRef = settings;
     return patterns;
 }
 
 // ============================================================================
 // TEXT CLEANING
 // ============================================================================
+
+// Compiled-RegExp cache, content-addressed by "pattern flags" so it
+// self-invalidates on edit (a changed pattern/flags string is simply a new
+// key) with no explicit cache-clearing needed. Safe to reuse a global-flag
+// RegExp object across calls: String.prototype.replace() resets lastIndex to
+// 0 itself before every match pass (ECMA-262 RegExp.prototype[Symbol.replace]),
+// so there's no cross-call state leak. applyPattern runs per lorebook entry,
+// per character field, and per document/wiki page/chat message — without
+// this, the same handful of builtin patterns were being re-compiled from
+// scratch on every single one of those calls.
+const _compiledRegexCache = new Map(); // key -> {regex: RegExp} | {error: string}
+
+function _getCompiledRegex(pattern, flags) {
+    const key = pattern + '\n' + flags;
+    let entry = _compiledRegexCache.get(key);
+    if (!entry) {
+        try {
+            entry = { regex: new RegExp(pattern, flags) };
+        } catch (e) {
+            entry = { error: e.message }; // cached too, so an invalid pattern doesn't re-throw every call
+        }
+        _compiledRegexCache.set(key, entry);
+    }
+    return entry;
+}
 
 /**
  * Applies a single pattern to text
@@ -569,13 +618,12 @@ export function getActivePatterns() {
  * @returns {string} Cleaned text
  */
 function applyPattern(text, pattern) {
-    try {
-        const regex = new RegExp(pattern.pattern, pattern.flags || 'g');
-        return text.replace(regex, pattern.replacement || '');
-    } catch (e) {
-        log.warn(`VectFox: Invalid regex pattern "${pattern.name || pattern.pattern}":`, e.message);
+    const { regex, error } = _getCompiledRegex(pattern.pattern, pattern.flags || 'g');
+    if (!regex) {
+        log.warn(`VectFox: Invalid regex pattern "${pattern.name || pattern.pattern}":`, error);
         return text;
     }
+    return text.replace(regex, pattern.replacement || '');
 }
 
 /**

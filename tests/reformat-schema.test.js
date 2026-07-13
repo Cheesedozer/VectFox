@@ -14,8 +14,10 @@ import {
     computeNameVerification,
     computeKeywordVerification,
     buildReformatPrompt,
+    buildRepairPrompt,
     buildRelationalClause,
     buildLinkingPrompt,
+    computeBatchCoverage,
     sanitizeTraits,
     TRAIT_MAX_CHARS,
     TRAITS_MAX_COUNT,
@@ -238,6 +240,32 @@ describe('computeNameVerification', () => {
 
     it('returns an empty array for non-array input', () => {
         expect(computeNameVerification(null, source)).toEqual([]);
+    });
+
+    it('grounds a compound sub-entry name when each component is grounded', () => {
+        const subSource = '# Male Sympathizers\n\n## Demographic Composition\n\nSympathizers draw from specific segments.';
+        const [result] = computeNameVerification(
+            [{ name: 'Male Sympathizers: Demographic Composition', aliases: [] }],
+            subSource,
+        );
+        expect(result.nameGrounded).toBe(true);
+    });
+
+    it('flags a compound name when one component is ungrounded', () => {
+        const subSource = '# Male Sympathizers\n\nSome text with no such subsection.';
+        const [result] = computeNameVerification(
+            [{ name: 'Male Sympathizers: Demographic Composition', aliases: [] }],
+            subSource,
+        );
+        expect(result.nameGrounded).toBe(false);
+    });
+
+    it('does not split intra-name hyphens as compound separators', () => {
+        const [result] = computeNameVerification(
+            [{ name: 'Jean-Luc', aliases: [] }],
+            'Captain Jean-Luc commands the vessel.',
+        );
+        expect(result.nameGrounded).toBe(true);
     });
 });
 
@@ -488,5 +516,127 @@ describe('buildLinkingPrompt', () => {
         const prompt = buildLinkingPrompt('Text.', []);
         expect(typeof prompt).toBe('string');
         expect(prompt).toContain('Text.');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Coverage check (under-extraction guardrail)
+// ---------------------------------------------------------------------------
+
+describe('computeBatchCoverage', () => {
+    // Mirrors the observed real-world failure: a 4-subsection organization
+    // profile where the model's output covered only the first subsection.
+    const batchText = [
+        '# Male Sympathizers in the Matriarchal Society',
+        '',
+        '## Definition and Organizational Structure',
+        '',
+        'Male Sympathizers are a decentralized network of female citizens advocating equality for males. They communicate through encrypted messaging and library book marginalia.',
+        '',
+        '## Societal Treatment and Legal Consequences',
+        '',
+        'Visible sympathizers face charges from "promoting gender disorder" (misdemeanor) to "seditious conspiracy" (felony, 5–20 years). The state diagnoses sympathizers with invented conditions such as "reverse gender identity disorder".',
+        '',
+        '## Social Stigmatization and Pejorative Terms',
+        '',
+        'The linguistic arsenal includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
+    ].join('\n');
+
+    const definitionEntry = {
+        entry_type: 'organization',
+        name: 'Male Sympathizers',
+        aliases: [],
+        traits: ['decentralized female network'],
+        keywords: [{ text: 'sympathizers', importance: 8 }],
+        body: 'Male Sympathizers are a decentralized network of female citizens advocating equality for males. They communicate through encrypted messaging and library book marginalia.',
+    };
+
+    it('flags sections whose facts did not land in any entry, listing the missing facts', () => {
+        const flagged = computeBatchCoverage(batchText, [definitionEntry], 0.5);
+
+        const titles = flagged.map(s => s.title);
+        expect(titles).toContain('Societal Treatment and Legal Consequences');
+        expect(titles).toContain('Social Stigmatization and Pejorative Terms');
+        expect(titles).not.toContain('Definition and Organizational Structure');
+
+        const stigma = flagged.find(s => s.title === 'Social Stigmatization and Pejorative Terms');
+        expect(stigma.missingFacts).toContain('male-lover');
+        expect(stigma.missingFacts).toContain('gender traitor');
+        expect(stigma.coverage).toBeLessThan(0.5);
+    });
+
+    it('returns no flags when every section\'s facts are covered', () => {
+        const fullEntries = [
+            definitionEntry,
+            {
+                entry_type: 'concept',
+                name: 'Male Sympathizers: Societal Treatment and Legal Consequences',
+                aliases: [], traits: [], keywords: [],
+                body: 'Visible sympathizers face charges from "promoting gender disorder" (a misdemeanor) to "seditious conspiracy" (a felony carrying 5–20 years). The state diagnoses sympathizers with invented conditions such as "reverse gender identity disorder".',
+            },
+            {
+                entry_type: 'concept',
+                name: 'Male Sympathizers: Social Stigmatization and Pejorative Terms',
+                aliases: [], traits: [], keywords: [],
+                body: 'The linguistic arsenal against sympathizers includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
+            },
+        ];
+        expect(computeBatchCoverage(batchText, fullEntries, 0.5)).toEqual([]);
+    });
+
+    it('skips sections with too few distinctive fact tokens to score', () => {
+        expect(computeBatchCoverage('# Hi\n\nShort note.', [], 0.5)).toEqual([]);
+    });
+
+    it('treats headerless text as a single section', () => {
+        const text = 'The Edict of Coals of 1147 fines offenders 500 crowns, with conviction rates above 90% in the Pyre Courts.';
+        const flagged = computeBatchCoverage(text, [], 0.5);
+        expect(flagged).toHaveLength(1);
+        expect(flagged[0].missingFacts.length).toBeGreaterThan(0);
+    });
+
+    it('returns [] for empty or non-string input', () => {
+        expect(computeBatchCoverage('', [], 0.5)).toEqual([]);
+        expect(computeBatchCoverage(null, [], 0.5)).toEqual([]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Repair prompt
+// ---------------------------------------------------------------------------
+
+describe('buildRepairPrompt', () => {
+    const flagged = [
+        {
+            title: 'Social Stigmatization and Pejorative Terms',
+            text: '## Social Stigmatization and Pejorative Terms\n\nThe arsenal includes "male-lover" and "gender traitor".',
+            missingFacts: ['male-lover', 'gender traitor'],
+        },
+    ];
+
+    it('rides the full extraction template: schema fields, rules, and the flagged text all present', () => {
+        const prompt = buildRepairPrompt(flagged, { alreadyExtractedNames: ['Male Sympathizers'] });
+        // full schema must be restated — LLM calls are stateless
+        expect(prompt).toContain('entry_type');
+        expect(prompt).toContain('TOPIC HIERARCHY');
+        // the repair note and its payload
+        expect(prompt).toMatch(/REPAIR PASS/);
+        expect(prompt).toContain('Male Sympathizers');
+        expect(prompt).toContain('male-lover; gender traitor');
+        // flagged section text is the {{text}} payload
+        expect(prompt).toContain('The arsenal includes "male-lover" and "gender traitor".');
+        expect(prompt).not.toContain('{{text}}');
+        expect(prompt).not.toContain('{{continuationNote}}');
+    });
+
+    it('respects a customPrompt override', () => {
+        const prompt = buildRepairPrompt(flagged, { customPrompt: 'CUSTOM {{continuationNote}}TEXT: {{text}}' });
+        expect(prompt).toMatch(/^CUSTOM NOTE — REPAIR PASS/);
+        expect(prompt).toContain('TEXT: ## Social Stigmatization');
+    });
+
+    it('shows "(none)" when nothing was extracted yet', () => {
+        const prompt = buildRepairPrompt(flagged, {});
+        expect(prompt).toContain('Entries already extracted: (none)');
     });
 });

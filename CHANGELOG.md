@@ -2,6 +2,68 @@
 
 ## Unreleased
 
+### Performance
+
+- **Full-collection metadata is now cached.** `getSavedHashes(..., includeMetadata=true)`
+  previously re-downloaded the ENTIRE collection (hashes + full metadata for
+  every chunk) on every call — and `rearrangeChat` could call it twice in one
+  message retrieval (summary-chunk expansion, then force-link resolution) any
+  time summarization or force-links are in use. Now cached per collection for
+  the session, invalidated on insert/delete/purge/purgeAll and on chunk edits
+  (Database Browser's chunk-visualizer save), so the cache never serves stale
+  data. Biggest win for large collections with summarization enabled, where
+  this sat directly on the per-message retrieval path.
+- **Stop-word Set is no longer rebuilt per chunk.** Bulk content vectorization
+  (documents, wiki scrapes, large lorebooks) rebuilt the full locale-union
+  stop-word Set from scratch for every single chunk during keyword extraction.
+  The locale-derived portion (mode-dependent, not settings-dependent) is now
+  memoized per CJK tokenizer mode; only the small custom-stopwords/macro
+  overlay is still computed fresh per call, since it can legitimately vary
+  with the active character/persona.
+- **Cleaning regexes are no longer recompiled per call.** `cleanText()` (run
+  per lorebook entry, character field, document/wiki page, and chat message)
+  recompiled every enabled cleaning pattern's RegExp and rebuilt the active-
+  pattern list from settings on every call. Both are now cached — regexes by
+  a content-addressed key (pattern+flags) that self-invalidates on edit, and
+  the active-pattern list keyed to the settings object's identity so it stays
+  correct across any way the cleaning settings can change.
+
+### Auto-Reformat depth-loss fixes
+
+Multi-subsection topics could lose most of their content: the model would
+collapse a named entity's section (e.g. an organization profiled across four
+subsections) into one short entry covering only the first subsection, and
+dense enumerations (term lists, named laws, prices, statistics) were being
+summarized away. Verified against a real document where 22 of 53 sampled
+source facts were missing from the vectorized output.
+
+- **Extraction prompt:** new completeness contract — every fact, figure,
+  named law, and list item must land in exactly one entry's body; enumerations
+  are reproduced item-by-item, never compressed to "terms such as…"; bodies
+  have no length limit. Entity sections with substantial subsections now
+  produce per-subsection sub-entries (`"<Entity>: <Subsection>"`, linked
+  `subtopic of`), same as concept topics already did. A third few-shot example
+  demonstrates full-fidelity extraction (the previous two examples' 2–3
+  sentence bodies were anchoring the model's output length).
+- **New: Coverage Repair Pass** (on by default, toggle in ChunkBase →
+  Auto-Reformat): after each batch, a deterministic check verifies the
+  source's distinctive facts (figures, quoted terms, proper-noun phrases,
+  rare words) actually appear in the extracted entries. Under-captured
+  sections get ONE follow-up LLM call listing exactly what was missed; if
+  coverage is still low afterwards, a warning names the affected sections in
+  the review screen. Extra LLM calls are spent only when loss is detected.
+- **Duplicate merge is now lossless:** when the same entity is extracted from
+  multiple document sections, the merged body keeps the longer version and
+  appends the other's non-duplicate paragraphs/sentences — previously the
+  shorter body was discarded wholesale, losing any facts only it carried.
+- **Grounding guard understands sub-entry names:** compound names like
+  `"Male Sympathizers: Demographic Composition"` are verified per component
+  instead of being false-flagged as hallucinations.
+- Default `reformat_max_output_tokens` raised 8000 → 16000 — full-fidelity
+  bodies need output headroom, and large-context models (e.g. Grok 4.3) have
+  no provider-side output cap; the extension's own cap was the binding limit.
+  Existing installs keep their saved value — raise it manually to benefit.
+
 ### Auto-Reformat cache fixes
 
 - **Fixed:** deleting vectorized content from the database no longer leaves the
