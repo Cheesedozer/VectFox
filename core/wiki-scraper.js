@@ -127,18 +127,183 @@ export function getFandomId(fandom) {
     }
 }
 
+// Placeholder for section headings while the vendored converter runs: it
+// deletes "==" markers and turns a leading "#" into a list dash, so markdown
+// headings are restored only after it has finished.
+const HEADING_PLACEHOLDER = 'VFWIKIHEADING';
+
+// Infobox fields that hold layout or media rather than facts.
+const INFOBOX_SKIP_KEYS = /^(?:image\d*|imagecaption|image_caption|caption\d*|imagesize|image_size|imagewidth|alt|width|size|style|bodystyle|class|title_style|header_style|label_style|data_style|above_style)$/i;
+// Templates that are navigation, citations or decoration, never infoboxes.
+const NON_INFOBOX_TEMPLATES = /nav|cite|citation|ref|sidebar|succession|footer|header|stub|quote|music|gallery|tabber|tabview/i;
+
 /**
- * Converts a wikitext page body to plain text.
- * Faithful port of the plugin's wikiToText — same steps, same order. The
- * single-occurrence string replaces are first-match-only upstream too; they
- * are kept that way deliberately for output parity.
+ * Returns the end index (exclusive) of the balanced construct opening at
+ * `start`, or -1 when it is unbalanced.
+ * @param {string} s
+ * @param {number} start
+ * @param {string} open
+ * @param {string} close
+ * @returns {number}
+ */
+function _balancedEnd(s, start, open, close) {
+    let depth = 0;
+    for (let i = start; i < s.length; i++) {
+        if (s.startsWith(open, i)) { depth++; i += open.length - 1; } else if (s.startsWith(close, i)) {
+            depth--;
+            i += close.length - 1;
+            if (depth === 0) return i + 1;
+        }
+    }
+    return -1;
+}
+
+/** Splits on `sep` at nesting depth 0 of [[...]] and {{...}}. */
+function _splitTopLevel(s, sep) {
+    const parts = [];
+    let depth = 0;
+    let last = 0;
+    for (let i = 0; i < s.length; i++) {
+        const two = s.slice(i, i + 2);
+        if (two === '[[' || two === '{{') { depth++; i++; } else if (two === ']]' || two === '}}') { depth--; i++; } else if (depth === 0 && s.startsWith(sep, i)) {
+            parts.push(s.slice(last, i));
+            last = i + sep.length;
+            i += sep.length - 1;
+        }
+    }
+    parts.push(s.slice(last));
+    return parts;
+}
+
+/**
+ * Rewrites a line-start template with at least three named, non-empty
+ * parameters (an infobox) as "Key: value" lines, which the converter would
+ * otherwise delete along with all the facts they hold.
+ * @param {string} body - Template text without the outer braces
+ * @returns {string|null} Replacement text, or null to leave the template alone
+ */
+function _infoboxToLines(body) {
+    const [name, ...params] = _splitTopLevel(body, '|');
+    if (!name.trim() || NON_INFOBOX_TEMPLATES.test(name)) return null;
+    const lines = [];
+    for (const param of params) {
+        const eq = param.indexOf('=');
+        if (eq <= 0) continue;
+        const key = param.slice(0, eq).trim();
+        // Nested templates are dropped (the converter would drop them anyway,
+        // along with the line break after them); list items and <br> line
+        // breaks inside a value become "; " separators.
+        let raw = param.slice(eq + 1);
+        for (let prev = ''; prev !== raw;) {
+            prev = raw;
+            raw = raw.replace(/\{\{[^{}]*\}\}/g, '');
+        }
+        const value = raw
+            .replace(/<br\s*\/?>/gi, '\n')
+            .split('\n')
+            .map(item => item.replace(/^\s*[*#:;]+\s*/, '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .join('; ');
+        if (!key || !value || INFOBOX_SKIP_KEYS.test(key)) continue;
+        const label = key.replace(/_/g, ' ');
+        lines.push(`${label.charAt(0).toUpperCase()}${label.slice(1)}: ${value}`);
+    }
+    return lines.length >= 3 ? `\n${lines.join('\n')}\n` : null;
+}
+
+/** Content of a table cell, without a leading `attr="…" |` block. */
+function _tableCell(cell) {
+    const m = cell.match(/^\s*(?:[\w-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|]+)\s*)+\|(?!\|)([\s\S]*)$/);
+    return (m ? m[1] : cell).trim();
+}
+
+/**
+ * Rewrites a {| … |} wikitable as one line per row ("Header: cell; …" when
+ * the header row lines up, otherwise "cell | cell"), which the converter
+ * would otherwise delete.
+ * @param {string} table
+ * @returns {string}
+ */
+function _tableToLines(table) {
+    const headers = [];
+    const rows = [];
+    let current = null;
+    let caption = '';
+    for (const rawLine of table.split('\n').slice(1)) {
+        const line = rawLine.trim();
+        if (line.startsWith('|}')) break;
+        if (line.startsWith('|+')) {
+            caption = _tableCell(line.slice(2));
+        } else if (line.startsWith('|-')) {
+            if (current?.length) rows.push(current);
+            current = [];
+        } else if (line.startsWith('!')) {
+            const cells = line.slice(1).split('!!').map(_tableCell);
+            if (rows.length === 0 && !current?.length) headers.push(...cells);
+            else (current ??= []).push(...cells);
+        } else if (line.startsWith('|')) {
+            (current ??= []).push(..._splitTopLevel(line.slice(1), '||').map(_tableCell));
+        } else if (line && current?.length) {
+            current[current.length - 1] += ' ' + line;
+        }
+    }
+    if (current?.length) rows.push(current);
+
+    const lines = rows
+        .map(r => r.filter(Boolean).length === 0 ? '' : (headers.length === r.length
+            ? r.map((c, i) => (headers[i] ? `${headers[i]}: ${c}` : c)).filter(Boolean).join('; ')
+            : r.join(' | ')))
+        .filter(Boolean);
+    return `\n${caption ? `${caption}\n` : ''}${lines.join('\n')}\n`;
+}
+
+/**
+ * Converts structure the vendored converter would destroy into text it
+ * keeps: tables and infoboxes become lines, headings become placeholders.
+ * @param {string} wiki
+ * @returns {string}
+ */
+function _preserveWikiStructure(wiki) {
+    // Footnote references are citations, not content; the converter leaves
+    // fragments of them behind.
+    let s = String(wiki || '')
+        .replace(/<ref\b[^>]*\/>/gi, '')
+        .replace(/<ref\b[^>]*>[\s\S]*?<\/ref>/gi, '');
+
+    for (let i = s.indexOf('{|'); i !== -1; i = s.indexOf('{|', i + 1)) {
+        const end = _balancedEnd(s, i, '{|', '|}');
+        if (end === -1) break;
+        const replacement = _tableToLines(s.slice(i, end));
+        s = s.slice(0, i) + replacement + s.slice(end);
+    }
+
+    for (let i = s.indexOf('{{'); i !== -1; i = s.indexOf('{{', i + 1)) {
+        if (i > 0 && s[i - 1] !== '\n') continue;
+        const end = _balancedEnd(s, i, '{{', '}}');
+        if (end === -1) break;
+        const replacement = _infoboxToLines(s.slice(i + 2, end - 2));
+        if (replacement !== null) s = s.slice(0, i) + replacement + s.slice(end);
+    }
+
+    return s.replace(/^(={2,6})\s*(.+?)\s*\1\s*$/gm, (_, eq, title) => `${HEADING_PLACEHOLDER}${eq.length} ${title}`);
+}
+
+/**
+ * Converts a wikitext page body to plain text: the plugin's wikiToText
+ * pipeline, plus section headings (as markdown), infobox fields and table
+ * rows, which that pipeline deleted. Headings let chunking and Auto-Reformat
+ * split pages by section; infoboxes are usually a page's densest facts.
  *
  * @param {string} wiki - Raw wikitext
  * @returns {string} Plain text
  */
 export function wikiToText(wiki) {
     const parser = new wikitext2plaintext();
-    let rawContent = parser.parse(wiki);
+    let rawContent = parser.parse(_preserveWikiStructure(wiki));
+    rawContent = rawContent.replace(
+        new RegExp(`^\\s*${HEADING_PLACEHOLDER}(\\d) ?(.*)$`, 'gm'),
+        (_, level, title) => `\n${'#'.repeat(Number(level))} ${title.trim()}`,
+    );
 
     // Remove extra spaces between brackets
     rawContent = rawContent.replace(/\(\s+/g, '(');
