@@ -9,22 +9,17 @@
  * ============================================================================
  */
 
-import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, chat_metadata, extension_prompts } from '../../../../../script.js';
+import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
 import { getStringHash as calculateHash } from '../../../../utils.js';
-import { isUnitStrategy } from './chunking.js';
 import { extractChatKeywords } from './keyword-boost.js';
-import { cleanText } from './text-cleaning.js';
 import {
     getSavedHashes,
-    insertVectorItems,
     queryCollection,
-    queryActiveCollections,
-    deleteVectorItems,
 } from './core-vector-api.js';
 import { isBackendAvailable } from '../backends/backend-manager.js';
-import { registerCollection, getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
-import { isCollectionEnabled, filterActiveCollections, setCollectionLock } from './collection-metadata.js';
+import { getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
+import { isCollectionEnabled, filterActiveCollections } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { buildSearchContext, filterChunksByConditions, processChunkLinks } from './conditional-activation.js';
 import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';

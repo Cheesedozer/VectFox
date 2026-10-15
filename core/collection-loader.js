@@ -12,7 +12,7 @@
 import { extension_settings } from '../../../../extensions.js';
 import { getContext } from '../../../../extensions.js';
 import { characters, getRequestHeaders, saveSettingsDebounced, getCurrentChatId } from '../../../../../script.js';
-import { getSavedHashes, queryCollection } from './core-vector-api.js';
+import { getSavedHashes } from './core-vector-api.js';
 import {
     isCollectionEnabled,
     setCollectionEnabled,
@@ -35,7 +35,6 @@ import {
     matchesPatterns,
     parseRegistryKey,
     COLLECTION_PREFIXES,
-    getRegistryBackend,
     buildRegistryKey,
 } from './collection-ids.js';
 
