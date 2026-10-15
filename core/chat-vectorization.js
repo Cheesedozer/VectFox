@@ -31,7 +31,6 @@ import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
 
 import { createDebugData, setLastSearchDebug, addTrace, recordChunkFate } from '../ui/search-debug.js';
 import { Queue, LRUCache } from '../utils/data-structures.js';
-import { getRequestHeaders } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import AsyncUtils from '../utils/async-utils.js';
 import { log } from './log.js';
@@ -140,60 +139,6 @@ function trackChunkActivation(hash, messageCount) {
         count: history.count + 1,
         lastActivation: messageCount
     };
-}
-
-/**
- * Rerank chunks using BananaBread's reranking endpoint
- * @param {string} query The search query
- * @param {Array} chunks Array of chunks with text
- * @param {object} settings VECTFOX settings
- * @returns {Promise<Array>} Chunks with updated scores from reranker
- */
-async function rerankWithBananaBread(query, chunks, settings) {
-    if (!chunks.length) return chunks;
-
-    const apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : 'http://localhost:8008';
-    const documents = chunks.map(c => c.text);
-
-    try {
-        const response = await fetch('/api/plugins/similharity/rerank', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                apiUrl,
-                apiKey: settings.bananabread_api_key || '', // Include API key for authentication
-                query,
-                documents,
-                top_k: chunks.length
-            }),
-        });
-
-        if (!response.ok) {
-            log.warn('VectFox: Reranking failed, using original scores');
-            return chunks;
-        }
-
-        const data = await response.json();
-        if (!data.results || !Array.isArray(data.results)) {
-            return chunks;
-        }
-
-        // Apply rerank scores - results are sorted by score desc
-        // Each result has { index, score } where index refers to original position
-        const rerankedChunks = data.results.map(r => {
-            const chunk = { ...chunks[r.index] };
-            chunk.rerankScore = r.score;
-            chunk.originalScore = chunk.score;
-            chunk.score = r.score; // Replace score with rerank score
-            return chunk;
-        });
-
-        log.lifecycle(`VectFox: Reranked ${rerankedChunks.length} chunks with BananaBread`);
-        return rerankedChunks;
-    } catch (error) {
-        log.warn('VectFox: Reranking error:', error.message);
-        return chunks;
-    }
 }
 
 /**
@@ -1446,17 +1391,6 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
             log.verbose(`VectFox: Expanded ${expandedCount} summary chunks to parent text`);
             debugData.stages.afterSummaryExpansion = [...chunks];
             debugData.stats.summariesExpanded = expandedCount;
-        }
-
-        // === STAGE 5: BananaBread reranking (optional) ===
-        if (settings.source === 'bananabread' && settings.bananabread_rerank && chunks.length > 0) {
-            addTrace(debugData, 'rerank', 'Starting BananaBread reranking', {
-                chunks: chunks.length,
-                query: queryText.substring(0, 100)
-            });
-            chunks = await rerankWithBananaBread(queryText, chunks, settings);
-            debugData.stages.afterRerank = [...chunks];
-            addTrace(debugData, 'rerank', 'Reranking complete', { rerankedCount: chunks.length });
         }
 
         // === STAGE 6: Threshold filter ===

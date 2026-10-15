@@ -32,7 +32,7 @@ import { migrateRemovedProviderSettings } from './core/providers.js';
 import AsyncUtils from './utils/async-utils.js';
 
 // VectFox modules - UI
-import { renderSettings, openDiagnosticsModal, loadWebLlmModels, updateWebLlmStatus, refreshAutoSyncCheckbox } from './ui/ui-manager.js';
+import { renderSettings, openDiagnosticsModal, refreshAutoSyncCheckbox } from './ui/ui-manager.js';
 import { progressTracker } from './ui/progress-tracker.js';
 import { initializeVisualizer } from './ui/chunk-visualizer.js';
 import { initializeDatabaseBrowser } from './ui/database-browser.js';
@@ -78,9 +78,6 @@ const defaultSettings = {
     // VEC-6: Batch insert optimization
     insert_batch_size: 50, // Chunks per insert batch (50-100 recommended)
     document_glossary_injection: true, // Document content type only: prepend "Full Name (ACRONYM)" definitions to chunks that reference a bare acronym without it. See core/glossary-extractor.js.
-    togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
-    openai_model: 'text-embedding-ada-002',
-    electronhub_model: 'text-embedding-3-small',
     openrouter_model: 'openai/text-embedding-3-large',
     // OpenRouter key: stored in SECRET_KEYS.OPENROUTER (ST's shared slot, not in
     // defaults). Reader: core/api-keys.js::getOpenRouterApiKey. The legacy
@@ -88,7 +85,6 @@ const defaultSettings = {
     // re-appearing in settings.json — every UI handler does
     // Object.assign(extension_settings.vectfox, settings) which would re-add
     // any default-declared empty field after migrateLegacyApiKeys() deleted it.
-    cohere_model: 'embed-english-v3.0',
     ollama_model: 'mxbai-embed-large',
     ollama_keep: false,
     vllm_model: '',
@@ -99,17 +95,6 @@ const defaultSettings = {
     // post-2026-05-26. Migration drains any legacy `vllm_api_key` plaintext
     // into both slots on first load. Reader: core/api-keys.js::getCustomApiKey
     // (presence/masked-value indicator only; real key lives server-side).
-    webllm_model: '',
-    google_model: 'text-embedding-005',
-    bananabread_rerank: false,
-    // bananabread_api_key removed from defaults 2026-05-26 — the BananaBread
-    // provider is unselectable (commented out in providers.js) and the API
-    // key input handler had no matching HTML element. The deeper bananabread
-    // code paths still reference settings.bananabread_api_key defensively
-    // via `if (settings.bananabread_api_key) ...` guards; they handle the
-    // missing field gracefully. Migration drains-and-deletes any leftover
-    // plaintext from settings.json on first load. See Doc/dev_helper.md
-    // "Unresolved code" section for the full BananaBread state.
 
     // Chat vectorization
     enabled_chats: true,
@@ -262,7 +247,7 @@ const defaultSettings = {
     eventbase_debug_logging: false,
     eventbase_raw_llm_debug: false,              // Raw LLM reply + parser candidate logs (very noisy, per-window)
     vector_group_embedding_call: true,           // Path-agnostic insert toggle. true = legacy batched POST (1 POST per batch, cheaper, default — proven safe in production wire conditions when paired with hedge). false = parallel-split (1 POST per item, failure-contained, but N× the connection surface area which can amplify upstream routing stalls). Affects every call to insertVectorItems (EventBase ingestion AND content/document vectorization).
-    vector_hedge_after_ms: 15000,                // 0 = hedge disabled. Default 15000 (15s) fires a duplicate request when an embedding POST hasn't returned by the threshold; race-first-wins. Helps multi-upstream gateways (OpenRouter, SiliconFlow via vllm slot) recover from connection-level routing stalls in seconds instead of 120s. Skipped for local providers (ollama/transformers/llamacpp/koboldcpp). See plans/embedding-resilience-hedge-and-diagnostics.md §6.
+    vector_hedge_after_ms: 15000,                // 0 = hedge disabled. Default 15000 (15s) fires a duplicate request when an embedding POST hasn't returned by the threshold; race-first-wins. Helps multi-upstream gateways (OpenRouter, SiliconFlow via vllm slot) recover from connection-level routing stalls in seconds instead of 120s. Skipped for local providers (ollama/transformers). See plans/embedding-resilience-hedge-and-diagnostics.md §6.
     eventbase_disable_pipeline: false,           // false = pipelined extract↔insert (default, ~35% faster). true = serial (each batch finishes embedding before the next starts extracting; safer on slower vector DB backends). Read-site (eventbase-workflow.js) treats anything except explicit true as pipelined.
     eventbase_debug_qdrant_backend: false,
     debug_vectorizing_log: false,                // Verbose vectorization progress logs in console
@@ -705,15 +690,6 @@ jQuery(async () => {
     eventSource.on(event_types.MESSAGE_SENT, trigger('MESSAGE_SENT'));
     eventSource.on(event_types.MESSAGE_RECEIVED, trigger('MESSAGE_RECEIVED'));
     eventSource.on(event_types.MESSAGE_SWIPED, trigger('MESSAGE_SWIPED'));
-
-    // When WebLLM extension is loaded, refresh the model list
-    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, async (manifest) => {
-        if (settings.source === 'webllm' && manifest?.display_name === 'WebLLM') {
-            console.log('VectFox: WebLLM extension loaded, refreshing models...');
-            updateWebLlmStatus();
-            await loadWebLlmModels(settings);
-        }
-    });
 
     // When chat changes, refresh UI state to match settings
     eventSource.on(event_types.CHAT_CHANGED, () => {
