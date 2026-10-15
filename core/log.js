@@ -26,7 +26,7 @@ import { extension_settings } from '../../../../extensions.js';
 const VERBOSITY_LEVELS = { off: 0, lifecycle: 1, verbose: 2, trace: 3 };
 
 /** Valid domain keys — must match the `debug_domain.*` settings + UI toggles. */
-export const LOG_DOMAINS = ['raw_llm', 'qdrant', 'standard', 'injection', 'agent', 'rerank'];
+export const LOG_DOMAINS = ['raw_llm', 'qdrant', 'standard', 'injection', 'agent'];
 
 function getVerbosity() {
     const setting = extension_settings?.vectfox?.debug_verbosity;

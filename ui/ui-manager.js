@@ -977,18 +977,6 @@ export function renderSettings(containerId, settings, callbacks) {
                             </label>
                             <small class="VectFox_hint">Log [VectFox-Agentic] details: mode marker, narrative context preview (~50 words per turn), LLM round-trip ms, planner output JSON, Qdrant fanout ms, total agent overhead ms, per-query hit counts. Only fires when Agent Mode is enabled (AgentMode tab).</small>
 
-                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank" style="margin-top: 12px;">
-                                <input type="checkbox" id="VectFox_eventbase_compare_rerank" />
-                                <span>Compare native vs JS re-rank (debug)</span>
-                            </label>
-                            <small class="VectFox_hint">Requires native re-rank ON and Debug Logging ON. Runs the JS pipeline in parallel for each (collection, queryText) and logs top-K overlap + Spearman ρ + timings. Doubles per-collection cost — debug only.</small>
-
-                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank_verbose" style="margin-top: 12px;">
-                                <input type="checkbox" id="VectFox_eventbase_compare_rerank_verbose" />
-                                <span>Verbose compare logs (per-event breakdown)</span>
-                            </label>
-                            <small class="VectFox_hint">Adds per-event score-component breakdowns for events present in both top-K lists. Verbose — enable only when investigating a specific divergence.</small>
-
                         </div>
                     </div>
 
@@ -3631,25 +3619,6 @@ function bindSettingsEvents(settings, callbacks) {
         .prop('checked', !!settings.eventbase_native_rerank)
         .on('change', function() {
             settings.eventbase_native_rerank = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Compare-mode toggle (debug-only observability for native rerank).
-    // Drives debug_domain.rerank — read by log.domainEnabled('rerank') in eventbase-retrieval.js.
-    $('#VectFox_eventbase_compare_rerank')
-        .prop('checked', _ensureDebugDomain().rerank === true)
-        .on('change', function() {
-            _ensureDebugDomain().rerank = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Compare-mode verbose toggle.
-    $('#VectFox_eventbase_compare_rerank_verbose')
-        .prop('checked', !!settings.eventbase_compare_rerank_verbose)
-        .on('change', function() {
-            settings.eventbase_compare_rerank_verbose = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

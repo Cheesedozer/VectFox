@@ -233,11 +233,9 @@ const defaultSettings = {
         standard: false,    // similharity plugin internals
         injection: false,   // Chunk Path: what got injected, where, why
         agent: false,       // agent-mode planner / per-query hits
-        rerank: false,      // native vs JS re-rank comparison
     },
-    // Legacy debug flags below are KEPT as settings keys (some non-log code
-    // still reads eventbase_compare_rerank etc.), but the pure log-gate flags
-    // (eventbase_debug_logging, debug_vectorizing_log, *_debug, ...) are no
+    // The pure log-gate flags below (eventbase_debug_logging,
+    // debug_vectorizing_log, *_debug, ...) are no
     // longer consulted for logging — core/log.js ignores them. No migration
     // shim (user decision 2026-05-30).
     eventbase_debug_logging: false,
@@ -273,14 +271,6 @@ const defaultSettings = {
     // gracefully to the JS re-rank pipeline when the route returns an error.
     // See plans/qdrant-native-eventbase-rerank-formula.md.
     eventbase_native_rerank: true,
-    // Compare mode: when native rerank is on, also run the JS pipeline in
-    // parallel and log per-(collection,queryText) rank correlation + overlap.
-    // Doubles per-collection cost when on — debug only. Requires
-    // eventbase_debug_logging to surface logs.
-    eventbase_compare_rerank: false,
-    // Verbose compare-mode logging: also print per-event score breakdowns for
-    // events present in both top-K lists.
-    eventbase_compare_rerank_verbose: false,
 
     // ─── AgentMode (Agentic Retrieval) ──────────────────────────────────
     // Optional LLM planner step that consumes pre-search candidates plus
