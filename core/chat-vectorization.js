@@ -147,10 +147,10 @@ function trackChunkActivation(hash, messageCount) {
  * 4. Repeat until queue empty
  *
  * @param {object} settings VECTFOX settings
- * @param {number} batchSize Number of messages to process per call
+ * @param {string|null} [triggerEvent] SillyTavern event that triggered the sync (for logging)
  * @returns {Promise<object>} Progress info
  */
-export async function synchronizeChat(settings, batchSize = 5, triggerEvent = null) {
+export async function synchronizeChat(settings, triggerEvent = null) {
     log.lifecycle(`[AutoSync] synchronizeChat: invoked (trigger=${triggerEvent || 'unknown'})`);
 
     const chatId = getCurrentChatId();
@@ -1492,9 +1492,9 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
 /**
  * Vectorizes entire chat
  * @param {object} settings VECTFOX settings
- * @param {number} batchSize Batch size
+ * @param {AbortSignal|null} [abortSignal]
  */
-export async function vectorizeAll(settings, batchSize, abortSignal = null, {
+export async function vectorizeAll(settings, abortSignal = null, {
     startFromMessage = 1,
     parallelWindows = 1,
     progressPlan = null,

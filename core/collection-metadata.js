@@ -263,7 +263,6 @@ export function deleteCollectionMeta(collectionId) {
 
     if (extension_settings.vectfox.collections[collectionId]) {
         delete extension_settings.vectfox.collections[collectionId];
-        _updateChatLockIndex(collectionId, null, '*');
         saveSettingsDebounced();
         log.lifecycle(`VectFox: Deleted metadata for collection ${collectionId}`);
     }
@@ -488,50 +487,6 @@ export function cleanupOrphanedMeta(actualCollectionIds) {
 // ============================================================================
 
 /**
- * Maintains the reverse index: extension_settings.vectfox.chat_lock_index[chatId] = [collectionId, ...]
- * @param {string} collectionId
- * @param {string|null} addChatId - chat to add collectionId to (null = skip)
- * @param {string|'*'|null} removeChatId - chat to remove collectionId from, '*' = remove from all, null = skip
- */
-function _updateChatLockIndex(collectionId, addChatId, removeChatId) {
-    const store = extension_settings?.vectfox;
-    if (!store) return;
-    if (!store.chat_lock_index) store.chat_lock_index = {};
-    const idx = store.chat_lock_index;
-
-    if (addChatId) {
-        const key = String(addChatId);
-        if (!Array.isArray(idx[key])) idx[key] = [];
-        if (!idx[key].includes(collectionId)) idx[key].push(collectionId);
-    }
-
-    if (removeChatId === '*') {
-        for (const key of Object.keys(idx)) {
-            idx[key] = idx[key].filter(id => id !== collectionId);
-            if (idx[key].length === 0) delete idx[key];
-        }
-    } else if (removeChatId) {
-        const key = String(removeChatId);
-        if (Array.isArray(idx[key])) {
-            idx[key] = idx[key].filter(id => id !== collectionId);
-            if (idx[key].length === 0) delete idx[key];
-        }
-    }
-}
-
-/**
- * Returns the collection IDs locked to a given chat (O(1) lookup).
- * Only includes collections registered via setCollectionLock after this index was introduced.
- * @param {string} chatId
- * @returns {string[]}
- */
-export function getChatLockedCollections(chatId) {
-    const idx = extension_settings?.vectfox?.chat_lock_index;
-    if (!idx || !chatId) return [];
-    return Array.isArray(idx[String(chatId)]) ? [...idx[String(chatId)]] : [];
-}
-
-/**
  * Adds a chat to the collection's lock list. Supports multiple chats per collection.
  * Stores chat IDs in metadata field `lockedToChatIds` (array).
  * Automatically migrates old single-value `lockedToChatId` to array format.
@@ -566,7 +521,6 @@ export function setCollectionLock(collectionId, chatId) {
     }
 
     setCollectionMeta(collectionId, update);
-    _updateChatLockIndex(collectionId, chatId === null ? null : chatId, chatId === null ? '*' : null);
     log.lifecycle(`VectFox: Collection ${collectionId} locks updated:`, update.lockedToChatIds);
 }
 
@@ -594,7 +548,6 @@ export function removeCollectionLock(collectionId, chatId) {
     update.lockedToChatId = null; // Clear old format
 
     setCollectionMeta(collectionId, update);
-    _updateChatLockIndex(collectionId, null, chatId);
     log.lifecycle(`VectFox: Removed chat ${chatId} from collection ${collectionId} locks`);
 }
 

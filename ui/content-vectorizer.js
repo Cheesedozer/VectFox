@@ -3791,7 +3791,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             const legacyTotalChunks = Array.isArray(legacyChunks) ? legacyChunks.length : 0;
             const parallelWindows = parseInt($('#vectfox_cv_parallel_windows').val()) || 1;
 
-            await vectorizeAll(settings, legacyBatchSize, activeVectorizeAbortController.signal, {
+            await vectorizeAll(settings, activeVectorizeAbortController.signal, {
                 startFromMessage,
                 parallelWindows,
                 progressPlan: {

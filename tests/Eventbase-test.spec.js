@@ -178,9 +178,8 @@ test.beforeAll(async ({ browser }) => {
         const { deleteCollectionMeta } = await import(base + 'core/collection-metadata.js');
         const { deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { extension_settings } = await import('/scripts/extensions.js');
-        const { saveSettingsDebounced } = await import('/script.js');
         const vf = extension_settings?.vectfox;
-        if (!vf) return { leftover: [], indexOrphans: 0, indexChatsScanned: 0 };
+        if (!vf) return { leftover: [] };
 
         const listing = getCollectionListing(vf);
         const leftover = [];
@@ -203,52 +202,7 @@ test.beforeAll(async ({ browser }) => {
             try { unregisterCollection(cid); } catch {}
         }
 
-        // ─── chat_lock_index orphan sweep ────────────────────────────────
-        //
-        // The registry pass above catches collections still in
-        // `vf.collection_registry`. But the per-chat reverse map
-        // `vf.chat_lock_index[chatId] = [registryKey, …]` is maintained
-        // separately. Older tests (001-013) call vectorizeContent with
-        // scope='chat' which auto-locks → writes to the reverse index,
-        // then cleanup calls deleteContentCollection + deleteCollectionMeta
-        // + unregisterCollection but never removeCollectionLock. The result:
-        // the registry entry vanishes but the reverse-index entry orphans
-        // and accumulates across runs (caught 2026-05-24 — TEST 019
-        // baseline snapshot found 15 stale playwright_test entries in one
-        // chat's lock index).
-        //
-        // Functionally harmless (lookups go forward via meta.lockedToChatIds,
-        // not reverse) but it grows unbounded. Fixing in beforeAll rather
-        // than patching every old test means one place to maintain, and
-        // it also defends future tests that forget removeCollectionLock.
-        //
-        // Production user data is never touched — we only filter entries
-        // whose registryKey contains the unmistakable `playwright_test`
-        // substring. A real user collection name would never include it.
-        let indexOrphans = 0;
-        let indexChatsScanned = 0;
-        const idx = vf.chat_lock_index;
-        if (idx && typeof idx === 'object') {
-            for (const chatId of Object.keys(idx)) {
-                const arr = idx[chatId];
-                if (!Array.isArray(arr) || arr.length === 0) continue;
-                indexChatsScanned++;
-                const kept = arr.filter(rk => !isTestMarker(rk));
-                if (kept.length !== arr.length) {
-                    indexOrphans += (arr.length - kept.length);
-                    if (kept.length === 0) {
-                        delete idx[chatId];
-                    } else {
-                        idx[chatId] = kept;
-                    }
-                }
-            }
-            if (indexOrphans > 0) {
-                saveSettingsDebounced();
-            }
-        }
-
-        return { leftover, indexOrphans, indexChatsScanned };
+        return { leftover };
     });
 
     if (cleanupReport.leftover.length) {
@@ -256,10 +210,6 @@ test.beforeAll(async ({ browser }) => {
         cleanupReport.leftover.forEach(e => console.log(`  ${e.cid}`));
     } else {
         console.log('[setup] Nothing to clean up ✓');
-    }
-
-    if (cleanupReport.indexOrphans > 0) {
-        console.log(`[setup] Pruned ${cleanupReport.indexOrphans} stale playwright_test entries from chat_lock_index across ${cleanupReport.indexChatsScanned} chat(s)`);
     }
 
     console.log('[setup] Chat open — running tests ✓');
@@ -3549,13 +3499,12 @@ test('TEST 018 — shouldCollectionActivate priority chain (triggers / condition
 //  own-persona lorebook collection, locks it to the current chat, enables
 //  autoSync, then calls each refresh function multiple times back-to-back
 //  and asserts that the test collection's lock state, autoSync flag,
-//  enabled flag, AND the chat_lock_index reverse map are byte-identical
-//  before and after. The functions ARE allowed to update
+//  and enabled flag are byte-identical before and after. The functions ARE allowed to update
 //  `settings.enabled_world_info` — that's their job — so that field is
 //  snapshotted and restored separately rather than asserted against.
 //
 //  Pure metadata + DOM read/write, runs in every environment. Phases:
-//    1. refreshWIStatus() — lock + autoSync + chat_lock_index unchanged.
+//    1. refreshWIStatus() — lock + autoSync unchanged.
 //    2. refreshAutoSyncCheckbox(settings) — same assertion.
 //    3. Idempotency — call both 3× in a row, state still unchanged.
 
@@ -3614,11 +3563,6 @@ test('TEST 019 — WI / AutoSync refresh smoke: refresh paths do not mutate lock
             lockedToCharacterIds: JSON.stringify(
                 extension_settings?.vectfox?.collections?.[registryKey]?.lockedToCharacterIds || []
             ),
-            // The reverse-index entry for our chat (registryKeys locked to currentChatId).
-            chatLockIndex: JSON.stringify(
-                (extension_settings?.vectfox?.chat_lock_index?.[currentChatId] || [])
-                    .slice().sort()
-            ),
             autoSync: isCollectionAutoSyncEnabled(registryKey),
             enabled:  isCollectionEnabled(registryKey),
             // Boolean lock-presence check via the canonical getter so we
@@ -3661,7 +3605,6 @@ test('TEST 019 — WI / AutoSync refresh smoke: refresh paths do not mutate lock
                 const drift = [];
                 if (after.lockedToChatIds      !== before.lockedToChatIds)      drift.push(`lockedToChatIds:    ${before.lockedToChatIds} → ${after.lockedToChatIds}`);
                 if (after.lockedToCharacterIds !== before.lockedToCharacterIds) drift.push(`lockedToCharacterIds: ${before.lockedToCharacterIds} → ${after.lockedToCharacterIds}`);
-                if (after.chatLockIndex        !== before.chatLockIndex)        drift.push(`chat_lock_index[${currentChatId}]: ${before.chatLockIndex} → ${after.chatLockIndex}`);
                 if (after.autoSync             !== before.autoSync)             drift.push(`autoSync: ${before.autoSync} → ${after.autoSync}`);
                 if (after.enabled              !== before.enabled)              drift.push(`enabled: ${before.enabled} → ${after.enabled}`);
                 if (after.isLockedToChat       !== before.isLockedToChat)       drift.push(`isLockedToChat: ${before.isLockedToChat} → ${after.isLockedToChat}`);
@@ -3696,7 +3639,7 @@ test('TEST 019 — WI / AutoSync refresh smoke: refresh paths do not mutate lock
             if (!compare(afterRepeat, 'idempotency loop (3×)')) return;
             console.log(`${TEST} Phase 3 ✓ 3× idempotency: state byte-identical after 6 total refresh calls`);
 
-            console.log(`${TEST} [PASS] WI & AutoSync refresh paths are pure UI mirrors — locks, character locks, chat_lock_index, autoSync, and enabled flags are all unchanged after refresh calls. The .trigger('change') footgun is not present.`);
+            console.log(`${TEST} [PASS] WI & AutoSync refresh paths are pure UI mirrors — locks, character locks, autoSync, and enabled flags are all unchanged after refresh calls. The .trigger('change') footgun is not present.`);
         } finally {
             try {
                 try { removeCollectionLock(registryKey, currentChatId); } catch {}

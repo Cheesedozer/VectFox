@@ -660,9 +660,8 @@ export async function importCollection(exportData, settings, options = {}) {
         const registryKey = buildRegistryKey(collectionId, settings);
 
         // Import is treated as a conversion → activation state must start fresh.
-        // Clear any chat locks from a prior collection with the same ID first so the
-        // chat_lock_index reverse map stays consistent; lockedToCharacterIds + autoSync
-        // are zeroed via importedMeta below (no reverse map to maintain).
+        // Clear any chat locks from a prior collection with the same ID first;
+        // lockedToCharacterIds + autoSync are zeroed via importedMeta below.
         clearCollectionLock(registryKey);
 
         // Collection-level metadata
