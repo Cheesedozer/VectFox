@@ -114,7 +114,12 @@ export function injectGlossary(chunks, glossary) {
 
         if (linesToAdd.length === 0) return chunk;
 
-        const newText = `${linesToAdd.join('\n')}\n${text}`;
+        // Auto-Reformat entries open with their "Name (type)" heading line;
+        // keep it first so the entry still starts with what it is about.
+        const headingEnd = chunk?.metadata?.entry_type ? text.indexOf('\n') : -1;
+        const newText = headingEnd > 0
+            ? `${text.slice(0, headingEnd)}\n${linesToAdd.join('\n')}${text.slice(headingEnd)}`
+            : `${linesToAdd.join('\n')}\n${text}`;
         return typeof chunk === 'string' ? newText : { ...chunk, text: newText };
     });
 }

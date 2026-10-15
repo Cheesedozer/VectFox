@@ -76,6 +76,12 @@ describe('extractGlossary', () => {
 describe('injectGlossary', () => {
     const glossary = [{ acronym: 'FHOB', fullName: 'Federal Hero Oversight Bureau' }];
 
+    it('keeps an Auto-Reformat entry heading first, inserting the glossary line after it', () => {
+        const chunk = { text: 'Bulwark (character)\nThe FHOB licenses Bulwark.', metadata: { entry_type: 'character' } };
+        const [out] = injectGlossary([chunk], glossary);
+        expect(out.text).toBe('Bulwark (character)\n[Glossary: FHOB = Federal Hero Oversight Bureau]\nThe FHOB licenses Bulwark.');
+    });
+
     it('prepends a glossary line to a chunk that references the bare acronym', () => {
         const chunks = [{ text: 'Threat Level (FHOB): Severe', metadata: {} }];
         const result = injectGlossary(chunks, glossary);
