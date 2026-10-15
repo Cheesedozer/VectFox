@@ -41,50 +41,10 @@ function _parseCsv(text) {
 }
 
 /**
- * Renders {text, importance}[] keywords as a comma-separated string for the
- * editable text field, ordered highest-importance first so the field's
- * left-to-right order communicates rank without a second control.
- * @param {Array<{text: string, importance: number}|string>} keywords
- * @returns {string}
- */
-function _keywordsToCsv(keywords) {
-    if (!Array.isArray(keywords)) return '';
-    return [...keywords]
-        .sort((a, b) => (typeof b === 'object' ? b?.importance ?? 5 : 5) - (typeof a === 'object' ? a?.importance ?? 5 : 5))
-        .map(k => (typeof k === 'string' ? k : k?.text))
-        .filter(Boolean)
-        .join(', ');
-}
-
-/**
- * Re-parses the edited keywords CSV field back into {text, importance}[].
- * A keyword whose text is unchanged from the original record keeps its
- * original importance; new/retyped text defaults to mid-scale importance 5
- * (there's no per-keyword numeric control in this single text field).
- * @param {string} text
- * @param {Array<{text: string, importance: number}|string>} originalKeywords
- * @returns {Array<{text: string, importance: number}>}
- */
-function _parseKeywordsCsv(text, originalKeywords) {
-    const originalByKey = new Map(
-        (Array.isArray(originalKeywords) ? originalKeywords : []).map(k => {
-            const kText = typeof k === 'string' ? k : k?.text || '';
-            const kImportance = typeof k === 'string' ? 5 : k?.importance ?? 5;
-            return [kText.toLowerCase(), kImportance];
-        })
-    );
-    return _parseCsv(text).map(kwText => ({
-        text: kwText,
-        importance: originalByKey.get(kwText.toLowerCase()) ?? 5,
-    }));
-}
-
-/**
  * Renders {target, type}[] relationships as a comma-separated string for the
- * editable text field — "Schutzstaffel (parent organization), Oberkatze".
+ * editable text field — "Solaris (is the mentor of), Ironclad Agency".
  * The "(type)" suffix is omitted when type is empty. Tolerates legacy v1
- * plain strings (rendered as-is). Same single-text-field idiom as
- * _keywordsToCsv above.
+ * plain strings (rendered as-is).
  * @param {Array<{target: string, type: string}|string>} relationships
  * @returns {string}
  */
@@ -126,7 +86,7 @@ function _parseRelationshipsCsv(text) {
  *
  * @param {object} params
  * @param {object[]} params.chunks - Validated reformatted records from reformatDocument()
- *        (each carries entry_type/name/aliases/affiliation/traits/relationships/keywords/body
+ *        (each carries entry_type/name/aliases/affiliation/relationships/keywords/hidden/body
  *        plus _nameGrounded/_ungroundedAliases from the hard hallucination guardrail, and
  *        _ungroundedKeywords from the softer, advisory-only keyword grounding check)
  * @param {string[]} params.warnings - Batch-level warnings (truncation, per-batch failures)
@@ -255,16 +215,18 @@ function _recordCardHtml(record) {
                 <input type="text" class="vectfox-rr-field" data-field="affiliation" value="${_escapeHtml(record.affiliation)}" />
             </div>
             <div class="vectfox-rr-field-row">
-                <label>Traits</label>
-                <input type="text" class="vectfox-rr-field" data-field="traits" value="${_escapeHtml(_csv(record.traits))}" placeholder="comma-separated" />
-            </div>
-            <div class="vectfox-rr-field-row">
                 <label>Relationships</label>
-                <input type="text" class="vectfox-rr-field" data-field="relationships" value="${_escapeHtml(_relationshipsToCsv(record.relationships))}" placeholder="comma-separated, e.g. Target Name (relation type)" />
+                <input type="text" class="vectfox-rr-field" data-field="relationships" value="${_escapeHtml(_relationshipsToCsv(record.relationships))}" placeholder="comma-separated, e.g. Solaris (is the mentor of)" />
             </div>
             <div class="vectfox-rr-field-row">
                 <label>Keywords</label>
-                <input type="text" class="vectfox-rr-field" data-field="keywords" value="${_escapeHtml(_keywordsToCsv(record.keywords))}" placeholder="comma-separated, most important first" />
+                <input type="text" class="vectfox-rr-field" data-field="keywords" value="${_escapeHtml(_csv(record.keywords))}" placeholder="comma-separated" />
+            </div>
+            <div class="vectfox-rr-field-row">
+                <label class="checkbox_label" title="Stored with a [Hidden truth, not public knowledge] tag so the roleplay model knows characters don't know it">
+                    <input type="checkbox" class="vectfox-rr-hidden-toggle" ${record.hidden ? 'checked' : ''} />
+                    <span>Hidden truth (spoiler / secret)</span>
+                </label>
             </div>
             <div class="vectfox-rr-field-row vectfox-rr-field-row-body">
                 <label>Body</label>
@@ -314,9 +276,9 @@ function _collectRecordFromCard(cardEl) {
         name: String(get('name') || '').trim(),
         aliases: _parseCsv(get('aliases')),
         affiliation: String(get('affiliation') || '').trim(),
-        traits: _parseCsv(get('traits')),
         relationships: _parseRelationshipsCsv(get('relationships')),
-        keywords: _parseKeywordsCsv(get('keywords'), original.keywords),
+        keywords: _parseCsv(get('keywords')),
+        hidden: card.find('.vectfox-rr-hidden-toggle').prop('checked'),
         body: String(get('body') || '').trim(),
         _accepted: card.find('.vectfox-rr-accept-toggle').prop('checked'),
     };

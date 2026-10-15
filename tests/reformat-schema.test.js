@@ -1,27 +1,22 @@
 /**
  * Unit tests for core/reformat-schema.js
  *
- * Covers the Auto-Reformat schema validator, hallucination guardrail
- * (computeNameVerification), and prompt builder. Pure module, no ST globals
- * — no mocking required (same convention as glossary-extractor.test.js).
+ * Covers the Auto-Reformat validator, stored-text builder, grounding and
+ * coverage guardrails, and prompt builders. Pure module, no ST globals.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
     REFORMAT_ENTRY_TYPES,
-    REFORMAT_HIERARCHY_REL_TYPES,
+    HIDDEN_TRUTH_TAG,
     validateReformattedChunk,
     computeNameVerification,
     computeKeywordVerification,
     buildReformatPrompt,
     buildRepairPrompt,
-    buildRelationalClause,
+    buildStoredText,
     buildLinkingPrompt,
     computeBatchCoverage,
-    sanitizeTraits,
-    TRAIT_MAX_CHARS,
-    TRAITS_MAX_COUNT,
-    TRAIT_BODY_OVERLAP_MIN_CHARS,
 } from '../core/reformat-schema.js';
 
 describe('validateReformattedChunk', () => {
@@ -29,11 +24,11 @@ describe('validateReformattedChunk', () => {
         const { ok, errors, chunk } = validateReformattedChunk({
             entry_type: 'character',
             name: '  Bulwark  ',
-            aliases: ['Eleanor Graves', 'Eleanor Graves', '  '],
+            aliases: ['Eleanor Graves', 'Eleanor Graves', '  ', 'bulwark'],
             affiliation: 'Ironclad Agency',
-            traits: ['Transformation-type Spark'],
             relationships: [],
-            keywords: [{ text: 'Ironclad', importance: 6 }, { text: 'Fortress', importance: 9 }],
+            keywords: ['Ironclad', 'Fortress', 'fortress'],
+            hidden: false,
             body: 'Bulwark is the lead hero of Ironclad Agency.',
         });
 
@@ -42,47 +37,35 @@ describe('validateReformattedChunk', () => {
         expect(chunk).toEqual({
             entry_type: 'character',
             name: 'Bulwark',
-            aliases: ['Eleanor Graves'], // deduped + trimmed + empties dropped
+            aliases: ['Eleanor Graves'], // deduped, trimmed, empties and the name itself dropped
             affiliation: 'Ironclad Agency',
-            traits: ['Transformation-type Spark'],
             relationships: [],
-            keywords: [{ text: 'Ironclad', importance: 6 }, { text: 'Fortress', importance: 9 }],
+            keywords: ['Ironclad', 'Fortress'],
+            hidden: false,
             body: 'Bulwark is the lead hero of Ironclad Agency.',
         });
     });
 
-    it('accepts legacy plain-string keywords and defaults their importance to 5', () => {
-        const { chunk } = validateReformattedChunk({
-            entry_type: 'concept', name: 'X', body: 'Y',
-            keywords: ['legacy term'],
-        });
-        expect(chunk.keywords).toEqual([{ text: 'legacy term', importance: 5 }]);
+    it('drops fields that are no longer part of the schema (traits)', () => {
+        const { chunk } = validateReformattedChunk({ entry_type: 'concept', name: 'X', body: 'Y', traits: ['old'] });
+        expect(chunk).not.toHaveProperty('traits');
     });
 
-    it('clamps out-of-range keyword importance to 1-10 and rounds fractional values', () => {
-        const { chunk } = validateReformattedChunk({
+    it('accepts legacy {text, importance} keywords as plain strings without a coercion note', () => {
+        const { chunk, errors } = validateReformattedChunk({
             entry_type: 'concept', name: 'X', body: 'Y',
-            keywords: [
-                { text: 'too high', importance: 99 },
-                { text: 'too low', importance: -5 },
-                { text: 'fractional', importance: 6.7 },
-                { text: 'not a number', importance: 'high' },
-            ],
+            keywords: [{ text: 'legacy term', importance: 9 }, 'plain'],
         });
-        expect(chunk.keywords).toEqual([
-            { text: 'too high', importance: 10 },
-            { text: 'too low', importance: 1 },
-            { text: 'fractional', importance: 7 },
-            { text: 'not a number', importance: 5 },
-        ]);
+        expect(chunk.keywords).toEqual(['legacy term', 'plain']);
+        expect(errors).toEqual([]);
     });
 
-    it('dedupes keywords by case-insensitive text, keeping the first occurrence', () => {
-        const { chunk } = validateReformattedChunk({
-            entry_type: 'concept', name: 'X', body: 'Y',
-            keywords: [{ text: 'Fortress', importance: 9 }, { text: 'FORTRESS', importance: 2 }],
-        });
-        expect(chunk.keywords).toEqual([{ text: 'Fortress', importance: 9 }]);
+    it('reads hidden as a boolean, accepting the string "true"', () => {
+        const base = { entry_type: 'concept', name: 'X', body: 'Y' };
+        expect(validateReformattedChunk({ ...base, hidden: true }).chunk.hidden).toBe(true);
+        expect(validateReformattedChunk({ ...base, hidden: 'true' }).chunk.hidden).toBe(true);
+        expect(validateReformattedChunk({ ...base, hidden: 'no' }).chunk.hidden).toBe(false);
+        expect(validateReformattedChunk(base).chunk.hidden).toBe(false);
     });
 
     it('rejects a non-object input', () => {
@@ -124,13 +107,13 @@ describe('validateReformattedChunk', () => {
         }
     });
 
-    it('defaults affiliation to an empty string when missing', () => {
+    it('defaults optional fields when missing', () => {
         const { chunk } = validateReformattedChunk({ entry_type: 'concept', name: 'X', body: 'Y' });
         expect(chunk.affiliation).toBe('');
         expect(chunk.aliases).toEqual([]);
-        expect(chunk.traits).toEqual([]);
         expect(chunk.relationships).toEqual([]);
         expect(chunk.keywords).toEqual([]);
+        expect(chunk.hidden).toBe(false);
     });
 
     it('accepts canonical {target, type} relationships without warnings and never produces "[object Object]"', () => {
@@ -189,19 +172,19 @@ describe('validateReformattedChunk', () => {
         expect(errors.some(e => /relationships.*no resolvable target/.test(e))).toBe(true);
     });
 
-    it('applies the object-coercion safety net to aliases and traits', () => {
+    it('applies the object-coercion safety net to aliases and keywords', () => {
         const { chunk, errors } = validateReformattedChunk({
             entry_type: 'character',
             name: 'X',
             body: 'Y',
             aliases: [{ name: 'The Masked One' }],
-            traits: [{ description: 'Superhuman strength' }],
+            keywords: [{ description: 'Superhuman strength' }],
         });
 
         expect(chunk.aliases).toEqual(['The Masked One']);
-        expect(chunk.traits).toEqual(['Superhuman strength']);
+        expect(chunk.keywords).toEqual(['Superhuman strength']);
         expect(errors.some(e => /aliases.*object/.test(e))).toBe(true);
-        expect(errors.some(e => /traits.*object/.test(e))).toBe(true);
+        expect(errors.some(e => /keywords.*object/.test(e))).toBe(true);
     });
 });
 
@@ -322,25 +305,33 @@ describe('computeKeywordVerification', () => {
 });
 
 describe('buildReformatPrompt', () => {
-    it('substitutes {{text}} into the default template', () => {
+    it('substitutes {{text}} into the default template and leaves no placeholders', () => {
         const prompt = buildReformatPrompt('SOME SOURCE TEXT HERE');
         expect(prompt).toContain('SOME SOURCE TEXT HERE');
         expect(prompt).toContain('entry_type');
-        expect(prompt).not.toContain('{{text}}');
+        expect(prompt).not.toMatch(/\{\{(text|notes|continuationNote)\}\}/);
     });
 
-    it('has no continuation note when batchContext is not provided', () => {
-        const prompt = buildReformatPrompt('body text');
-        expect(prompt).not.toMatch(/continuation of section/i);
+    it('has no notes when there is no context to give', () => {
+        expect(buildReformatPrompt('body text')).not.toContain('NOTE:');
+    });
+
+    it('tells the model where the batch sits in the document', () => {
+        const prompt = buildReformatPrompt('x', { headingPath: 'The Settlement › Foundation › Daily life' });
+        expect(prompt).toContain('comes from this place in the document: The Settlement › Foundation › Daily life');
+    });
+
+    it('adds transcript handling only for YouTube content', () => {
+        expect(buildReformatPrompt('x', { contentType: 'youtube' })).toMatch(/NOTE: This TEXT is a video transcript/);
+        expect(buildReformatPrompt('x', { contentType: 'document' })).not.toMatch(/NOTE: This TEXT is a video transcript/);
     });
 
     it('injects a continuation note listing already-extracted names', () => {
         const prompt = buildReformatPrompt('more text', {
             batchContext: { sectionTitle: 'Notable US Hero Agencies', alreadyExtractedNames: ['Columbia', 'Bulwark'] },
         });
-        expect(prompt).toMatch(/continuation of section "Notable US Hero Agencies"/);
+        expect(prompt).toMatch(/continues section "Notable US Hero Agencies"/);
         expect(prompt).toContain('Columbia, Bulwark');
-        expect(prompt).toMatch(/Do NOT re-emit them/);
     });
 
     it('shows "(none yet)" when the continuation has no prior names', () => {
@@ -355,140 +346,71 @@ describe('buildReformatPrompt', () => {
         expect(prompt).toBe('Custom instructions.\n\nMY TEXT');
     });
 
-    it('teaches rewrite-not-verbatim: facts preserved, prose rewritten, meta-instructions dropped', () => {
-        const prompt = buildReformatPrompt('x');
-        expect(prompt).toContain('REWRITE the prose');
-        expect(prompt).toContain('INFORMATIONAL, not instructional');
-        expect(prompt).not.toContain('VERBATIM');
-        // the no-invent/no-omit fact contract must survive the rewrite change
-        expect(prompt).toMatch(/Never invent details/i);
-        expect(prompt).toMatch(/never omit a named detail/i);
-    });
-
-    it('teaches the topic-hierarchy vocabulary exported as REFORMAT_HIERARCHY_REL_TYPES', () => {
-        const prompt = buildReformatPrompt('x');
-        for (const relType of REFORMAT_HIERARCHY_REL_TYPES) {
-            expect(prompt).toContain(`"${relType}"`);
-        }
-        expect(prompt).toContain('TOPIC HIERARCHY');
-        // anti-fragmentation guard: list-item subtypes stay in the parent body
-        expect(prompt).toMatch(/one-line list item does NOT get its own entry/);
-    });
-});
-
-describe('sanitizeTraits', () => {
-    const body = 'Bulwark, civilian name Eleanor Graves, is the lead hero of Ironclad Agency in New York City. Her Transformation-type Spark, Fortress, allows Bulwark to turn her hide into indestructible metal.';
-
-    it('drops traits longer than TRAIT_MAX_CHARS and reports a note', () => {
-        const errors = [];
-        const longTrait = 'x'.repeat(TRAIT_MAX_CHARS + 1);
-        const out = sanitizeTraits(['short trait', longTrait], body, errors);
-        expect(out).toEqual(['short trait']);
-        expect(errors.some(e => /traits: 1 item\(s\) over/.test(e))).toBe(true);
-    });
-
-    it('drops a trait that duplicates a substantial span of the body (paste-body-into-traits failure)', () => {
-        const errors = [];
-        // ≥ TRAIT_BODY_OVERLAP_MIN_CHARS but under TRAIT_MAX_CHARS, and contained in body
-        const bodyCopy = 'is the lead hero of Ironclad Agency in New York City. Her Transformation-type Spark, Fortress';
-        expect(bodyCopy.length).toBeGreaterThanOrEqual(TRAIT_BODY_OVERLAP_MIN_CHARS);
-        expect(bodyCopy.length).toBeLessThanOrEqual(TRAIT_MAX_CHARS);
-        const out = sanitizeTraits([bodyCopy, 'Spark: Fortress'], body, errors);
-        expect(out).toEqual(['Spark: Fortress']);
-        expect(errors.some(e => /duplicated a span of the body/.test(e))).toBe(true);
-    });
-
-    it('keeps short traits that legitimately echo body phrases', () => {
-        const out = sanitizeTraits(['lead hero of Ironclad Agency'], body, []);
-        expect(out).toEqual(['lead hero of Ironclad Agency']);
-    });
-
-    it('caps the array at TRAITS_MAX_COUNT keeping the first entries', () => {
-        const errors = [];
-        const many = Array.from({ length: TRAITS_MAX_COUNT + 5 }, (_, i) => `trait ${i}`);
-        const out = sanitizeTraits(many, body, errors);
-        expect(out).toHaveLength(TRAITS_MAX_COUNT);
-        expect(out[0]).toBe('trait 0');
-        expect(errors.some(e => /capped at/.test(e))).toBe(true);
-    });
-
-    it('end-to-end: validateReformattedChunk sanitizes a body-pasted-into-traits payload without rejecting it', () => {
-        const entryBody = 'The process of transforming into an individual dumb brute or stud, perfectly happy to work out and perform physical tasks mindlessly. Frequently involves an exaggerated, hypersexualized male form.';
-        const { ok, errors, chunk } = validateReformattedChunk({
-            entry_type: 'concept',
-            name: 'Himbofication',
-            aliases: [],
-            affiliation: '',
-            traits: [entryBody, 'male equivalent of bimbofication'],
-            relationships: [],
-            keywords: [],
-            body: entryBody,
+    it('fills the legacy {{continuationNote}} slot of older custom prompts', () => {
+        const prompt = buildReformatPrompt('MY TEXT', {
+            customPrompt: 'Custom.\n{{continuationNote}}TEXT: {{text}}',
+            headingPath: 'Doc › Part',
         });
-        expect(ok).toBe(true);
-        expect(chunk.traits).toEqual(['male equivalent of bimbofication']);
-        expect(errors.some(e => /traits/.test(e))).toBe(true);
+        expect(prompt).toMatch(/^Custom\.\nNOTE: This TEXT comes from/);
+        expect(prompt).toContain('TEXT: MY TEXT');
+    });
+
+    it('appends the text when a custom prompt has no {{text}} slot', () => {
+        const prompt = buildReformatPrompt('MY TEXT', { customPrompt: 'Extract entries as JSON.' });
+        expect(prompt).toBe('Extract entries as JSON.\n\nTEXT:\nMY TEXT');
+    });
+
+    it('puts notes in front of the text when a custom prompt has no notes slot', () => {
+        const prompt = buildReformatPrompt('MY TEXT', { customPrompt: 'Go:\n{{text}}', contentType: 'youtube' });
+        expect(prompt).toMatch(/^Go:\nNOTE: This TEXT is a video transcript[\s\S]*\n\nMY TEXT$/);
+    });
+
+    it('keeps the fact contract and asks for attribution, quotations and hidden entries', () => {
+        const prompt = buildReformatPrompt('x');
+        expect(prompt).toMatch(/Keep every fact/);
+        expect(prompt).toMatch(/quotations word for word/);
+        expect(prompt).toMatch(/Keep attribution/);
+        expect(prompt).toMatch(/"hidden": true/);
+        expect(prompt).toMatch(/Skip sections written for the author/);
+    });
+
+    it('no longer asks for traits, importance scores or "subtopic of" links', () => {
+        const prompt = buildReformatPrompt('x');
+        expect(prompt).not.toMatch(/traits/);
+        expect(prompt).not.toMatch(/importance/);
+        expect(prompt).not.toMatch(/subtopic of/);
     });
 });
 
-describe('hierarchy relationship normalization', () => {
-    it('canonicalizes "sub-topic of" spelling variants to "subtopic of"', () => {
-        const { chunk } = validateReformattedChunk({
-            entry_type: 'concept', name: 'Transformation Sparks', body: 'Body.',
-            relationships: [
-                { target: 'Spark Classification System', type: 'Sub-Topic Of' },
-                { target: 'Spark Classification System', type: 'subtopic of' }, // dupe after canonicalization
-                { target: 'Something Else', type: 'variant of' },
-            ],
-        });
-        expect(chunk.relationships).toEqual([
-            { target: 'Spark Classification System', type: 'subtopic of' },
-            { target: 'Something Else', type: 'variant of' },
-        ]);
-    });
-});
+describe('buildStoredText', () => {
+    const record = {
+        entry_type: 'character',
+        name: 'Bulwark',
+        affiliation: 'Ironclad Agency',
+        relationships: [{ target: 'Solaris', type: 'is the mentor of' }, { target: 'Ember Corps', type: '' }, 'Legacy Target'],
+        hidden: false,
+        body: 'Bulwark turns her skin to metal.',
+    };
 
-describe('buildRelationalClause', () => {
-    it('returns empty string when both affiliation and relationships are empty', () => {
-        expect(buildRelationalClause('', [])).toBe('');
-        expect(buildRelationalClause('', undefined)).toBe('');
-        expect(buildRelationalClause(undefined, undefined)).toBe('');
+    it('heads the text with the name and type and writes relationships as sentences', () => {
+        expect(buildStoredText(record)).toBe([
+            'Bulwark (character)',
+            'Bulwark turns her skin to metal.',
+            'Bulwark belongs to Ironclad Agency. Bulwark is the mentor of Solaris. Bulwark is connected to Ember Corps. Bulwark is connected to Legacy Target.',
+        ].join('\n'));
     });
 
-    it('includes only the affiliation clause when relationships is empty', () => {
-        expect(buildRelationalClause('The Reich', [])).toBe(' Affiliated with The Reich.');
+    it('tags hidden entries', () => {
+        const text = buildStoredText({ ...record, hidden: true, affiliation: '', relationships: [] });
+        expect(text).toBe(`Bulwark (character)\n${HIDDEN_TRUTH_TAG}\nBulwark turns her skin to metal.`);
     });
 
-    it('renders {target, type} with the type parenthesized, joined by semicolons', () => {
-        expect(buildRelationalClause('', [
-            { target: 'Schutzstaffel', type: 'parent organization' },
-            { target: 'Oberkatze', type: 'leader' },
-        ])).toBe(' Related: Schutzstaffel (parent organization); Oberkatze (leader).');
-    });
-
-    it('omits the parenthetical when type is empty', () => {
-        expect(buildRelationalClause('', [{ target: 'Oberkatze', type: '' }]))
-            .toBe(' Related: Oberkatze.');
-    });
-
-    it('tolerates legacy plain-string relationships, rendering them as-is', () => {
-        expect(buildRelationalClause('', ['Leader of the Inner Circle', { target: 'Reich', type: 'ally' }]))
-            .toBe(' Related: Leader of the Inner Circle; Reich (ally).');
-    });
-
-    it('combines affiliation and relationships in one trailer', () => {
-        expect(buildRelationalClause('Reich', [{ target: 'Inner Circle', type: 'leader' }]))
-            .toBe(' Affiliated with Reich. Related: Inner Circle (leader).');
-    });
-
-    it('trims whitespace and drops entries with no target', () => {
-        expect(buildRelationalClause('  Reich  ', [{ target: '  ', type: 'x' }, { target: ' Inner Circle ', type: '' }, null]))
-            .toBe(' Affiliated with Reich. Related: Inner Circle.');
-    });
-
-    it('is appendable directly onto a body string with a single leading space', () => {
-        const clause = buildRelationalClause('Reich', [{ target: 'Inner Circle', type: 'leader' }]);
-        const body = 'Oberkatze rose to power through the movement.';
-        expect(body + clause).toBe('Oberkatze rose to power through the movement. Affiliated with Reich. Related: Inner Circle (leader).');
+    it('numbers the parts of a split entry and states relationships on the first part only', () => {
+        const first = buildStoredText(record, { part: 0, total: 3 });
+        const second = buildStoredText({ ...record, body: 'More.' }, { part: 1, total: 3 });
+        expect(first.split('\n')[0]).toBe('Bulwark (character), part 1 of 3');
+        expect(first).toContain('is the mentor of Solaris');
+        expect(second).toBe('Bulwark (character), part 2 of 3\nMore.');
     });
 });
 
@@ -498,18 +420,18 @@ describe('buildLinkingPrompt', () => {
         { name: 'Capital Punishment in the Reich', entry_type: 'concept', aliases: [] },
     ];
 
-    it('lists every catalog entity with its type, including aliases when present', () => {
+    it('lists every entry by name only, with aliases set apart', () => {
         const prompt = buildLinkingPrompt('Some section text.', catalog);
-        expect(prompt).toContain('- Victory Plaza [location] (also known as: Times Square)');
-        expect(prompt).toContain('- Capital Punishment in the Reich [concept]');
-        expect(prompt).not.toContain('Capital Punishment in the Reich [concept] (also known as');
+        expect(prompt).toContain('- Victory Plaza   (also called: Times Square)');
+        expect(prompt).toContain('- Capital Punishment in the Reich\n');
+        expect(prompt).not.toMatch(/\[(location|concept)\]/);
     });
 
-    it('embeds the batch text and asks for {source, target, type} triples only', () => {
+    it('embeds the batch text and asks for one-direction {source, target, type} links', () => {
         const prompt = buildLinkingPrompt('Executions are held in Victory Plaza.', catalog);
         expect(prompt).toContain('Executions are held in Victory Plaza.');
         expect(prompt).toMatch(/"source":.*"target":.*"type":/s);
-        expect(prompt).toMatch(/MUST both be names from the CATALOG/);
+        expect(prompt).toMatch(/Give each connection once/);
     });
 
     it('handles an empty catalog without crashing', () => {
@@ -604,7 +526,6 @@ describe('computeBatchCoverage', () => {
 // ---------------------------------------------------------------------------
 // Repair prompt
 // ---------------------------------------------------------------------------
-
 describe('buildRepairPrompt', () => {
     const flagged = [
         {
@@ -614,24 +535,25 @@ describe('buildRepairPrompt', () => {
         },
     ];
 
-    it('rides the full extraction template: schema fields, rules, and the flagged text all present', () => {
+    it('rides the full extraction template with the repair note and flagged text', () => {
         const prompt = buildRepairPrompt(flagged, { alreadyExtractedNames: ['Male Sympathizers'] });
-        // full schema must be restated — LLM calls are stateless
         expect(prompt).toContain('entry_type');
-        expect(prompt).toContain('TOPIC HIERARCHY');
-        // the repair note and its payload
-        expect(prompt).toMatch(/REPAIR PASS/);
+        expect(prompt).toMatch(/missed some of its content/);
         expect(prompt).toContain('Male Sympathizers');
         expect(prompt).toContain('male-lover; gender traitor');
-        // flagged section text is the {{text}} payload
         expect(prompt).toContain('The arsenal includes "male-lover" and "gender traitor".');
-        expect(prompt).not.toContain('{{text}}');
-        expect(prompt).not.toContain('{{continuationNote}}');
+        expect(prompt).not.toMatch(/\{\{(text|notes|continuationNote)\}\}/);
+    });
+
+    it('keeps the batch context notes', () => {
+        const prompt = buildRepairPrompt(flagged, { headingPath: 'Doc › Section', contentType: 'youtube' });
+        expect(prompt).toContain('comes from this place in the document: Doc › Section');
+        expect(prompt).toMatch(/NOTE: This TEXT is a video transcript/);
     });
 
     it('respects a customPrompt override', () => {
-        const prompt = buildRepairPrompt(flagged, { customPrompt: 'CUSTOM {{continuationNote}}TEXT: {{text}}' });
-        expect(prompt).toMatch(/^CUSTOM NOTE — REPAIR PASS/);
+        const prompt = buildRepairPrompt(flagged, { customPrompt: 'CUSTOM {{notes}}TEXT: {{text}}' });
+        expect(prompt).toMatch(/^CUSTOM NOTE: A previous extraction/);
         expect(prompt).toContain('TEXT: ## Social Stigmatization');
     });
 

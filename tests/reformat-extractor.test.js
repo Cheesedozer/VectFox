@@ -25,7 +25,7 @@ vi.mock('../../../../extensions.js', () => ({
     extension_settings: { vectfox: {} },
 }));
 
-import { reformatDocument, expandOversizedChunk, mergeDuplicateEntities } from '../core/reformat-extractor.js';
+import { reformatDocument, expandOversizedChunk, mergeDuplicateEntities, linkSubEntriesToParents, splitToFit } from '../core/reformat-extractor.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,7 +89,7 @@ describe('reformatDocument — batching', () => {
             callCount++;
             // Each call "discovers" one new hero — mirrors what a real model would do.
             return mockChatCompletionResponse([
-                { entry_type: 'character', name: `Hero-${callCount}`, aliases: [], affiliation: '', traits: [], relationships: [], keywords: [], body: `Body for call ${callCount}.` },
+                { entry_type: 'character', name: `Hero-${callCount}`, aliases: [], affiliation: '', relationships: [], keywords: [], body: `Body for call ${callCount}.` },
             ]);
         });
         vi.stubGlobal('fetch', fetchMock);
@@ -103,9 +103,11 @@ describe('reformatDocument — batching', () => {
         // "already extracted" note — proves the oversized-section splitter fired
         // and threaded prior names forward instead of re-processing from scratch.
         const prompts = fetchMock.mock.calls.map(extractPrompt);
-        const continuationPrompts = prompts.filter(p => /continuation of section/i.test(p));
+        const continuationPrompts = prompts.filter(p => /continues section "## Roster"/.test(p));
         expect(continuationPrompts.length).toBeGreaterThanOrEqual(1);
-        expect(continuationPrompts[0]).toMatch(/already extracted from earlier in this same section/i);
+        expect(continuationPrompts[0]).toMatch(/already extracted from earlier parts of this section/i);
+        // every batch knows where it sits in the document
+        expect(continuationPrompts[0]).toContain('comes from this place in the document: Intro › Roster');
 
         vi.unstubAllGlobals();
     });
@@ -113,7 +115,7 @@ describe('reformatDocument — batching', () => {
     it('runs a short document as a single batch with no continuation note', async () => {
         const doc = '# Topic\n\nOne short paragraph, well under the batch budget.';
         const fetchMock = vi.fn(async () => mockChatCompletionResponse([
-            { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', traits: [], relationships: [], keywords: [], body: 'One short paragraph.' },
+            { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'One short paragraph.' },
         ]));
         vi.stubGlobal('fetch', fetchMock);
 
@@ -136,7 +138,7 @@ describe('reformatDocument — batching', () => {
     it('surfaces a truncated completion (finish_reason=length) as a warning without dropping the whole run', async () => {
         const doc = '# Topic\n\nSome content.';
         const fetchMock = vi.fn(async () => mockChatCompletionResponse(
-            [{ entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', traits: [], relationships: [], keywords: [], body: 'Some content.' }],
+            [{ entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'Some content.' }],
             'length',
         ));
         vi.stubGlobal('fetch', fetchMock);
@@ -164,7 +166,7 @@ describe('reformatDocument — provider call resilience', () => {
                 return { ok: false, status: 503, statusText: 'Service Unavailable', text: async () => 'temporarily down' };
             }
             return mockChatCompletionResponse([
-                { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', traits: [], relationships: [], keywords: [], body: 'Some content.' },
+                { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'Some content.' },
             ]);
         });
         vi.stubGlobal('fetch', fetchMock);
@@ -209,7 +211,6 @@ describe('mergeDuplicateEntities', () => {
         name: 'Gestapo',
         aliases: [],
         affiliation: '',
-        traits: [],
         relationships: [],
         keywords: [],
         body: 'Base body.',
@@ -223,15 +224,13 @@ describe('mergeDuplicateEntities', () => {
         const merged = mergeDuplicateEntities([
             gestapo({
                 affiliation: 'The Reich',
-                traits: ['political police'],
                 relationships: [{ target: 'Schutzstaffel', type: 'parent organization' }],
-                keywords: [{ text: 'secret police', importance: 6 }],
+                keywords: ['secret police'],
                 body: 'Short body.',
             }),
             gestapo({
                 name: 'gestapo', // case-insensitive match
-                traits: ['political police', 'operates outside procedural constraints'],
-                keywords: [{ text: 'secret police', importance: 9 }, { text: 'terror', importance: 5 }],
+                keywords: ['Secret Police', 'terror'],
                 body: 'This is the much longer body describing the Gestapo in detail across the document.',
                 _nameGrounded: false,
             }),
@@ -247,14 +246,11 @@ describe('mergeDuplicateEntities', () => {
         const g = merged[0];
         expect(g.name).toBe('Gestapo'); // first occurrence wins
         expect(g.affiliation).toBe('The Reich'); // first non-empty
-        expect(g.traits).toEqual(['political police', 'operates outside procedural constraints']);
         expect(g.relationships).toEqual([
             { target: 'Schutzstaffel', type: 'parent organization' },
             { target: 'Oberkatze', type: 'answers to' },
         ]);
-        // max importance wins for duplicated keyword text
-        expect(g.keywords).toContainEqual({ text: 'secret police', importance: 9 });
-        expect(g.keywords).toContainEqual({ text: 'terror', importance: 5 });
+        expect(g.keywords).toEqual(['secret police', 'terror']); // case-insensitive union
         // longer body leads; the shorter bodies' non-duplicate prose survives too
         expect(g.body).toMatch(/^This is the much longer body/);
         expect(g.body).toContain('Short body.');
@@ -302,12 +298,74 @@ describe('mergeDuplicateEntities', () => {
         expect(merged[0].aliases.map(a => a.toLowerCase())).not.toContain('ig tatzen');
     });
 
-    it('does NOT merge same-name records of different entry_types', () => {
+    it('merges same-name records even when the model typed them differently', () => {
         const merged = mergeDuplicateEntities([
-            gestapo({ name: 'Victory', entry_type: 'location' }),
-            gestapo({ name: 'Victory', entry_type: 'character' }),
+            gestapo({ name: 'Gender Identity Card', entry_type: 'item', body: 'Cards are cream for women.' }),
+            gestapo({ name: 'Gender Identity Card', entry_type: 'concept', body: 'Cards are gray for men.' }),
+        ]);
+        expect(merged).toHaveLength(1);
+        expect(merged[0].entry_type).toBe('item');
+        expect(merged[0].body).toContain('gray for men');
+    });
+
+    it('does NOT merge records of different entry_types through an alias alone', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'Texas', entry_type: 'location', aliases: ['Red States'] }),
+            gestapo({ name: 'Red States', entry_type: 'concept' }),
         ]);
         expect(merged).toHaveLength(2);
+    });
+
+    it('matches names ignoring a leading "the" and a trailing (ACRONYM)', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'The Gender War', entry_type: 'concept', body: 'Fought from 1974.' }),
+            gestapo({ name: 'Gender War', entry_type: 'concept', body: 'Ended in 1978.' }),
+            gestapo({ name: 'GARS', entry_type: 'concept', body: 'A registry.' }),
+            gestapo({ name: 'Gender Authentication Registry System (GARS)', entry_type: 'organization', body: 'Created in 1983.' }),
+        ]);
+        expect(merged.map(r => r.name)).toEqual(['The Gender War', 'GARS']);
+        expect(merged[1].aliases).toContain('Gender Authentication Registry System (GARS)');
+        expect(merged[1].body).toContain('Created in 1983.');
+    });
+
+    it('never merges a hidden truth into a public entry', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'GAMA', body: 'Officially tracks men only.' }),
+            gestapo({ name: 'GAMA', hidden: true, body: 'Secretly tracks everyone.' }),
+        ]);
+        expect(merged).toHaveLength(2);
+        expect(merged.map(r => Boolean(r.hidden))).toEqual([false, true]);
+    });
+
+    it('folds a "<Section>: <Thing>" record into the entry named <Thing>, keeping the plain name', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'The Settlement: Texas', entry_type: 'location', body: 'Texas leads the Red States.' }),
+            gestapo({ name: 'Texas', entry_type: 'location', body: 'Texas police use force often.' }),
+            gestapo({ name: 'Bulwark: Hidden truth', hidden: true, body: 'Her form is killing her.' }),
+            gestapo({ name: 'Solaris: Hidden truth', hidden: true, body: 'He fears fire.' }),
+        ]);
+        expect(merged.map(r => r.name)).toEqual(['Texas', 'Bulwark: Hidden truth', 'Solaris: Hidden truth']);
+        expect(merged[0].body).toContain('leads the Red States');
+        expect(merged[0].aliases).toContain('The Settlement: Texas');
+    });
+
+    it('does not cut sentences at abbreviations such as "Dr." when merging bodies', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ name: 'Theory', entry_type: 'concept', body: 'The theory holds that men cannot mature past fifteen. Its raw data was never published.' }),
+            gestapo({ name: 'Theory', entry_type: 'concept', body: 'It began with a 1981 study led by Dr. Ingrid Halvorsen. In Blue States it frames men as impaired.' }),
+        ]);
+        expect(merged[0].body).toContain('led by Dr. Ingrid Halvorsen.');
+        expect(merged[0].body).not.toMatch(/Dr\. In Blue/);
+    });
+
+    it('drops a restated sentence but keeps one that adds a new name or number', () => {
+        const merged = mergeDuplicateEntities([
+            gestapo({ body: 'The Federal Commission on the War Record maintains the official history of the Gender War, though parts of its 1974 archive remain sealed.' }),
+            gestapo({ body: 'The Federal Commission on the War Record maintains the official history of the Gender War. The Commission was founded in 1980.' }),
+        ]);
+        const body = merged[0].body;
+        expect(body.match(/maintains the official history/g)).toHaveLength(1);
+        expect(body).toContain('founded in 1980');
     });
 
     it('leaves distinct entities untouched and preserves order', () => {
@@ -335,8 +393,8 @@ describe('reformatDocument — duplicate merge integration', () => {
             return mockChatCompletionResponse([
                 {
                     entry_type: 'organization', name: 'Gestapo', aliases: [], affiliation: '',
-                    traits: [`trait from call ${callCount}`], relationships: [], keywords: [],
-                    body: `Body from call ${callCount}.`,
+                    relationships: [], keywords: [],
+                    body: `Body from call ${callCount} with fact number ${callCount * 100}.`,
                 },
             ]);
         });
@@ -346,7 +404,8 @@ describe('reformatDocument — duplicate merge integration', () => {
 
         expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
         expect(result.chunks).toHaveLength(1);
-        expect(result.chunks[0].traits.length).toBeGreaterThanOrEqual(2);
+        expect(result.chunks[0].body).toContain('fact number 100');
+        expect(result.chunks[0].body).toContain('fact number 200');
         expect(result.warnings.some(w => /Merged \d+ duplicate/i.test(w))).toBe(true);
 
         vi.unstubAllGlobals();
@@ -374,20 +433,20 @@ describe('reformatDocument — coverage repair pass', () => {
 
     const thinEntry = {
         entry_type: 'organization', name: 'Male Sympathizers', aliases: [], affiliation: '',
-        traits: [], relationships: [], keywords: [],
+        relationships: [], keywords: [],
         body: 'Male Sympathizers are a decentralized network of female citizens advocating equality. They communicate through encrypted messaging and library book marginalia.',
     };
     const repairEntry = {
         entry_type: 'concept', name: 'Male Sympathizers: Social Stigmatization and Pejorative Terms',
         aliases: [], affiliation: '',
-        traits: [], relationships: [{ target: 'Male Sympathizers', type: 'subtopic of' }], keywords: [],
+        relationships: [{ target: 'Male Sympathizers', type: 'is part of' }], keywords: [],
         body: 'The linguistic arsenal against sympathizers includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
     };
 
     it('detects an under-captured section, issues one repair call, and appends its entries', async () => {
         const fetchMock = vi.fn(async (url, opts) => {
             const prompt = JSON.parse(opts.body).messages[0].content;
-            if (/REPAIR PASS/.test(prompt)) {
+            if (/missed some of its content/.test(prompt)) {
                 return mockChatCompletionResponse([repairEntry]);
             }
             return mockChatCompletionResponse([thinEntry]);
@@ -397,7 +456,7 @@ describe('reformatDocument — coverage repair pass', () => {
         const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
 
         expect(fetchMock).toHaveBeenCalledTimes(2); // extraction + one repair
-        const repairPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => /REPAIR PASS/.test(p));
+        const repairPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => /missed some of its content/.test(p));
         // the repair prompt names what was missed and carries the flagged section text
         expect(repairPrompt).toContain('Social Stigmatization and Pejorative Terms');
         expect(repairPrompt).toContain('male-lover');
@@ -430,7 +489,7 @@ describe('reformatDocument — coverage repair pass', () => {
         let sawRepair = false;
         const fetchMock = vi.fn(async (url, opts) => {
             const prompt = JSON.parse(opts.body).messages[0].content;
-            if (/REPAIR PASS/.test(prompt)) {
+            if (/missed some of its content/.test(prompt)) {
                 sawRepair = true;
                 return { ok: false, status: 400, statusText: 'bad request', text: async () => 'model rejected prompt' };
             }
@@ -479,26 +538,127 @@ describe('reformatDocument — coverage repair pass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Traits sanitation on the live extraction path
+// Batching edge cases: header-less text, author notes, sub-entry links
 // ---------------------------------------------------------------------------
 
-describe('reformatDocument — traits sanitation', () => {
-    it('a model reply that pastes the entry body into traits reaches the caller sanitized', async () => {
-        const doc = '# Himbofication\n\nThe process of transforming into a dumb brute.';
-        const entryBody = 'The process of transforming into an individual dumb brute or stud, perfectly happy to work out and perform physical tasks mindlessly. Frequently involves an exaggerated, hypersexualized male form.';
+describe('splitToFit', () => {
+    it('splits a single line with no punctuation (a transcript) at spaces', () => {
+        const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
+        const pieces = splitToFit(words, 200);
+        expect(pieces.length).toBeGreaterThan(5);
+        expect(pieces.every(p => p.length <= 200)).toBe(true);
+        expect(pieces.join(' ')).toBe(words);
+    });
+
+    it('prefers line breaks over sentence and word boundaries', () => {
+        const text = Array.from({ length: 30 }, (_, i) => `Line ${i} has a few words.`).join('\n');
+        const pieces = splitToFit(text, 120);
+        expect(pieces.every(p => p.length <= 120)).toBe(true);
+        expect(pieces.every(p => p.split('\n').every(l => /^Line \d+ has a few words\.$/.test(l)))).toBe(true);
+    });
+
+    it('hard-cuts a run of text with no spaces at all', () => {
+        const pieces = splitToFit('一'.repeat(1000), 300);
+        expect(pieces.map(p => p.length)).toEqual([300, 300, 300, 100]);
+    });
+});
+
+describe('reformatDocument — batching of header-less text', () => {
+    it('splits a long single-line transcript into many batches with a short continuation title', async () => {
+        const transcript = Array.from({ length: 300 }, (_, i) => `so um this is spoken word number ${i}`).join(' ');
         const fetchMock = vi.fn(async () => mockChatCompletionResponse([
-            {
-                entry_type: 'concept', name: 'Himbofication', aliases: [], affiliation: '',
-                traits: [entryBody, 'male equivalent of bimbofication'],
-                relationships: [], keywords: [], body: entryBody,
-            },
+            { entry_type: 'concept', name: 'Talk', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'Spoken words.' },
+        ]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({
+            text: transcript,
+            contentType: 'youtube',
+            settings: baseSettings({ reformat_batch_chars: 1000, reformat_enable_repair_pass: false }),
+        });
+
+        expect(result.totalBatches).toBeGreaterThan(5);
+        const prompts = fetchMock.mock.calls.map(extractPrompt);
+        expect(prompts.every(p => p.length < 9000)).toBe(true);
+        expect(prompts[1]).toMatch(/continues section "so um this is spoken word number 0[^"]{0,80}…"/);
+        expect(prompts[0]).toMatch(/NOTE: This TEXT is a video transcript/);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('reformatDocument — author-note sections', () => {
+    it('skips Settings / Canon log sections and their subsections, and says so', async () => {
+        const doc = [
+            '# World',
+            '## Settings',
+            '- **Voice:** sardonic-unique-marker',
+            '## Canon log',
+            '### Open questions',
+            '- What started the war?',
+            '## Setting',
+            'The world is a frozen archipelago.',
+        ].join('\n');
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([
+            { entry_type: 'location', name: 'The archipelago', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'A frozen archipelago.' },
         ]));
         vi.stubGlobal('fetch', fetchMock);
 
         const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
 
-        expect(result.chunks).toHaveLength(1);
-        expect(result.chunks[0].traits).toEqual(['male equivalent of bimbofication']);
+        const prompt = extractPrompt(fetchMock.mock.calls[0]);
+        expect(prompt).toContain('frozen archipelago');
+        expect(prompt).not.toContain('sardonic-unique-marker');
+        expect(prompt).not.toContain('What started the war?');
+        expect(result.warnings).toContain('Skipped author-note section(s): "Settings", "Canon log".');
+
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('linkSubEntriesToParents', () => {
+    it('links "<Parent>: <Part>" entries to an existing parent once', () => {
+        const records = [
+            { name: 'The Ashen Circle', aliases: [], relationships: [] },
+            { name: 'The Ashen Circle: Membership', aliases: [], relationships: [] },
+            { name: 'Ashen Circle: Laws', aliases: [], relationships: [{ target: 'The Ashen Circle', type: 'governs' }] },
+            { name: 'Nobody: Orphan', aliases: [], relationships: [] },
+        ];
+        expect(linkSubEntriesToParents(records)).toBe(1);
+        expect(records[1].relationships).toEqual([{ target: 'The Ashen Circle', type: 'is part of' }]);
+        expect(records[2].relationships).toHaveLength(1);
+        expect(records[3].relationships).toEqual([]);
+    });
+});
+
+describe('reformatDocument — linking pass name cleanup', () => {
+    it('resolves names that carry a copied "[type]" or "also called" annotation and ignores self-links', async () => {
+        const doc = '# Law\n\nExecutions are held in Victory Plaza.';
+        const fetchMock = vi.fn(async (url, opts) => {
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            if (prompt.includes('ENTRIES:')) {
+                return mockChatCompletionResponse([
+                    { source: 'Capital Punishment [concept]', target: 'Victory Plaza (also called: Times Square)', type: 'is carried out in' },
+                    { source: 'Victory Plaza', target: 'Times Square', type: 'is' },
+                ]);
+            }
+            return mockChatCompletionResponse([
+                { entry_type: 'location', name: 'Victory Plaza', aliases: ['Times Square'], affiliation: '', relationships: [], keywords: [], body: 'An execution venue.' },
+                { entry_type: 'concept', name: 'Capital Punishment', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'Applies broadly.' },
+            ]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({
+            text: doc,
+            contentType: 'document',
+            settings: baseSettings({ reformat_batch_chars: 6000, reformat_enable_linking_pass: true }),
+        });
+
+        expect(result.chunks.find(c => c.name === 'Capital Punishment').relationships)
+            .toEqual([{ target: 'Victory Plaza', type: 'is carried out in' }]);
+        expect(result.chunks.find(c => c.name === 'Victory Plaza').relationships).toEqual([]);
+        expect(result.warnings.some(w => /Linking pass/.test(w))).toBe(false);
 
         vi.unstubAllGlobals();
     });
@@ -514,22 +674,22 @@ describe('reformatDocument — linking pass', () => {
     const extractionEntities = [
         {
             entry_type: 'location', name: 'Victory Plaza', aliases: ['Times Square'], affiliation: '',
-            traits: [], relationships: [], keywords: [], body: 'Victory Plaza is an execution venue.',
+            relationships: [], keywords: [], body: 'Victory Plaza is an execution venue.',
         },
         {
             entry_type: 'concept', name: 'Capital Punishment', aliases: [], affiliation: '',
-            traits: [], relationships: [], keywords: [], body: 'Capital punishment applies broadly.',
+            relationships: [], keywords: [], body: 'Capital punishment applies broadly.',
         },
     ];
 
-    it('is off by default — no linking calls, no CATALOG prompts', async () => {
+    it('is off by default — no linking calls, no ENTRIES prompts', async () => {
         const fetchMock = vi.fn(async () => mockChatCompletionResponse(extractionEntities));
         vi.stubGlobal('fetch', fetchMock);
 
         await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(extractPrompt(fetchMock.mock.calls[0])).not.toContain('CATALOG:');
+        expect(extractPrompt(fetchMock.mock.calls[0])).not.toContain('ENTRIES:');
 
         vi.unstubAllGlobals();
     });
@@ -537,12 +697,14 @@ describe('reformatDocument — linking pass', () => {
     it('when enabled, revisits each batch with the entity catalog and applies resolvable triples (canonicalizing names), dropping unresolvable ones', async () => {
         const fetchMock = vi.fn(async (url, opts) => {
             const prompt = JSON.parse(opts.body).messages[0].content;
-            if (prompt.includes('CATALOG:')) {
+            if (prompt.includes('ENTRIES:')) {
                 return mockChatCompletionResponse([
                     // resolvable: target given in lowercase + source by alias — both must canonicalize
                     { source: 'capital punishment', target: 'times square', type: 'site of executions' },
                     // duplicate of the above after canonicalization — must not double-apply
                     { source: 'Capital Punishment', target: 'Victory Plaza', type: 'site of executions' },
+                    // the inverse of an existing link — skipped, one direction is enough
+                    { source: 'Victory Plaza', target: 'Capital Punishment', type: 'hosts' },
                     // unresolvable source — must be dropped, not crash
                     { source: 'Nonexistent Entity', target: 'Victory Plaza', type: 'x' },
                 ]);
@@ -561,14 +723,15 @@ describe('reformatDocument — linking pass', () => {
 
         // 1 extraction batch + 1 linking batch
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        const linkPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => p.includes('CATALOG:'));
-        expect(linkPrompt).toContain('- Victory Plaza [location] (also known as: Times Square)');
-        expect(linkPrompt).toContain('- Capital Punishment [concept]');
+        const linkPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => p.includes('ENTRIES:'));
+        expect(linkPrompt).toContain('- Victory Plaza   (also called: Times Square)');
+        expect(linkPrompt).toContain('- Capital Punishment\n');
 
         const capital = result.chunks.find(c => c.name === 'Capital Punishment');
         // exactly one relationship applied, with the target canonicalized to the
         // record's real name (not the alias/lowercase form the triple used)
         expect(capital.relationships).toEqual([{ target: 'Victory Plaza', type: 'site of executions' }]);
+        expect(result.chunks.find(c => c.name === 'Victory Plaza').relationships).toEqual([]);
 
         // each phase reports its own 1..totalBatches sequence with a phase tag —
         // a single-batch doc must never surface as "N/2 batches" in the UI
@@ -581,7 +744,7 @@ describe('reformatDocument — linking pass', () => {
         let linkCall = 0;
         const fetchMock = vi.fn(async (url, opts) => {
             const prompt = JSON.parse(opts.body).messages[0].content;
-            if (prompt.includes('CATALOG:')) {
+            if (prompt.includes('ENTRIES:')) {
                 linkCall++;
                 return { ok: false, status: 500, statusText: 'boom', text: async () => 'server error' };
             }

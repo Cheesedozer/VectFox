@@ -236,7 +236,7 @@ function createModal() {
                         </div>
                     </div>
 
-                    <!-- Step 2.5: Auto-Reformat (Optional, Document/URL/Wiki only) -->
+                    <!-- Step 2.5: Auto-Reformat (Optional, Document/URL/Wiki/YouTube) -->
                     <div class="vectfox-cv-section vectfox-cv-reformat-section vectfox-cv-subsequent" id="vectfox_cv_reformat_section" style="display:none;">
                         <div class="vectfox-cv-section-header">
                             <span class="vectfox-cv-step-number"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
@@ -369,7 +369,7 @@ function updateUIForContentType() {
     // Update source section
     updateSourceSection(type);
 
-    // Auto-Reformat section (Document/URL/Wiki only) — must run before
+    // Auto-Reformat section (Document/URL/Wiki/YouTube) — must run before
     // updateChunkingSection() so the latter can see currentSettings.reformat
     // state for the current content type when deciding whether to show the
     // strategy dropdown or the "handled by Auto-Reformat" message.
@@ -878,10 +878,10 @@ function renderYouTubeSource(type) {
  * Updates chunking strategy section
  */
 // ============================================================================
-// AUTO-REFORMAT (Document/URL/Wiki only)
+// AUTO-REFORMAT (Document/URL/Wiki/YouTube)
 // ============================================================================
 
-const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki'];
+const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki', 'youtube'];
 
 function isReformatSupportedType() {
     return REFORMAT_SUPPORTED_TYPES.includes(currentContentType);
@@ -1060,10 +1060,12 @@ async function runAutoReformat() {
         container.html('<div class="vectfox-cv-loading"><i class="fa-solid fa-spinner fa-spin"></i> Running Auto-Reformat...</div>');
 
         const { reformatDocument } = await import('../core/reformat-extractor.js');
+        const sourceName = source.name || source.filename || source.title || currentContentType;
         const result = await reformatDocument({
             text,
             contentType: currentContentType,
             settings: mergedSettings,
+            sourceName,
             onProgress: (done, total, phase) => {
                 const label = phase === 'link'
                     ? `Running Auto-Reformat — linking pass (${done}/${total})...`
@@ -1083,7 +1085,6 @@ async function runAutoReformat() {
         renderReformatSection();
 
         const { openReformatReview } = await import('./reformat-review.js');
-        const sourceName = source.name || source.filename || source.title || currentContentType;
         openReformatReview({
             chunks: result.chunks,
             warnings: result.warnings,
@@ -1114,7 +1115,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
-        const { buildRelationalClause, REFORMAT_SCHEMA_VERSION } = await import('../core/reformat-schema.js');
+        const { buildStoredText, REFORMAT_SCHEMA_VERSION } = await import('../core/reformat-schema.js');
 
         const maxBodyChars = mergedSettings.reformat_max_body_chars || 2000;
         const previous = getReformatCache(sourceHash);
@@ -1124,11 +1125,10 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             const expanded = await expandOversizedChunk(record, maxBodyChars);
             for (const piece of expanded) {
                 shapedChunks.push({
-                    // affiliation/relationships are otherwise inert metadata (never read by
-                    // embedding, search, or the block injected into the roleplay model's
-                    // context) — fold them into the stored/embedded text so they actually
-                    // reach retrieval. See buildRelationalClause's docstring.
-                    text: piece.body + buildRelationalClause(piece.affiliation, piece.relationships),
+                    // The stored text carries the name, the hidden-truth tag and the
+                    // relationships as sentences, because only `text` reaches embedding,
+                    // search and the injected context. See buildStoredText.
+                    text: buildStoredText(piece, { part: piece.subChunkIndex ?? 0, total: piece.subChunkTotal ?? 1 }),
                     metadata: {
                         chunkIndex: shapedChunks.length,
                         totalChunks: 0, // patched below once the final count is known
@@ -1137,9 +1137,9 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
                         name: piece.name,
                         aliases: piece.aliases,
                         affiliation: piece.affiliation,
-                        traits: piece.traits,
                         relationships: piece.relationships,
                         keywords: piece.keywords,
+                        hidden: Boolean(piece.hidden),
                         subChunkIndex: piece.subChunkIndex,
                         subChunkTotal: piece.subChunkTotal,
                     },

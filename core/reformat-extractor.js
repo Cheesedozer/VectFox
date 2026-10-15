@@ -2,21 +2,17 @@
  * ============================================================================
  * AUTO-REFORMAT EXTRACTOR
  * ============================================================================
- * Calls an LLM (OpenRouter or vLLM) to restructure Document/URL/Wiki source
- * text into structured, entity-tagged reformatted chunks (see
- * core/reformat-schema.js for the record shape).
+ * Calls an LLM (OpenRouter or vLLM) to restructure Document/URL/Wiki/YouTube
+ * source text into self-contained entries (see core/reformat-schema.js for
+ * the record shape).
  *
- * Mirrors core/eventbase-extractor.js's shape (provider calling, JSON parse
- * + repair) but is a fully independent implementation — no imports from
- * EventBase's files. The one deliberate improvement over that precedent:
- * provider calls are wrapped in AsyncUtils.retry() (transient-failure retry),
- * since losing a large single-shot batch call here is costlier than losing
- * one small EventBase chat window.
+ * Independent of EventBase's extractor (no imports from it). Provider calls
+ * are wrapped in AsyncUtils.retry(), since losing a large batch call costs
+ * more than losing one small EventBase window.
  *
  * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches }.
  * Throws ReformatFatalError for config/auth failures (aborts the whole run).
- * Individual batch parse/validation failures are non-fatal — logged as
- * warnings, the rest of the document still gets processed.
+ * Individual batch failures are non-fatal warnings.
  * ============================================================================
  */
 
@@ -52,9 +48,8 @@ const DEFAULT_NAME_FUZZY_THRESHOLD = 0.8;
 const DEFAULT_COVERAGE_THRESHOLD = 0.5;
 
 // ---------------------------------------------------------------------------
-// Config resolution (independent copy of agentic-retrieval.js's
-// _resolveAgenticLLMConfig pattern — each VectFox LLM feature keeps its own
-// copy rather than sharing one resolver; see reformat-schema.js docstring)
+// Config resolution (each VectFox LLM feature keeps its own copy; see
+// reformat-schema.js on independence)
 // ---------------------------------------------------------------------------
 
 function _resolveProvider(settings) {
@@ -70,22 +65,29 @@ function _resolveVllmUrl(settings) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP callers
+// HTTP caller
 // ---------------------------------------------------------------------------
 
 /**
+ * One chat-completion call to the configured provider.
  * @param {string} prompt
  * @param {object} settings
  * @param {number} batchIndex
  * @returns {Promise<{reply: string, finishReason: string|null}>}
  */
-async function _callOpenRouter(prompt, settings, batchIndex) {
-    const apiKey = getOpenRouterApiKey(settings);
-    if (!apiKey) {
-        throw new ReformatFatalError(
-            'Auto-Reformat: OpenRouter API key not found. Add it in Core → LLM Summarization settings (Auto-Reformat inherits it unless overridden in ChunkBase settings).',
-            'missing_api_key',
-        );
+async function _callLLM(prompt, settings, batchIndex) {
+    const isVllm = _resolveProvider(settings) === 'vllm';
+    const providerLabel = isVllm ? 'vLLM' : 'OpenRouter';
+
+    let vllmUrl;
+    if (isVllm) {
+        vllmUrl = _resolveVllmUrl(settings);
+        if (!vllmUrl) {
+            throw new ReformatFatalError(
+                'Auto-Reformat: vLLM URL not configured. Set it in ChunkBase → Auto-Reformat, or leave it blank to inherit the Summarization vLLM URL.',
+                'missing_url',
+            );
+        }
     }
 
     const model = _resolveModel(settings);
@@ -96,127 +98,59 @@ async function _callOpenRouter(prompt, settings, batchIndex) {
         );
     }
 
-    const maxTokens = settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS;
-    const temperature = settings.reformat_temperature ?? DEFAULT_TEMPERATURE;
-    const timeoutMs = settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS;
-
-    const result = await callChatCompletion({
-        provider: 'openrouter',
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        maxTokens,
-        temperature,
-        timeoutMs,
-    });
-
-    if (!result.ok) {
-        const { status, errText } = result;
-        if (status === 401 || status === 403) {
-            throw new ReformatFatalError(
-                `Auto-Reformat: OpenRouter authentication failed (${status}). Check your API key.`,
-                'invalid_api_key',
-            );
-        }
-        const modelConfigError = getModelConfigErrorMessage({
-            contextLabel: 'Auto-Reformat', provider: 'OpenRouter', model, status, responseText: errText,
-        });
-        if (modelConfigError) throw new ReformatFatalError(modelConfigError, 'invalid_model_config');
-        throw new ReformatExtractionError(`Auto-Reformat: OpenRouter HTTP ${status}: ${errText}`, batchIndex);
-    }
-
-    const reply = extractReply(result.data);
-    const finishReason = result.data?.choices?.[0]?.finish_reason || null;
-    if (!reply) {
-        const modelConfigError = getModelConfigErrorMessage({
-            contextLabel: 'Auto-Reformat', provider: 'OpenRouter', model, status: result.status, responseText: errorBodyText(result.data), enforceStatusGate: false,
-        });
-        if (modelConfigError) throw new ReformatFatalError(modelConfigError, 'invalid_model_config');
-        throw new ReformatExtractionError('Auto-Reformat: OpenRouter returned empty response', batchIndex);
-    }
-    return { reply, finishReason };
-}
-
-/**
- * @param {string} prompt
- * @param {object} settings
- * @param {number} batchIndex
- * @returns {Promise<{reply: string, finishReason: string|null}>}
- */
-async function _callVLLM(prompt, settings, batchIndex) {
-    const baseUrl = _resolveVllmUrl(settings);
-    if (!baseUrl) {
-        throw new ReformatFatalError(
-            'Auto-Reformat: vLLM URL not configured. Set it in ChunkBase → Auto-Reformat, or leave it blank to inherit the Summarization vLLM URL.',
-            'missing_url',
-        );
-    }
-
-    const model = _resolveModel(settings);
-    if (!model) {
-        throw new ReformatFatalError(
-            'Auto-Reformat: No model configured. Set a model in ChunkBase → Auto-Reformat, or leave it blank to inherit the Summarization Model.',
-            'missing_model',
-        );
-    }
-
-    const apiKey = getCustomApiKey(settings);
+    const apiKey = isVllm ? getCustomApiKey() : getOpenRouterApiKey();
     if (!apiKey) {
         throw new ReformatFatalError(
-            'Auto-Reformat: vLLM / Custom OpenAI-compatible API key not configured. Enter it in Core → LLM Summarization settings.',
+            isVllm
+                ? 'Auto-Reformat: vLLM / Custom OpenAI-compatible API key not configured. Enter it in Core → LLM Summarization settings.'
+                : 'Auto-Reformat: OpenRouter API key not found. Add it in Core → LLM Summarization settings (Auto-Reformat inherits it unless overridden in ChunkBase settings).',
             'missing_api_key',
         );
     }
 
-    const maxTokens = settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS;
-    const temperature = settings.reformat_temperature ?? DEFAULT_TEMPERATURE;
-    const timeoutMs = settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS;
-
     const result = await callChatCompletion({
-        provider: 'vllm',
+        provider: isVllm ? 'vllm' : 'openrouter',
         model,
-        vllmUrl: baseUrl,
+        vllmUrl,
         messages: [{ role: 'user', content: prompt }],
-        maxTokens,
-        temperature,
-        timeoutMs,
+        maxTokens: settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS,
+        temperature: settings.reformat_temperature ?? DEFAULT_TEMPERATURE,
+        timeoutMs: settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS,
     });
 
     if (!result.ok) {
         const { status, errText } = result;
         if (status === 401 || status === 403) {
             throw new ReformatFatalError(
-                `Auto-Reformat: vLLM authentication failed (${status}). Check your API key.`,
+                `Auto-Reformat: ${providerLabel} authentication failed (${status}). Check your API key.`,
                 'invalid_api_key',
             );
         }
         const modelConfigError = getModelConfigErrorMessage({
-            contextLabel: 'Auto-Reformat', provider: 'vLLM', model, status, responseText: errText,
+            contextLabel: 'Auto-Reformat', provider: providerLabel, model, status, responseText: errText,
         });
         if (modelConfigError) throw new ReformatFatalError(modelConfigError, 'invalid_model_config');
-        throw new ReformatExtractionError(`Auto-Reformat: vLLM HTTP ${status}: ${errText}`, batchIndex);
+        throw new ReformatExtractionError(`Auto-Reformat: ${providerLabel} HTTP ${status}: ${errText}`, batchIndex);
     }
 
     const reply = extractReply(result.data);
     const finishReason = result.data?.choices?.[0]?.finish_reason || null;
     if (!reply) {
         const modelConfigError = getModelConfigErrorMessage({
-            contextLabel: 'Auto-Reformat', provider: 'vLLM', model, status: result.status, responseText: errorBodyText(result.data), enforceStatusGate: false,
+            contextLabel: 'Auto-Reformat', provider: providerLabel, model, status: result.status, responseText: errorBodyText(result.data), enforceStatusGate: false,
         });
         if (modelConfigError) throw new ReformatFatalError(modelConfigError, 'invalid_model_config');
-        throw new ReformatExtractionError('Auto-Reformat: vLLM returned empty response', batchIndex);
+        throw new ReformatExtractionError(`Auto-Reformat: ${providerLabel} returned empty response`, batchIndex);
     }
     return { reply, finishReason };
 }
 
 /**
- * Calls the configured provider, retrying transient failures (network hiccups,
- * 5xx, timeouts) but never retrying ReformatFatalError (auth/config problems
- * a retry can't fix).
+ * Calls the provider, retrying transient failures but never
+ * ReformatFatalError (auth/config problems a retry can't fix).
  */
 async function _callProviderWithRetry(prompt, settings, batchIndex) {
-    const provider = _resolveProvider(settings);
-    const callFn = provider === 'vllm' ? _callVLLM : _callOpenRouter;
-    return AsyncUtils.retry(() => callFn(prompt, settings, batchIndex), {
+    return AsyncUtils.retry(() => _callLLM(prompt, settings, batchIndex), {
         maxAttempts: 3,
         delay: 1500,
         maxDelay: 10000,
@@ -227,17 +161,15 @@ async function _callProviderWithRetry(prompt, settings, batchIndex) {
 }
 
 // ---------------------------------------------------------------------------
-// JSON parse + repair — schema-adapted duplicate of eventbase-extractor.js's
-// _parseJsonArray, keyed on entry_type/name/body instead of
-// event_type/summary/importance. Not imported, per independence requirement.
+// JSON parse + repair (schema-adapted copy of eventbase-extractor.js's
+// _parseJsonArray; not imported, per the independence requirement)
 // ---------------------------------------------------------------------------
 
 /**
  * @param {string} raw
  * @param {number} [batchIndex]
  * @param {string[]} [keyFields] - An array candidate is accepted when its first
- *        item has ANY of these keys. Defaults to the entry-record shape; the
- *        linking pass passes ['source', 'target'] for its triple shape.
+ *        item has ANY of these keys. The linking pass passes ['source', 'target'].
  * @returns {unknown[]}
  */
 function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'name', 'body']) {
@@ -358,79 +290,157 @@ function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'n
 }
 
 // ---------------------------------------------------------------------------
-// Batching packer
+// Batching
 // ---------------------------------------------------------------------------
 
-/** First non-empty line of a section, used as its title for continuation notes. */
+const HEADER_LINE = /^(#{1,6})\s+(.+)$/;
+
+/**
+ * Section titles that are notes for the author rather than world content
+ * (the layout world-bible generators use). The prompt also tells the model to
+ * skip such sections, but small models often keep them, so they are removed
+ * before extraction and listed in the run's warnings.
+ */
+const AUTHOR_NOTE_HEADINGS = /^(?:settings|canon log|open questions|change ?log|to-?do(?: list)?|author'?s? notes?)$/i;
+
+/** First non-empty line of a section. */
 function _firstLine(text) {
     return (text || '').split('\n').map(l => l.trim()).find(Boolean) || 'section';
 }
 
 /**
- * Splits source text into LLM-call-sized batches, respecting header
- * boundaries via the existing `section` chunking strategy wherever possible.
- * NOT a final chunk boundary — purely an internal batching mechanism so a
- * long document doesn't blow one call's output budget. If a single section
- * itself exceeds the budget (e.g. one header covering seven character
- * profiles — the exact reported bug), that section alone gets sub-split via
- * `paragraph` strategy into ordered continuation batches.
+ * A short title for a section, for continuation notes: its first line, cut
+ * at a word boundary. Header-less text (a transcript is one long line) would
+ * otherwise put the whole section into every continuation prompt.
+ */
+function _sectionTitle(text, max = 80) {
+    const line = _firstLine(text);
+    if (line.length <= max) return line;
+    const cut = line.slice(0, max);
+    return `${cut.slice(0, cut.lastIndexOf(' ') > 20 ? cut.lastIndexOf(' ') : max)}…`;
+}
+
+/**
+ * Splits text into pieces no longer than `target`, cutting at the coarsest
+ * boundary available: blank lines, then line breaks, then sentence ends,
+ * then spaces, and finally a hard cut (long CJK runs have no spaces). Small
+ * neighbouring pieces are packed back together up to `target`.
+ * @param {string} text
+ * @param {number} target
+ * @returns {string[]}
+ */
+export function splitToFit(text, target) {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return [];
+    if (trimmed.length <= target) return [trimmed];
+
+    const levels = [
+        ['\n\n', /\n\s*\n+/],
+        ['\n', /\n/],
+        [' ', /(?<=[.!?。！？])\s+/],
+        [' ', /\s+/],
+    ];
+    for (const [joiner, splitter] of levels) {
+        const parts = trimmed.split(splitter).map(s => s.trim()).filter(Boolean);
+        if (parts.length < 2) continue;
+        const out = [];
+        let current = '';
+        for (const piece of parts.flatMap(p => splitToFit(p, target))) {
+            if (current && current.length + joiner.length + piece.length > target) {
+                out.push(current);
+                current = piece;
+            } else {
+                current = current ? current + joiner + piece : piece;
+            }
+        }
+        if (current) out.push(current);
+        return out;
+    }
+
+    const out = [];
+    for (let i = 0; i < trimmed.length; i += target) out.push(trimmed.slice(i, i + target));
+    return out;
+}
+
+/**
+ * Splits source text into LLM-call-sized batches along header boundaries.
+ * A section larger than the budget is split into ordered continuation
+ * batches (see _splitToFit). Every batch records the heading path of its
+ * first section ("Doc › Part › Section") so the model knows where a batch
+ * that starts mid-document sits.
+ *
+ * Not a final chunk boundary — only keeps one call's output within budget.
+ *
+ * Sections whose heading matches AUTHOR_NOTE_HEADINGS are skipped together
+ * with their subsections.
  *
  * @param {string} text
  * @param {number} targetChars
- * @returns {Promise<Array<{text: string, continuation: {sectionTitle: string}|null}>>}
+ * @param {string} [sourceName] - Used as the path root when the text has no top-level title
+ * @returns {Promise<{batches: Array<{text: string, headingPath: string, continuation: {sectionTitle: string}|null}>, skippedSections: string[]}>}
  */
-async function _buildBatches(text, targetChars) {
+async function _buildBatches(text, targetChars, sourceName = '') {
     const sectionChunks = await chunkText(text, { strategy: 'section' });
     const sections = sectionChunks.map(c => (typeof c === 'string' ? c : c.text)).filter(Boolean);
 
+    const hasTopTitle = /^#\s+\S/m.test(text);
+    const root = !hasTopTitle && sourceName ? [sourceName] : [];
+    /** @type {Array<{level: number, title: string}>} */
+    let stack = [];
+    const pathOf = () => [...root, ...stack.map(h => h.title)].join(' › ');
+
     const batches = [];
     let current = '';
+    let currentPath = '';
 
     const flush = () => {
-        if (current.trim()) batches.push({ text: current.trim(), continuation: null });
+        if (current.trim()) batches.push({ text: current.trim(), headingPath: currentPath, continuation: null });
         current = '';
     };
 
+    const skippedSections = [];
+    let skipBelowLevel = 0; // > 0 while inside a skipped author-note section
+
     for (const section of sections) {
+        const header = _firstLine(section).match(HEADER_LINE);
+        if (header) {
+            const level = header[1].length;
+            const title = header[2].replace(/\*+/g, '').trim();
+            if (skipBelowLevel && level <= skipBelowLevel) skipBelowLevel = 0;
+            if (!skipBelowLevel && AUTHOR_NOTE_HEADINGS.test(title)) {
+                skipBelowLevel = level;
+                skippedSections.push(title);
+            }
+            stack = stack.filter(h => h.level < level);
+            stack.push({ level, title });
+        }
+        if (skipBelowLevel) continue;
+        const sectionPath = pathOf();
+
         if (section.length > targetChars) {
             flush();
-            const title = _firstLine(section);
-            const paraChunks = await chunkText(section, { strategy: 'paragraph' });
-            const paragraphs = paraChunks.map(c => (typeof c === 'string' ? c : c.text)).filter(Boolean);
-
-            let sub = '';
-            let isFirstSubBatch = true;
-            const flushSub = () => {
-                if (!sub.trim()) return;
-                batches.push({ text: sub.trim(), continuation: isFirstSubBatch ? null : { sectionTitle: title } });
-                isFirstSubBatch = false;
-                sub = '';
-            };
-            for (const p of paragraphs) {
-                if (sub && (sub.length + p.length + 2) > targetChars) {
-                    flushSub();
-                    sub = p;
-                } else {
-                    sub += (sub ? '\n\n' : '') + p;
-                }
-            }
-            flushSub();
+            const title = _sectionTitle(section);
+            splitToFit(section, targetChars).forEach((piece, i) => {
+                batches.push({ text: piece, headingPath: sectionPath, continuation: i === 0 ? null : { sectionTitle: title } });
+            });
         } else if (current && (current.length + section.length + 2) > targetChars) {
             flush();
             current = section;
+            currentPath = sectionPath;
         } else {
+            if (!current) currentPath = sectionPath;
             current += (current ? '\n\n' : '') + section;
         }
     }
     flush();
 
-    return batches;
+    return { batches, skippedSections };
 }
 
 /**
- * Groups packed batches into ordered "chains" — a continuation batch must be
- * processed after the batch it continues (so it can be told which names were
- * already extracted), but independent chains can run concurrently.
+ * Groups batches into ordered "chains": a continuation batch runs after the
+ * batch it continues (so it can be told which names were already
+ * extracted); independent chains run concurrently.
  * @param {Array<{text: string, continuation: object|null}>} batches
  * @returns {Array<Array<object>>}
  */
@@ -453,10 +463,8 @@ function _groupIntoChains(batches) {
 // ---------------------------------------------------------------------------
 
 /**
- * Parses, validates, and grounding-verifies one LLM reply, appending the
+ * Parses, validates, and grounding-checks one LLM reply, appending the
  * surviving records to `results` and their names to `alreadyExtractedNames`.
- * Shared by the main extraction call and the coverage repair call — both
- * replies carry the exact same record shape and guardrails.
  * @returns {number} How many records were appended
  */
 function _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel }) {
@@ -491,17 +499,11 @@ function _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, 
 }
 
 /**
- * Processes one chain (a normal batch, or an ordered run of continuation
- * batches for one oversized section) sequentially, threading the running
- * "already extracted" name list into each continuation's prompt.
- *
- * After each batch, an under-extraction guardrail (computeBatchCoverage)
- * checks that the batch's distinctive facts actually landed in the extracted
- * records; flagged sections get ONE repair call (no loop) asking the model to
- * cover specifically what it dropped. Repair failures are non-fatal, same
- * policy as batch failures.
+ * Processes one chain sequentially. After each batch, computeBatchCoverage
+ * checks that the batch's distinctive facts landed in the records; flagged
+ * sections get ONE repair call. Repair failures are non-fatal.
  */
-async function _processChain(chain, settings, chainIndex, warnings) {
+async function _processChain(chain, settings, chainIndex, warnings, contentType) {
     const results = [];
     let failedCount = 0;
     let repairCalls = 0;
@@ -515,7 +517,12 @@ async function _processChain(chain, settings, chainIndex, warnings) {
         const batchContext = batch.continuation
             ? { sectionTitle: batch.continuation.sectionTitle, alreadyExtractedNames: [...alreadyExtractedNames] }
             : null;
-        const prompt = buildReformatPrompt(batch.text, { customPrompt: settings.reformat_custom_prompt, batchContext });
+        const prompt = buildReformatPrompt(batch.text, {
+            customPrompt: settings.reformat_custom_prompt,
+            headingPath: batch.headingPath,
+            contentType,
+            batchContext,
+        });
 
         try {
             const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, chainIndex);
@@ -542,6 +549,8 @@ async function _processChain(chain, settings, chainIndex, warnings) {
             const repairPrompt = buildRepairPrompt(flagged, {
                 customPrompt: settings.reformat_custom_prompt,
                 alreadyExtractedNames: [...alreadyExtractedNames],
+                headingPath: batch.headingPath,
+                contentType,
             });
             const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex);
             repairCalls++;
@@ -566,11 +575,31 @@ async function _processChain(chain, settings, chainIndex, warnings) {
 // Duplicate-entity merge
 // ---------------------------------------------------------------------------
 
-/** Lowercased, trimmed match keys for one record: its name plus all aliases. */
+/**
+ * Match keys for a name: lowercased, a leading "the" dropped, and a trailing
+ * parenthetical acronym split off as a key of its own, so "The Gender War" =
+ * "Gender War" and "Gender Authentication Registry System (GARS)" matches
+ * both its long form and "GARS".
+ * @param {string} name
+ * @returns {string[]}
+ */
+function _nameKeys(name) {
+    let base = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!base) return [];
+    const keys = [];
+    const acronym = base.match(/\s*\(([A-Z][A-Z0-9.&-]{1,11})\)$/);
+    if (acronym) {
+        base = base.slice(0, acronym.index).trim();
+        keys.push(acronym[1].toLowerCase());
+    }
+    base = base.toLowerCase().replace(/^the\s+/, '');
+    if (base) keys.unshift(base);
+    return keys;
+}
+
+/** All match keys for a record: its name plus every alias. */
 function _entityKeys(record) {
-    return [record?.name, ...(Array.isArray(record?.aliases) ? record.aliases : [])]
-        .map(s => (typeof s === 'string' ? s.trim().toLowerCase() : ''))
-        .filter(Boolean);
+    return [record?.name, ...(Array.isArray(record?.aliases) ? record.aliases : [])].flatMap(_nameKeys);
 }
 
 /** Dedup key for a relationship; tolerates legacy plain-string entries. */
@@ -579,14 +608,64 @@ function _relationshipKey(rel) {
     return `${(rel?.target || '').trim().toLowerCase()}|${(rel?.type || '').trim().toLowerCase()}`;
 }
 
+/** Relationship target, for "already linked" checks. */
+function _relationshipTarget(rel) {
+    return (typeof rel === 'string' ? rel : rel?.target || '').trim().toLowerCase();
+}
+
+// Abbreviations and initials that end with a period but don't end a sentence.
+const NON_TERMINAL_ABBREVIATION = /(?:\b(?:Dr|Mr|Mrs|Ms|Mx|St|Jr|Sr|Prof|Gen|Col|Lt|Sgt|Capt|Rev|Hon|Mt|No|vs|etc|approx|e\.g|i\.e)|\b[A-Z])\.$/;
+
 /**
- * Lossless body merge: keeps the longer body as the primary prose, then
- * appends the other body's paragraphs (falling back to sentences for
- * single-paragraph bodies) whose normalized text isn't already contained in
- * the merged result. Complementary facts from two extractions of the same
- * entity both survive; near-duplicate prose is still dropped. Replaces the
- * old longest-body-wins policy, which silently discarded every fact that
- * only the shorter body carried.
+ * Splits prose into sentences without breaking after abbreviations such as
+ * "Dr." or initials.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function _splitSentences(text) {
+    const pieces = String(text || '').split(/(?<=[.!?。！？]["”’)]?)\s+/);
+    const out = [];
+    for (const piece of pieces) {
+        if (out.length && NON_TERMINAL_ABBREVIATION.test(out[out.length - 1])) {
+            out[out.length - 1] += ' ' + piece;
+        } else {
+            out.push(piece);
+        }
+    }
+    return out.map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * True when `sentence` adds nothing to the merged text: it is contained in
+ * it, or at least 85% of its words already appear AND every number and
+ * capitalized word in it already appears (so a restatement is dropped but a
+ * sentence with one new name or figure is kept).
+ * @param {string} sentence
+ * @param {string} mergedNorm - normalizeForMatch of the merged text
+ * @param {Set<string>} mergedWords
+ * @returns {boolean}
+ */
+function _isRestatement(sentence, mergedNorm, mergedWords) {
+    const norm = normalizeForMatch(sentence);
+    if (!norm) return true;
+    if (mergedNorm.includes(norm)) return true;
+
+    const words = norm.split(' ').filter(w => w.length > 3);
+    if (words.length === 0) return false;
+    const shared = words.filter(w => mergedWords.has(w)).length / words.length;
+    if (shared < 0.85) return false;
+
+    const details = (sentence.match(/\d[\d,.]*|(?<!^)\b\p{Lu}[\p{L}'’-]*/gu) || [])
+        .map(normalizeForMatch)
+        .flatMap(d => d.split(' '))
+        .filter(Boolean);
+    return details.every(d => mergedWords.has(d));
+}
+
+/**
+ * Lossless body merge: keeps the longer body, then appends each sentence of
+ * the other body that isn't a restatement of what is already there
+ * (grouped by the paragraph it came from).
  * @param {string} bodyA
  * @param {string} bodyB
  * @returns {string}
@@ -601,20 +680,16 @@ function _mergeBodies(bodyA, bodyB) {
 
     let merged = primary;
     let mergedNorm = normalizeForMatch(merged);
+    const mergedWords = new Set(mergedNorm.split(' '));
 
-    const paragraphs = secondary.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
-    for (const para of paragraphs) {
-        const fragments = paragraphs.length > 1
-            ? [para]
-            : para.split(/(?<=[.!?。！？])\s+/).map(s => s.trim()).filter(Boolean);
-        const novel = fragments.filter(f => {
-            const norm = normalizeForMatch(f);
-            return norm && !mergedNorm.includes(norm);
-        });
+    for (const para of secondary.split(/\n\n+/).map(p => p.trim()).filter(Boolean)) {
+        const novel = _splitSentences(para).filter(s => !_isRestatement(s, mergedNorm, mergedWords));
         if (novel.length === 0) continue;
         const addition = novel.join(' ');
         merged += '\n\n' + addition;
-        mergedNorm += ' ' + normalizeForMatch(addition);
+        const additionNorm = normalizeForMatch(addition);
+        mergedNorm += ' ' + additionNorm;
+        for (const w of additionNorm.split(' ')) mergedWords.add(w);
     }
     return merged;
 }
@@ -633,86 +708,134 @@ function _unionStrings(a, b) {
 }
 
 /**
- * Merges duplicate entity records produced by independent parallel chains.
- * The per-chain "already extracted names" mechanism (_processChain) can't see
- * across chains, so an entity discussed in two document sections gets
- * extracted twice — e.g. one Fur Reich run produced IG Tatzen ×2 and Gestapo
- * ×3, each copy carrying a different (often empty) relationships list.
+ * Merges duplicate records produced by independent chains (the per-chain
+ * "already extracted" list can't see across chains).
  *
- * Detection is deliberately conservative: exact case-insensitive match on
- * name/aliases, and only within the same entry_type (a location and a
- * character sharing a name must not merge). No fuzzy matching — a
- * false-positive merge silently destroys a record, while a false negative
- * just leaves today's status quo.
+ * Two records merge when their names match after normalization (see
+ * _nameKeys), whatever their entry_type, or when a name or alias matches
+ * within the same entry_type. Aliases are model-generated and occasionally
+ * wrong, so they alone never merge records of different types.
  *
- * Merge policy: union aliases/traits (case-insensitive), union keywords by
- * text keeping max importance, union relationships by target+type, first
- * non-empty affiliation. Bodies merge LOSSLESSLY via _mergeBodies — longer
- * body is primary, the other body's non-duplicate paragraphs/sentences are
- * appended (the old longest-wins policy silently discarded complementary
- * facts when two sections described the same entity from different angles).
- * Grounding flags: _nameGrounded ORs; _ungrounded* lists union.
+ * A second pass folds "<Section>: <Thing>" records into the record named
+ * <Thing> when one exists: that is the model prefixing a named thing, not a
+ * real sub-entry. The plain name is kept.
  *
- * @param {object[]} chunks - Validated records (post _processChain), document order
+ * Policy: union aliases/keywords/relationships, first non-empty
+ * affiliation, hidden if either is, and a lossless body merge.
+ *
+ * @param {object[]} chunks - Validated records, document order
  * @returns {object[]} Merged records, first-occurrence order
  */
 export function mergeDuplicateEntities(chunks) {
     if (!Array.isArray(chunks) || chunks.length < 2) return Array.isArray(chunks) ? chunks : [];
 
-    /** @type {Map<string, object>} `${entry_type}::${nameOrAlias}` → merged record */
-    const byKey = new Map();
-    const merged = [];
+    /** @type {Map<string, object>} normalized primary-name key → record */
+    const byName = new Map();
+    /** @type {Map<string, object>} `${entry_type}::${name-or-alias key}` → record */
+    const byTypedKey = new Map();
+    let merged = [];
+
+    const register = (record, source) => {
+        for (const k of _nameKeys(source.name)) if (!byName.has(k)) byName.set(k, record);
+        for (const k of _entityKeys(source)) byTypedKey.set(`${source.entry_type || 'other'}::${k}`, record);
+    };
 
     for (const record of chunks) {
-        const keys = _entityKeys(record).map(k => `${record?.entry_type || 'other'}::${k}`);
-        const existing = keys.map(k => byKey.get(k)).find(Boolean);
+        const type = record?.entry_type || 'other';
+        // A hidden truth never merges into a public entry (or vice versa).
+        const sameVisibility = r => Boolean(r) && Boolean(r.hidden) === Boolean(record?.hidden);
+        const existing = _nameKeys(record?.name).map(k => byName.get(k)).find(sameVisibility)
+            || _entityKeys(record).map(k => byTypedKey.get(`${type}::${k}`)).find(sameVisibility);
 
         if (!existing) {
             const copy = { ...record };
             merged.push(copy);
-            for (const k of keys) byKey.set(k, copy);
+            register(copy, copy);
             continue;
         }
+        _absorbRecord(existing, record);
+        register(existing, record);
+    }
 
-        // Absorb `record` into `existing` (first occurrence wins name/order).
-        const incomingNames = record.name && record.name.trim().toLowerCase() !== existing.name.trim().toLowerCase()
-            ? [record.name]
-            : [];
-        existing.aliases = _unionStrings(existing.aliases || [], [...incomingNames, ...(record.aliases || [])])
-            .filter(a => a.toLowerCase() !== existing.name.trim().toLowerCase());
-        existing.traits = _unionStrings(existing.traits || [], record.traits || []);
+    const prefixedNameKeys = name => {
+        const idx = String(name || '').lastIndexOf(': ');
+        return idx > 0 ? _nameKeys(name.slice(idx + 2)) : [];
+    };
+    const absorbed = new Set();
+    for (const r of merged) {
+        const target = prefixedNameKeys(r.name).map(k => byName.get(k)).find(t => t && t !== r && !absorbed.has(t) && Boolean(t.hidden) === Boolean(r.hidden));
+        if (!target) continue;
+        _absorbRecord(target, r);
+        absorbed.add(r);
+    }
+    merged = merged.filter(r => !absorbed.has(r));
 
-        if (!existing.affiliation && record.affiliation) existing.affiliation = record.affiliation;
-        existing.body = _mergeBodies(existing.body, record.body);
-
-        const relSeen = new Set((existing.relationships || []).map(_relationshipKey));
-        for (const rel of record.relationships || []) {
-            const key = _relationshipKey(rel);
-            if (!key || relSeen.has(key)) continue;
-            relSeen.add(key);
-            existing.relationships = [...(existing.relationships || []), rel];
-        }
-
-        const kwByText = new Map();
-        for (const kw of [...(existing.keywords || []), ...(record.keywords || [])]) {
-            const text = typeof kw === 'string' ? kw : kw?.text;
-            if (!text) continue;
-            const key = text.toLowerCase();
-            const importance = typeof kw === 'object' ? kw?.importance ?? 5 : 5;
-            const prev = kwByText.get(key);
-            if (!prev || importance > (prev.importance ?? 5)) kwByText.set(key, { text, importance });
-        }
-        existing.keywords = [...kwByText.values()];
-
-        existing._nameGrounded = Boolean(existing._nameGrounded) || Boolean(record._nameGrounded);
-        existing._ungroundedAliases = _unionStrings(existing._ungroundedAliases || [], record._ungroundedAliases || []);
-        existing._ungroundedKeywords = _unionStrings(existing._ungroundedKeywords || [], record._ungroundedKeywords || []);
-
-        // The absorbed record's keys (incl. newly-gained aliases) now resolve here too.
-        for (const k of keys) byKey.set(k, existing);
+    // A relationship pointing at the record itself (e.g. after an alias merge) says nothing.
+    for (const r of merged) {
+        const own = new Set(_entityKeys(r));
+        r.relationships = (r.relationships || []).filter(rel => !_nameKeys(_relationshipTarget(rel)).some(k => own.has(k)));
     }
 
     return merged;
+}
+
+/**
+ * Absorbs `record` into `existing` in place; `existing` keeps its name, type
+ * and position.
+ * @param {object} existing
+ * @param {object} record
+ */
+function _absorbRecord(existing, record) {
+    const existingName = existing.name.trim().toLowerCase();
+    const incomingNames = record.name && record.name.trim().toLowerCase() !== existingName ? [record.name] : [];
+    existing.aliases = _unionStrings(existing.aliases || [], [...incomingNames, ...(record.aliases || [])])
+        .filter(a => a.toLowerCase() !== existingName);
+    existing.keywords = _unionStrings(
+        (existing.keywords || []).map(k => (typeof k === 'string' ? k : k?.text || '')),
+        (record.keywords || []).map(k => (typeof k === 'string' ? k : k?.text || '')),
+    );
+
+    if (!existing.affiliation && record.affiliation) existing.affiliation = record.affiliation;
+    existing.hidden = Boolean(existing.hidden) || Boolean(record.hidden);
+    existing.body = _mergeBodies(existing.body, record.body);
+
+    const relSeen = new Set((existing.relationships || []).map(_relationshipKey));
+    for (const rel of record.relationships || []) {
+        const key = _relationshipKey(rel);
+        if (!key || relSeen.has(key)) continue;
+        relSeen.add(key);
+        existing.relationships = [...(existing.relationships || []), rel];
+    }
+
+    existing._nameGrounded = Boolean(existing._nameGrounded) || Boolean(record._nameGrounded);
+    existing._ungroundedAliases = _unionStrings(existing._ungroundedAliases || [], record._ungroundedAliases || []);
+    existing._ungroundedKeywords = _unionStrings(existing._ungroundedKeywords || [], record._ungroundedKeywords || []);
+}
+
+/**
+ * Adds a "is part of" relationship from every "<Parent>: <Part>" entry to
+ * its parent entry when the parent exists and the two aren't linked yet.
+ * Done in code because the prompt's naming rule already encodes it.
+ * @param {object[]} records - Merged records (mutated)
+ * @returns {number} Relationships added
+ */
+export function linkSubEntriesToParents(records) {
+    const byKey = new Map();
+    for (const r of records) for (const k of _entityKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
+
+    let added = 0;
+    for (const r of records) {
+        const idx = String(r.name || '').indexOf(':');
+        if (idx <= 0) continue;
+        const parent = _nameKeys(r.name.slice(0, idx)).map(k => byKey.get(k)).find(Boolean);
+        if (!parent || parent === r) continue;
+        const parentKeys = new Set(_entityKeys(parent));
+        const alreadyLinked = (r.relationships || []).some(rel => _nameKeys(_relationshipTarget(rel)).some(k => parentKeys.has(k)));
+        if (alreadyLinked) continue;
+        r.relationships = [...(r.relationships || []), { target: parent.name, type: 'is part of' }];
+        added++;
+    }
+    return added;
 }
 
 // ---------------------------------------------------------------------------
@@ -720,40 +843,61 @@ export function mergeDuplicateEntities(chunks) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Cleans a name the model returned in the linking pass: drops a trailing
+ * "[type]" or "(…)" annotation and an "also called" tail some models copy
+ * from the catalog line.
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function _cleanLinkName(raw) {
+    return String(raw || '')
+        .replace(/\s+\(?also called:.*$/i, '')
+        .replace(/\s*\[[^\]]*\]\s*$/, '')
+        .trim();
+}
+
+/**
  * Second LLM pass (opt-in via settings.reformat_enable_linking_pass) that
- * backfills relationships the single-pass extraction structurally cannot see:
- * each extraction batch only knows its own text, so a connection between an
- * entity extracted in batch 2 and one extracted in batch 7 is invisible to
- * both calls. This pass re-reads each batch's text alongside a catalog of
- * EVERY merged entity in the document and asks only for {source, target, type}
- * triples between catalog entries.
+ * backfills relationships the per-batch extraction cannot see: each batch
+ * only knows its own text, so a connection between entries extracted in
+ * different batches is invisible to both calls.
  *
- * Hallucination guard: a triple is applied only when BOTH source and target
- * resolve (case-insensitive, name or alias) to a merged record — the model
- * cannot introduce entities, only connect existing ones. Mutates the records'
- * `relationships` in place (deduped by target+type). Per-batch failures are
- * non-fatal warnings, same policy as _processChain.
+ * A link is applied only when both ends resolve to a merged record, they are
+ * different records, and neither already has a relationship to the other
+ * (so the pass adds missing connections instead of rewording existing ones).
+ * Per-batch failures are non-fatal warnings.
  *
  * @param {object} params
- * @param {Array<{text: string}>} params.batches - The SAME batches used for extraction
- * @param {object[]} params.records - Merged records (post mergeDuplicateEntities)
+ * @param {Array<{text: string}>} params.batches
+ * @param {object[]} params.records - Merged records (mutated)
  * @param {object} params.settings
- * @param {string[]} params.warnings - Mutated: per-batch failure notes appended
+ * @param {string[]} params.warnings
  * @param {number} params.concurrency
  * @param {AbortSignal|null} params.abortSignal
- * @param {(() => void)|null} params.onTick - Called once per finished link batch (progress)
+ * @param {(() => void)|null} params.onTick
  * @returns {Promise<{applied: number, dropped: number}>}
  */
 async function _runLinkingPass({ batches, records, settings, warnings, concurrency, abortSignal = null, onTick = null }) {
-    const catalog = records.map(r => ({ name: r.name, entry_type: r.entry_type, aliases: r.aliases || [] }));
+    const catalog = records.map(r => ({ name: r.name, aliases: r.aliases || [] }));
 
-    /** @type {Map<string, object>} lowercased name/alias → record (first registration wins) */
+    /** @type {Map<string, object>} name/alias key → record (first registration wins) */
     const resolver = new Map();
     for (const r of records) {
         for (const key of _entityKeys(r)) {
             if (!resolver.has(key)) resolver.set(key, r);
         }
     }
+    const resolve = raw => {
+        const cleaned = _cleanLinkName(raw);
+        return [cleaned, cleaned.replace(/\s*\([^)]*\)\s*$/, '')]
+            .flatMap(_nameKeys)
+            .map(k => resolver.get(k))
+            .find(Boolean);
+    };
+    const linked = (from, to) => {
+        const toKeys = new Set(_entityKeys(to));
+        return (from.relationships || []).some(rel => _nameKeys(_relationshipTarget(rel)).some(k => toKeys.has(k)));
+    };
 
     let applied = 0;
     let dropped = 0;
@@ -770,18 +914,15 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
             const triples = _parseReformatArray(reply, i, ['source', 'target']);
 
             for (const t of triples) {
-                const source = resolver.get(String((/** @type {any} */ (t))?.source || '').trim().toLowerCase());
-                const target = resolver.get(String((/** @type {any} */ (t))?.target || '').trim().toLowerCase());
-                if (!source || !target || source === target) {
+                const source = resolve((/** @type {any} */ (t))?.source);
+                const target = resolve((/** @type {any} */ (t))?.target);
+                if (!source || !target) {
                     dropped++;
                     continue;
                 }
-                // Canonicalize target to the resolved record's name so alias-form
-                // triples don't create near-duplicate relationship entries.
-                const rel = { target: target.name, type: String((/** @type {any} */ (t))?.type || '').trim() };
-                const existingKeys = new Set((source.relationships || []).map(_relationshipKey));
-                if (existingKeys.has(_relationshipKey(rel))) continue;
-                source.relationships = [...(source.relationships || []), rel];
+                if (source === target || linked(source, target) || linked(target, source)) continue;
+                const type = String((/** @type {any} */ (t))?.type || '').trim();
+                source.relationships = [...(source.relationships || []), { target: target.name, type }];
                 applied++;
             }
         } catch (err) {
@@ -793,7 +934,10 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
     });
 
     await AsyncUtils.parallel(linkFns, concurrency);
-    log.lifecycle(`[Auto-Reformat] Linking pass: ${applied} relationship(s) added, ${dropped} unresolvable triple(s) dropped`);
+    log.lifecycle(`[Auto-Reformat] Linking pass: ${applied} relationship(s) added, ${dropped} unresolvable link(s) dropped`);
+    if (dropped > 0 && dropped >= applied) {
+        warnings.push(`Linking pass: ${dropped} suggested link(s) named entries that don't exist and were ignored.`);
+    }
     return { applied, dropped };
 }
 
@@ -802,27 +946,24 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
 // ---------------------------------------------------------------------------
 
 /**
- * Restructures source text into structured reformatted chunks.
+ * Restructures source text into entries.
  *
  * @param {object} params
- * @param {string} params.text - Full prepared source text (document/url, or
- *        wiki text with per_page strategy overridden away — see caller)
- * @param {string} params.contentType - 'document' | 'url' | 'wiki'
+ * @param {string} params.text - Full prepared source text
+ * @param {string} params.contentType - 'document' | 'url' | 'wiki' | 'youtube'
  * @param {object} params.settings - VectFox settings
+ * @param {string} [params.sourceName] - Shown to the model as the root of each batch's heading path
  * @param {(processed: number, total: number, phase?: 'extract'|'link') => void} [params.onProgress]
- *        `total` is the count for the CURRENT phase — the linking pass (when
- *        enabled) re-visits every batch and reports its own 1..total sequence
- *        tagged 'link', rather than doubling a shared denominator.
  * @param {AbortSignal} [params.abortSignal]
  * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number}>}
  */
-export async function reformatDocument({ text, contentType, settings, onProgress = null, abortSignal = null } = {}) {
+export async function reformatDocument({ text, contentType, settings, sourceName = '', onProgress = null, abortSignal = null } = {}) {
     if (!text || typeof text !== 'string' || !text.trim()) {
         return { chunks: [], warnings: ['No text to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0 };
     }
 
     const targetChars = settings.reformat_batch_chars || DEFAULT_BATCH_CHARS;
-    const batches = await _buildBatches(text, targetChars);
+    const { batches, skippedSections } = await _buildBatches(text, targetChars, sourceName);
     if (batches.length === 0) {
         return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0 };
     }
@@ -830,6 +971,9 @@ export async function reformatDocument({ text, contentType, settings, onProgress
     const chains = _groupIntoChains(batches);
     const totalBatches = batches.length;
     const warnings = [];
+    if (skippedSections.length > 0) {
+        warnings.push(`Skipped author-note section(s): ${skippedSections.map(t => `"${t}"`).join(', ')}.`);
+    }
     let batchesProcessed = 0;
     let batchesFailed = 0;
     let totalRepairCalls = 0;
@@ -845,7 +989,7 @@ export async function reformatDocument({ text, contentType, settings, onProgress
             err.name = 'AbortError';
             throw err;
         }
-        const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings);
+        const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType);
         batchesProcessed += chain.length;
         batchesFailed += failedCount;
         totalRepairCalls += repairCalls;
@@ -856,13 +1000,11 @@ export async function reformatDocument({ text, contentType, settings, onProgress
     const chainResultsArrays = await AsyncUtils.parallel(chainFns, concurrency);
     const rawChunks = chainResultsArrays.flat();
 
-    // Chains run in parallel with no cross-chain visibility, so the same entity
-    // can be extracted once per section that discusses it — merge those here so
-    // the review UI (and the linking pass below) see one record per entity.
     const chunks = mergeDuplicateEntities(rawChunks);
     if (chunks.length < rawChunks.length) {
         warnings.push(`Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was extracted from multiple document sections.`);
     }
+    linkSubEntriesToParents(chunks);
 
     if (linkingEnabled && chunks.length > 0) {
         let linkBatchesDone = 0;
@@ -886,16 +1028,15 @@ export async function reformatDocument({ text, contentType, settings, onProgress
 }
 
 // ---------------------------------------------------------------------------
-// Oversized-entity fallback (used at Accept time by ui/reformat-review.js)
+// Oversized-entity fallback (used at Accept time by ui/content-vectorizer.js)
 // ---------------------------------------------------------------------------
 
 /**
- * If an accepted record's body exceeds maxBodyChars, sub-chunks it with the
- * EXISTING adaptive splitter (no new splitting logic) into N physical chunks
- * that all carry the parent record's metadata plus subChunkIndex/subChunkTotal.
- * Returns [chunk] unchanged when no expansion is needed.
+ * If an accepted record's body exceeds maxBodyChars, splits it with the
+ * adaptive splitter into pieces that all carry the parent record's fields
+ * plus subChunkIndex/subChunkTotal. Returns [chunk] when no split is needed.
  *
- * @param {object} chunk - A validated reformatted chunk (post-review, accepted)
+ * @param {object} chunk - An accepted record
  * @param {number} maxBodyChars
  * @returns {Promise<object[]>}
  */

@@ -629,7 +629,7 @@ export function renderSettings(containerId, settings, callbacks) {
                             <!-- Auto-Reformat (LLM) -->
                             <p class="vectfox-section-label" style="font-weight:600; margin-top:16px; margin-bottom:8px;">Auto-Reformat (LLM)</p>
                             <small class="VectFox_hint" style="display:block; margin-bottom:8px;">
-                                Optional, per-item LLM pass offered in <b>Vectorize Content</b> for Document/URL/Wiki sources. Reads the source, splits it into clean per-entity/per-topic entries, and uses those as the final chunks — you review and accept every entry before anything is stored. Leave Provider/Model blank to inherit from <b>Summarize Before Store</b> settings.
+                                Optional, per-item LLM pass offered in <b>Vectorize Content</b> for Document/URL/Wiki/YouTube sources. Reads the source, splits it into clean per-entity/per-topic entries, and uses those as the final chunks — you review and accept every entry before anything is stored. Leave Provider/Model blank to inherit from <b>Summarize Before Store</b> settings.
                             </small>
 
                             <div class="vectfox-form-group">
@@ -703,7 +703,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Custom Extraction Prompt (advanced)</small>
                             </label>
                             <textarea id="VectFox_reformat_custom_prompt" class="vectfox-input" rows="3"
-                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/keywords/body fields plus relationships as [{target, type}] objects. Note: traits are always code-sanitized regardless of prompt (items over 160 chars or duplicating the body are dropped)."
+                                placeholder="Leave blank to use the built-in prompt. Must ask for a JSON array of objects with entry_type, name, aliases, affiliation, relationships ([{target, type}]), keywords, hidden (true/false) and body. Put {{text}} where the source goes and {{notes}} where per-batch notes go (both are added automatically if missing)."
                                 style="margin-top:4px;"></textarea>
 
                             <!-- Query (ChunkBase-only) -->
@@ -2723,7 +2723,7 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
-    // ─── Auto-Reformat (Document/URL/Wiki LLM restructuring) ───────────────
+    // ─── Auto-Reformat (Document/URL/Wiki/YouTube LLM restructuring) ───────────────
     // Mirrors the AgentMode inherit-from-summarizer pattern above. No dedicated
     // API-key fields — reuses the same shared OpenRouter/vLLM key slots.
     const updateReformatProviderUI = (provider) => {

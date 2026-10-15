@@ -105,7 +105,7 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
         // chunk set. See core/reformat-store.js for the freeze mechanism and
         // ui/reformat-review.js for how chunks get into the cache in the first
         // place (already {text, metadata} shaped, ready for enrichChunks() below).
-        const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki'];
+        const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki', 'youtube'];
         let chunks;
         let usedFrozenReformat = false;
         if (REFORMAT_SUPPORTED_TYPES.includes(contentType) && settings.reformat?.accepted && settings.reformat?.sourceHash) {
@@ -932,31 +932,17 @@ export function enrichChunks(chunks, contentType, source, settings, preparedCont
         if (chunk.metadata?.entry_type) {
             entryName = chunk.metadata.name || entryName;
 
-            // name/aliases don't carry a per-item importance score, so they keep
-            // the flat bonus this function always used for reformat fields.
-            const reformatNameAliasTexts = [
+            // Name, aliases and keywords all get the same flat bonus. Keywords
+            // in caches accepted before schema v3 are {text, importance}
+            // objects; only their text is used.
+            const reformatTerms = [
                 chunk.metadata.name,
                 ...(Array.isArray(chunk.metadata.aliases) ? chunk.metadata.aliases : []),
+                ...(Array.isArray(chunk.metadata.keywords) ? chunk.metadata.keywords : [])
+                    .map(kw => (typeof kw === 'string' ? kw : kw?.text)),
             ].filter(Boolean);
-            for (const text of reformatNameAliasTexts) {
+            for (const text of reformatTerms) {
                 keywords.push({ text: text.toLowerCase(), weight: keywordBaseWeight + 0.5 });
-            }
-
-            // keywords carry an LLM-assigned importance (1-10, see reformat-schema.js's
-            // computeKeywordVerification/DEFAULT_REFORMAT_PROMPT). Scale the bonus by
-            // it instead of the flat +0.5 used above, so a defining term outweighs a
-            // tangential one. importance 5 (the default) lands at ~+0.47 — close enough
-            // to the old flat +0.5 that un-scored keywords don't regress in ranking.
-            // Also tolerates the legacy plain-string shape (pre-scoring frozen
-            // reformat-store.js caches) by defaulting those to importance 5.
-            const reformatKeywords = Array.isArray(chunk.metadata.keywords) ? chunk.metadata.keywords : [];
-            for (const kw of reformatKeywords) {
-                const text = typeof kw === 'string' ? kw : kw?.text;
-                if (!text) continue;
-                const rawImportance = typeof kw === 'object' ? kw?.importance : 5;
-                const importance = Number.isFinite(rawImportance) ? Math.max(1, Math.min(10, rawImportance)) : 5;
-                const importanceBonus = 0.2 + ((importance - 1) / 9) * 0.6;
-                keywords.push({ text: text.toLowerCase(), weight: keywordBaseWeight + importanceBonus });
             }
         }
 
