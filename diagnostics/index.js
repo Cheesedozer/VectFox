@@ -21,9 +21,7 @@ import {
     checkTransformersMemoryLimits,
     checkApiKeys,
     checkApiUrls,
-    checkProviderConnectivity,
-    checkWebLlmExtension,
-    checkBananaBreadConnection
+    checkProviderConnectivity
 } from './infrastructure.js';
 
 import {
@@ -151,18 +149,6 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
     }
 
     categories.infrastructure.push(await checkProviderConnectivity(settings));
-
-    // WebLLM-specific check (only if WebLLM is selected)
-    const webllmCheck = checkWebLlmExtension(settings);
-    if (webllmCheck.status !== 'skipped') {
-        categories.infrastructure.push(webllmCheck);
-    }
-
-    // BananaBread check (only if BananaBread is selected)
-    const bananabreadCheck = await checkBananaBreadConnection(settings);
-    if (bananabreadCheck.status !== 'skipped') {
-        categories.infrastructure.push(bananabreadCheck);
-    }
 
     // ========== CONFIGURATION CHECKS ==========
     categories.configuration.push(checkChatEnabled(settings));
@@ -301,9 +287,6 @@ export function getFixSuggestion(check) {
         case 'Condition Rule Validity':
             return 'Open the Chunk Editor and review the condition rules on affected chunks. Remove invalid operators or fix malformed values.';
 
-        case 'WebLLM Extension':
-            return 'Install the WebLLM extension from Extensions > Download Extensions, then paste: https://github.com/SillyTavern/Extension-WebLLM. Requires Chrome 113+ or Edge 113+ for WebGPU support.';
-
         default:
             return 'Check the console for more details.';
     }
@@ -335,16 +318,8 @@ export async function executeFixAction(check) {
             }
             return { success: false, message: 'No duplicate data found in check' };
 
-        case 'install_webllm':
-        case 'update_webllm': {
-            // Open the third-party extension menu with WebLLM URL
-            const { openThirdPartyExtensionMenu } = await import('../../../../extensions.js');
-            openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM');
-            return { success: true, message: 'Opening extension installer...' };
-        }
-
         default:
             return { success: false, message: `Unknown fix action: ${check.fixAction}` };
     }
 }
-
+

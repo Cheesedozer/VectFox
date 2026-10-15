@@ -90,9 +90,8 @@
  *     no-auth) should configure auth at their reverse proxy layer.
  *
  *   - bananabread_api_key:
- *     Untouched — the provider has been unselectable since day one
- *     (commented out in EMBEDDING_PROVIDERS). Its dual-storage code
- *     stays alive as zombie. No shipped user can have a value set.
+ *     The BananaBread provider has been removed. No code reads the key;
+ *     the migration only deletes leftover plaintext from settings.json.
  *
  * Migration (`migrateLegacyApiKeys`) runs once at init:
  *   - Consolidates the three legacy OpenRouter slots
@@ -291,12 +290,8 @@ export async function fetchQdrantApiKeyPresence() {
  * ST itself doesn't authenticate ollama; field was dead code on both sides).
  *
  * bananabread_api_key: drained-and-deleted from settings.json on first
- * load 2026-05-26+. The BananaBread provider is unselectable from the
- * Embedding dropdown (commented out in providers.js) AND the API key
- * input handler in ui-manager.js was bound to a selector that matched
- * no HTML element. The deeper BananaBread code paths (rerank, embeddings,
- * diagnostics) remain as unresolved code — see Doc/dev_helper.md
- * "Unresolved code" section.
+ * load 2026-05-26+. The BananaBread provider has been removed and no code
+ * reads the key; this only keeps the plaintext out of settings.json.
  *
  * Idempotent: on subsequent runs the legacy fields are already absent
  * and the function is a no-op.
@@ -522,20 +517,16 @@ export async function migrateLegacyApiKeys() {
     }
 
     // ─── BananaBread plaintext drain (no destination — input was zombie) ───
-    // The BananaBread provider is unselectable (commented out in providers.js)
-    // and the API key input handler in ui-manager.js was bound to a HTML
-    // element that didn't exist — doubly-dead. settings.bananabread_api_key
-    // could only have a real value on installs that ran a pre-2025 build
-    // when BananaBread was still selectable. Drain-and-delete on sight. The
-    // deeper bananabread code paths read this field defensively with
-    // `if (settings.bananabread_api_key)` truthy guards, so they tolerate
-    // the missing field gracefully.
+    // The BananaBread provider has been removed and nothing reads
+    // settings.bananabread_api_key. It could only hold a real value on
+    // installs that ran a pre-2025 build when BananaBread was still
+    // selectable. Kept so such a plaintext key is deleted from settings.json.
     if (Object.prototype.hasOwnProperty.call(vf, 'bananabread_api_key')) {
         const hadValue = typeof vf.bananabread_api_key === 'string' && vf.bananabread_api_key.trim().length > 0;
         delete vf.bananabread_api_key;
         mutated = true;
         moves.push(hadValue
-            ? `BananaBread → removed plaintext bananabread_api_key from settings.json (provider unselectable + input element was dead — see Doc/dev_helper.md)`
+            ? `BananaBread → removed plaintext bananabread_api_key from settings.json (provider removed)`
             : `BananaBread → removed empty plaintext bananabread_api_key from settings.json`);
     }
 

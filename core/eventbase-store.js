@@ -12,7 +12,6 @@ import {
     insertVectorItems,
     queryCollection,
     deleteVectorItems,
-    getAdditionalArgs,
     getSavedHashes,
 } from './core-vector-api.js';
 import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
@@ -137,15 +136,10 @@ export async function insertEvents(events, settings, abortSignal = null, collect
         }
     }
 
-    // Generate embeddings (reuses same provider/model as legacy path)
-    const additionalArgs = await getAdditionalArgs(embedTexts, settings);
-    const clientEmbeddings = additionalArgs.embeddings || null;
-
     // Build insertable items
     const items = events.map((event, idx) => {
         const embedText = embedTexts[idx];
         const hash = _eventHash(event.event_id);
-        const vector = clientEmbeddings?.[embedText] || null;
 
         // The summary string lives inside `text` (first line, after the [event_type] prefix).
         // Storing it again as a separate field is pure duplication, so we strip it from both
@@ -156,7 +150,7 @@ export async function insertEvents(events, settings, abortSignal = null, collect
             hash,
             text: embedText,
             index: event.source_window_end ?? (event.source_window_start != null ? event.source_window_start + 1 : idx + 1), // source_window_end for consistency with message_order injection field
-            vector,             // null → server-side embedding
+            vector: null,       // null → server-side embedding
             // Top-level fields read by qdrant.js's payload builder.
             // qdrant.js spreads item.metadata first then explicitly overwrites these
             // fields from the top-level item. Without them defined here, they are

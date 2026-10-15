@@ -11,7 +11,7 @@
  */
 
 import { saveSettingsDebounced, getCurrentChatId, eventSource, event_types, getRequestHeaders } from '../../../../../script.js';
-import { extension_settings, openThirdPartyExtensionMenu, getContext } from '../../../../extensions.js';
+import { extension_settings, getContext } from '../../../../extensions.js';
 import { writeSecret, SECRET_KEYS, secret_state, readSecretState } from '../../../../secrets.js';
 import {
     getOpenRouterApiKey,
@@ -19,7 +19,6 @@ import {
     getQdrantApiKey,
     fetchQdrantApiKeyPresence,
 } from '../core/api-keys.js';
-import { getWebLlmProvider as getSharedWebLlmProvider } from '../providers/webllm.js';
 import StringUtils from '../utils/string-utils.js';
 import { openVisualizer } from './chunk-visualizer.js';
 import { openDatabaseBrowser } from './database-browser.js';
@@ -32,7 +31,7 @@ import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard, 
 import { doesChatHaveVectors, getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
 import { getCollectionMeta } from '../core/collection-metadata.js';
 import { parseRegistryKey } from '../core/collection-ids.js';
-import { getModelField } from '../core/providers.js';
+import { getModelField, getEmbeddingRequestParams } from '../core/providers.js';
 import { getChunkingStrategies } from '../core/content-types.js';
 import { CJK_TOKENIZER_MODES, setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded } from '../core/bm25-scorer.js';
 import { LANGUAGE_MODES } from '../core/language-modes.js';
@@ -1661,149 +1660,6 @@ function initializeCollapsibleCards() {
         });
     }
 
-// Use shared WebLLM provider singleton from providers/webllm.js
-// This ensures the same engine instance is shared with core-vector-api.js
-const getWebLlmProvider = getSharedWebLlmProvider;
-
-/**
- * Checks if WebLLM is supported (browser + extension)
- * Shows user-friendly toast notifications with actionable guidance
- * @returns {boolean} True if WebLLM is available
- */
-function isWebLlmSupported() {
-    // Check 1: Browser supports WebGPU API
-    if (!('gpu' in navigator)) {
-        const warningKey = 'VectFox_webllm_browser_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'Your browser does not support the WebGPU API. Please use Chrome 113+, Edge 113+, or another WebGPU-compatible browser.',
-                'WebLLM - Browser Not Supported',
-                { preventDuplicates: true, timeOut: 0, extendedTimeOut: 0 }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    // Check 2: WebLLM extension is installed
-    if (!Object.hasOwn(SillyTavern, 'llm')) {
-        const warningKey = 'VectFox_webllm_extension_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'WebLLM extension is not installed. Click here to install it.',
-                'WebLLM - Extension Required',
-                {
-                    timeOut: 0,
-                    extendedTimeOut: 0,
-                    preventDuplicates: true,
-                    onclick: () => openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM'),
-                }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    // Check 3: WebLLM extension supports embeddings
-    if (typeof SillyTavern.llm.generateEmbedding !== 'function') {
-        const warningKey = 'VectFox_webllm_update_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'Your WebLLM extension is outdated and does not support embeddings. Please update the extension.',
-                'WebLLM - Update Required',
-                { preventDuplicates: true, timeOut: 0, extendedTimeOut: 0 }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * Executes a function with WebLLM error handling
- * @param {Function} func - Function to execute
- * @returns {Promise<any>} Result of function or undefined on error
- */
-async function executeWithWebLlmErrorHandling(func) {
-    try {
-        return await func();
-    } catch (error) {
-        log.error('VectFox: WebLLM operation failed', error);
-        if (!(error instanceof Error)) {
-            return;
-        }
-        switch (error.cause) {
-            case 'webllm-not-available':
-                toastr.error(
-                    'WebLLM extension is not installed. Click here to install it.',
-                    'WebLLM Error',
-                    {
-                        timeOut: 0,
-                        extendedTimeOut: 0,
-                        preventDuplicates: true,
-                        onclick: () => openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM'),
-                    }
-                );
-                break;
-            case 'webllm-not-updated':
-                toastr.error(
-                    'Your WebLLM extension needs updating. It does not support embeddings.',
-                    'WebLLM Update Required',
-                    { timeOut: 0, extendedTimeOut: 0, preventDuplicates: true }
-                );
-                break;
-            default:
-                toastr.error(
-                    `WebLLM error: ${error.message}`,
-                    'WebLLM Error',
-                    { preventDuplicates: true }
-                );
-        }
-    }
-}
-
-/**
- * Loads available WebLLM models into the dropdown
- * @param {object} settings - VectFox settings object
- */
-export async function loadWebLlmModels(settings) {
-    return executeWithWebLlmErrorHandling(async () => {
-        const provider = getWebLlmProvider();
-        const models = provider.getModels();
-        const $select = $('#VectFox_webllm_model');
-
-        $select.empty();
-
-        if (!models || models.length === 0) {
-            $select.append($('<option>', { value: '', text: 'No embedding models available' }));
-            return;
-        }
-
-        for (const model of models) {
-            $select.append($('<option>', {
-                value: model.id,
-                text: model.toString ? model.toString() : model.id,
-            }));
-        }
-
-        // Auto-select saved model or first available
-        if (settings.webllm_model && models.some(m => m.id === settings.webllm_model)) {
-            $select.val(settings.webllm_model);
-        } else if (models.length > 0) {
-            settings.webllm_model = models[0].id;
-            $select.val(settings.webllm_model);
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        }
-    });
-}
-
-/**
- * Updates the WebLLM status display based on availability
- * @returns {boolean} True if WebLLM is available
- */
 /**
  * Refreshes the auto-sync checkbox state from current chat's collection
  * Call this when chat changes to keep UI in sync
@@ -1948,48 +1804,6 @@ export async function refreshAutoSyncCheckbox(settings) {
     }
 }
 
-export function updateWebLlmStatus() {
-    const $status = $('#VectFox_webllm_status');
-    const $installBtn = $('#VectFox_webllm_install');
-    const $loadBtn = $('#VectFox_webllm_load');
-    const $modelSelect = $('#VectFox_webllm_model');
-
-    // Check browser support
-    if (!('gpu' in navigator)) {
-        $status.html('<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning-color, #f39c12);"></i> Your browser does not support WebGPU. Use Chrome 113+ or Edge 113+.');
-        $installBtn.hide();
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // Check extension installed
-    if (!Object.hasOwn(SillyTavern, 'llm')) {
-        $status.html('<i class="fa-solid fa-exclamation-circle" style="color: var(--error-color, #e74c3c);"></i> WebLLM extension not installed. Click "Install Extension" below.');
-        $installBtn.show();
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // Check extension supports embeddings
-    if (typeof SillyTavern.llm.generateEmbedding !== 'function') {
-        $status.html('<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning-color, #f39c12);"></i> WebLLM extension is outdated. Please update it to support embeddings.');
-        $installBtn.show().find('i').removeClass('fa-puzzle-piece').addClass('fa-rotate');
-        $installBtn.find('span, text').text(' Update Extension');
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // All good!
-    $status.html('<i class="fa-solid fa-check-circle" style="color: var(--success-color, #2ecc71);"></i> WebLLM extension is installed and ready.');
-    $installBtn.hide();
-    $loadBtn.prop('disabled', false);
-    $modelSelect.prop('disabled', false);
-    return true;
-}
-
 /**
  * Toggles provider-specific settings visibility
  * @param {string} selectedProvider - Currently selected provider
@@ -2006,14 +1820,6 @@ function toggleProviderSettings(selectedProvider, settings) {
             $(this).show();
         }
     });
-
-    // Handle WebLLM-specific initialization
-    if (selectedProvider === 'webllm') {
-        const isSupported = updateWebLlmStatus();
-        if (isSupported) {
-            loadWebLlmModels(settings);
-        }
-    }
 }
 
 /**
@@ -3672,15 +3478,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // Provider-specific settings
 
-    // ElectronHub model
-    $('#VectFox_electronhub_model')
-        .val(settings.electronhub_model)
-        .on('change', function() {
-            settings.electronhub_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
     // Ollama alternative endpoint
     $('#VectFox_ollama_use_alt_endpoint')
         .prop('checked', settings.ollama_use_alt_endpoint)
@@ -3729,54 +3526,6 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
-    // WebLLM model
-    $('#VectFox_webllm_model')
-        .val(settings.webllm_model)
-        .on('change', function() {
-            settings.webllm_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // WebLLM Load Model button
-    $('#VectFox_webllm_load').on('click', async function() {
-        const modelId = settings.webllm_model;
-
-        if (!modelId) {
-            toastr.warning('Please select a WebLLM model first', 'No Model Selected');
-            return;
-        }
-
-        if (!isWebLlmSupported()) {
-            return; // isWebLlmSupported already shows appropriate error
-        }
-
-        const $button = $(this);
-        const originalHtml = $button.html();
-        $button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Loading...');
-
-        await executeWithWebLlmErrorHandling(async () => {
-            const provider = getWebLlmProvider();
-            await provider.loadModel(modelId);
-            toastr.success(`WebLLM model "${modelId}" loaded successfully`, 'Model Loaded');
-        });
-
-        $button.prop('disabled', false).html(originalHtml);
-    });
-
-    // WebLLM Install Extension button
-    $('#VectFox_webllm_install').on('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (Object.hasOwn(SillyTavern, 'llm')) {
-            toastr.info('WebLLM extension is already installed. Try refreshing the page.', 'Already Installed');
-            return;
-        }
-
-        openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM');
-    });
-
     // Ollama model
     $('#VectFox_ollama_model')
         .val(settings.ollama_model)
@@ -3790,15 +3539,6 @@ function bindSettingsEvents(settings, callbacks) {
         .prop('checked', settings.ollama_keep)
         .on('input', function() {
             settings.ollama_keep = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // BananaBread reranking
-    $('#VectFox_bananabread_rerank')
-        .prop('checked', settings.bananabread_rerank)
-        .on('input', function() {
-            settings.bananabread_rerank = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });
@@ -4068,42 +3808,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // ── End EventBase settings ───────────────────────────────────────────────
 
-    // BananaBread API key input removed 2026-05-26: the BananaBread provider
-    // is commented out in providers.js (unselectable from the Embedding
-    // dropdown) AND the #VectFox_bananabread_apikey HTML element doesn't
-    // exist anywhere in the template — this handler was bound to a selector
-    // that matched nothing. Doubly-dead code. The deeper BananaBread paths
-    // (rerank, embeddings, diagnostics, backend switch) remain in the
-    // codebase as unresolved work; see Doc/dev_helper.md "Unresolved code"
-    // section for the rationale.
-
-    // OpenAI model
-    $('#VectFox_openai_model')
-        .val(settings.openai_model)
-        .on('change', function() {
-            settings.openai_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Cohere model
-    $('#VectFox_cohere_model')
-        .val(settings.cohere_model)
-        .on('change', function() {
-            settings.cohere_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // TogetherAI model
-    $('#VectFox_togetherai_model')
-        .val(settings.togetherai_model)
-        .on('change', function() {
-            settings.togetherai_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
     // vLLM model
     $('#VectFox_vllm_model')
         .val(settings.vllm_model)
@@ -4159,15 +3863,6 @@ function bindSettingsEvents(settings, callbacks) {
             $(document).trigger('vectfox:vllm-key-changed');
         }
     });
-
-    // Google model
-    $('#VectFox_google_model')
-        .val(settings.google_model)
-        .on('change', function() {
-            settings.google_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
 
     // OpenRouter model
     $('#VectFox_openrouter_model')
@@ -4873,14 +4568,9 @@ function copyDiagnosticsReport(results) {
 
     // Build provider URL info
     let providerUrl = 'n/a';
-    if (source === 'ollama') {
-        providerUrl = settings.ollama_use_alt_endpoint && settings.ollama_alt_endpoint_url
-            ? settings.ollama_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.OLLAMA] || 'http://localhost:11434');
-    } else if (source === 'vllm') {
-        providerUrl = settings.vllm_use_alt_endpoint && settings.vllm_alt_endpoint_url
-            ? settings.vllm_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.VLLM] || 'http://localhost:8000');
+    if (source === 'ollama' || source === 'vllm') {
+        // The URL the backends actually send (see getEmbeddingRequestParams).
+        providerUrl = getEmbeddingRequestParams(settings).apiUrl || 'not set';
     }
 
     let report = `╔══════════════════════════════════════════════════════════════╗
