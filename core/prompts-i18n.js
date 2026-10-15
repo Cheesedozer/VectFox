@@ -793,7 +793,8 @@ export function buildPlannerUserMessage({ recentTurns, userMessage, candidates }
  * Format: E<N> [score] type — text (chars: [...], concepts: [...], importance: X)
  */
 function _formatCandidateLine(ev, idx) {
-    const score = typeof ev.score === 'number' ? ev.score.toFixed(2)
+    const score = typeof ev._finalScore === 'number' ? ev._finalScore.toFixed(2)
+        : typeof ev.score === 'number' ? ev.score.toFixed(2)
         : typeof ev.vectorScore === 'number' ? ev.vectorScore.toFixed(2)
         : '—';
     const type = ev.event_type || ev.metadata?.event_type || 'event';

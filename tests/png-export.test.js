@@ -156,14 +156,12 @@ describe('embed / extract round trip', () => {
         expect(await extractDataFromPNG(png)).toEqual({ keep: 1, arr: [1, null] });
     });
 
-    it('re-embedding produces a PNG with TWO VectFox chunks; extraction returns the first', async () => {
-        // BUG-SHAPED: there is no replace-existing logic, so repeated exports
-        // through the same base image accumulate stale payloads.
+    it('re-embedding replaces the earlier VectFox chunk', async () => {
         const first = await embedDataInPNG({ generator: 'VectFox', gen: 1 }, makeBasePNG());
         const second = await embedDataInPNG({ generator: 'VectFox', gen: 2 }, first);
-        expect(await extractDataFromPNG(second)).toEqual({ generator: 'VectFox', gen: 1 });
+        expect(await extractDataFromPNG(second)).toEqual({ generator: 'VectFox', gen: 2 });
         const zCount = new TextDecoder('latin1').decode(second).split('zTXt').length - 1;
-        expect(zCount).toBe(2);
+        expect(zCount).toBe(1);
     });
 });
 

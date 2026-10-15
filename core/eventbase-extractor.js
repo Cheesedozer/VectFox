@@ -470,15 +470,17 @@ export async function extractEvents({ messages, windowStart, windowEnd, settings
     // (which display "from Message #<windowEnd>") are searchable directly from the log.
     const msgRange = `msgs=${windowStart}-${windowEnd}`;
 
-    // Build excerpt text from messages
-    const excerptLines = messages.map(m => {
-        const speaker = m.name || (m.is_user ? 'User' : 'Assistant');
+    // Build excerpt text from messages (blank messages contribute nothing)
+    const excerptLines = [];
+    for (const m of messages) {
         const text = cleanText(String(m.mes || '')).trim();
-        return `${speaker}: ${text}`;
-    });
+        if (!text) continue;
+        const speaker = m.name || (m.is_user ? 'User' : 'Assistant');
+        excerptLines.push(`${speaker}: ${text}`);
+    }
     const excerptText = excerptLines.join('\n\n');
 
-    if (!excerptText.trim()) {
+    if (!excerptText) {
         log.verbose('[EventBase] Skipping empty window');
         return [];
     }

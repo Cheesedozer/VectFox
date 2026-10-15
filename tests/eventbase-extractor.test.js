@@ -107,20 +107,16 @@ describe('excerpt and prompt construction', () => {
         expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
-    it('STILL calls the LLM for a window of empty messages — the empty-window guard is defeated by speaker labels', async () => {
-        // BUG-SHAPED: the guard is `if (!excerptText.trim())`, but excerptText
-        // is built as `${speaker}: ${text}`. With any named speaker the string
-        // is "A: \n\nB: ", which trims to "A:\n\nB:" — non-empty. So a window
-        // of blank messages burns a full LLM call instead of short-circuiting.
-        await run({ messages: [{ name: 'A', mes: '' }, { name: 'B', mes: '   ' }] });
-        expect(globalThis.fetch).toHaveBeenCalledOnce();
-        expect(lastPrompt()).toContain('A: \n\nB:');
+    it('skips the LLM for a window of blank messages', async () => {
+        expect(await run({ messages: [{ name: 'A', mes: '' }, { name: 'B', mes: '   ' }] })).toEqual([]);
+        expect(await run({ messages: [{}] })).toEqual([]);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
-    it('does short-circuit when the messages have neither text NOR a usable label... it does not', async () => {
-        // Even an unnamed, empty, non-user message renders as "Assistant: ".
-        await run({ messages: [{}] });
-        expect(globalThis.fetch).toHaveBeenCalledOnce();
+    it('leaves blank messages out of the excerpt', async () => {
+        await run({ messages: [{ name: 'A', mes: '' }, { name: 'B', mes: 'hello' }] });
+        expect(lastPrompt()).toContain('B: hello');
+        expect(lastPrompt()).not.toContain('A:');
     });
 
     it('formats the excerpt as "Speaker: text" blocks separated by blank lines', async () => {
