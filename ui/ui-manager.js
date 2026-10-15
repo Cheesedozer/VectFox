@@ -4684,7 +4684,7 @@ export function openDiagnosticsModal() {
  * Handles fixing all fixable issues
  * @param {Array} checks - Array of diagnostic checks
  */
-function handleFixAll(checks) {
+async function handleFixAll(checks) {
     const fixableChecks = checks.filter(c => c.fixable && (c.status === 'fail' || c.status === 'warning'));
 
     if (fixableChecks.length === 0) {
@@ -4697,9 +4697,9 @@ function handleFixAll(checks) {
         'pass': '<i class="fa-solid fa-circle-check" style="color: var(--vectfox-success);"></i>'
     };
 
-    fixableChecks.forEach(check => {
+    for (const check of fixableChecks) {
         try {
-            handleDiagnosticFix(check.fixAction, true); // silent mode
+            await handleDiagnosticFix(check.fixAction, true); // silent mode
             fixedCount++;
 
             // Update UI for this item
@@ -4711,7 +4711,7 @@ function handleFixAll(checks) {
         } catch (e) {
             log.warn(`Failed to fix: ${check.fixAction}`, e);
         }
-    });
+    }
 
     // Hide Fix All button after use
     $('#VectFox_diag_fix_all').fadeOut(200);
@@ -4724,7 +4724,7 @@ function handleFixAll(checks) {
  * @param {string} action - The fix action to perform
  * @param {boolean} silent - If true, suppress toast notifications and don't close modal
  */
-function handleDiagnosticFix(action, silent = false) {
+async function handleDiagnosticFix(action, silent = false) {
     const settings = extension_settings.vectfox;
 
     switch (action) {
@@ -4759,22 +4759,31 @@ function handleDiagnosticFix(action, silent = false) {
             break;
 
         case 'fix_counts':
-            if (settings.insert < 1) {
-                $('#VectFox_insert').val(3).trigger('change');
-            }
-            if ((settings.top_k ?? settings.insert) < 1) {
+            // insert/query have no inputs of their own; write the settings directly.
+            if (!(settings.insert >= 1)) settings.insert = 3;
+            if (!(settings.query >= 1)) settings.query = 2;
+            if (settings.top_k !== undefined && !(settings.top_k >= 1)) {
                 $('#VectFox_topk').val(3).trigger('change');
             }
-            if (settings.query < 1) {
-                $('#VectFox_query').val(2).trigger('change');
-            }
+            saveSettingsDebounced();
             if (!silent) toastr.success('Insert/Query counts fixed');
             break;
 
-        case 'fix_chunk_size':
-            $('#VectFox_chunk_size').val(500).trigger('input');
-            if (!silent) toastr.success('Chunk size reset to 500');
+        case 'configure_qdrant':
+            $('#VectFox_qdrant_settings')[0]?.scrollIntoView({ behavior: 'smooth' });
+            if (!silent) toastr.info('Check your Qdrant connection settings');
             break;
+
+        case 'cleanOrphanedMetadata':
+        case 'removeDuplicateHashes': {
+            // These repair data the check found; the check object carries it.
+            const check = currentDiagnosticResults?.checks?.find(c => c.fixAction === action);
+            if (!check) break;
+            const { executeFixAction } = await import('../diagnostics/index.js');
+            const result = await executeFixAction(check, settings);
+            if (!silent) (result?.success ? toastr.success : toastr.error)(result?.message || 'Fix failed');
+            break;
+        }
 
         case 'fix_qdrant_dimension':
             // This needs a dialog - don't auto-fix, show options

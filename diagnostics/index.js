@@ -26,7 +26,6 @@ import {
 
 import {
     checkChatEnabled,
-    checkChunkSize,
     checkScoreThreshold,
     checkInsertQueryCounts,
     checkChatVectors,
@@ -152,7 +151,6 @@ export async function runDiagnostics(settings, includeProductionTests = false) {
 
     // ========== CONFIGURATION CHECKS ==========
     categories.configuration.push(checkChatEnabled(settings));
-    categories.configuration.push(checkChunkSize(settings));
     categories.configuration.push(checkScoreThreshold(settings));
     categories.configuration.push(checkInsertQueryCounts(settings));
     categories.configuration.push(await checkChatVectors(settings));
@@ -295,9 +293,10 @@ export function getFixSuggestion(check) {
 /**
  * Execute a fix action for a diagnostic check
  * @param {object} check Diagnostic check result with fixAction
+ * @param {object} settings VectFox settings
  * @returns {Promise<object>} Fix result
  */
-export async function executeFixAction(check) {
+export async function executeFixAction(check, settings) {
     if (!check.fixable || !check.fixAction) {
         return { success: false, message: 'No fix available for this check' };
     }
@@ -311,9 +310,6 @@ export async function executeFixAction(check) {
 
         case 'removeDuplicateHashes':
             if (check.data?.duplicates && check.data?.collectionId) {
-                // Need settings for the fix function - get from VectFox
-                const { getVectFoxSettings } = await import('../ui/ui-settings.js');
-                const settings = getVectFoxSettings();
                 return await fixDuplicateHashes(check.data.duplicates, check.data.collectionId, settings);
             }
             return { success: false, message: 'No duplicate data found in check' };
