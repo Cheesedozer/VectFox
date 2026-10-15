@@ -720,7 +720,6 @@ export async function ensureEventBaseIndexes(settings) {
 
 /**
  * Deterministic numeric hash for an event_id string.
- * Uses the same djb2 algorithm as bm25-scorer.js / chat-vectorization.js.
  * @param {string} id
  * @returns {number}
  */
