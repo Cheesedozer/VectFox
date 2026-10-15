@@ -381,13 +381,14 @@ async function onPurgeClick() {
     }
 
     try {
-        const { getRequestHeaders } = await import('../../../../script.js');
+        const { getRequestHeaders, saveSettings } = await import('../../../../script.js');
 
-        // 1. Delete entire vectors folder
-        await fetch('/api/plugins/similharity/purge-all', {
+        // 1. Delete the plugin's vectors folder
+        const res = await fetch('/api/plugins/similharity/purge-all', {
             method: 'POST',
             headers: getRequestHeaders(),
         });
+        if (!res.ok) throw new Error(`plugin returned HTTP ${res.status}`);
 
         // 2. Clear extension_settings.vectfox
         for (const key in extension_settings.vectfox) {
@@ -396,11 +397,12 @@ async function onPurgeClick() {
             }
         }
 
-        // 3. Save settings
-        const { saveSettingsDebounced } = await import('../../../../script.js');
-        saveSettingsDebounced();
-
+        // 3. Save, then reload. The module-level `settings` copy and every UI
+        // handler still hold the old values; without a reload the next settings
+        // change would Object.assign them straight back.
+        await saveSettings();
         toastr.success('All vector data purged', 'Purge Complete');
+        setTimeout(() => location.reload(), 1000);
 
     } catch (error) {
         console.error('VectFox: Purge failed:', error);
