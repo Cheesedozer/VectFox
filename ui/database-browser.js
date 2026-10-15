@@ -81,7 +81,6 @@ import {
   downloadPNG,
   readPNGFile,
   convertToPNG,
-  isVectFoxPNG,
 } from "../core/png-export.js";
 import { renderSizeInspectorTab } from "./size-inspector.js";
 

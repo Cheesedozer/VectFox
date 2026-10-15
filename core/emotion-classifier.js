@@ -127,8 +127,9 @@ export async function classifyEmotion(text, options = {}) {
         return null;
     }
 
-    // Check cache
-    const cacheKey = `${text.substring(0, 100)}:${settings.model}`;
+    // Cache on the full text and the model actually used for this call
+    const model = options.model || settings.model;
+    const cacheKey = `${model}:${text}`;
     if (classifierCache.has(cacheKey)) {
         return classifierCache.get(cacheKey);
     }
@@ -140,7 +141,7 @@ export async function classifyEmotion(text, options = {}) {
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 text: text,
-                model: options.model || settings.model,
+                model,
             }),
         });
 

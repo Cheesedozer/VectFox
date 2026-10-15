@@ -554,22 +554,3 @@ export async function readPNGFile(file) {
     const buffer = await file.arrayBuffer();
     return new Uint8Array(buffer);
 }
-
-/**
- * Checks if a file is a PNG with VectFox data
- * @param {File} file - File to check
- * @returns {Promise<boolean>}
- */
-export async function isVectFoxPNG(file) {
-    if (!file.type.includes('png') && !file.name.toLowerCase().endsWith('.png')) {
-        return false;
-    }
-
-    try {
-        const data = await readPNGFile(file);
-        const exportData = await extractDataFromPNG(data);
-        return exportData !== null && (exportData.generator === 'VectFox' || exportData.version);
-    } catch {
-        return false;
-    }
-}

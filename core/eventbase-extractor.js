@@ -295,7 +295,8 @@ function _inferLanguageHint(text) {
     if (!text) return null;
     const hangul = (text.match(/[\uAC00-\uD7AF]/g) || []).length;
     const hiragana = (text.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []).length;
-    const cjk = (text.match(/[\u3000-\u9FFF\uF900-\uFAFF]/g) || []).length + hangul + hiragana;
+    // \u3000-\u9FFF already includes kana; Hangul lies outside it.
+    const cjk = (text.match(/[\u3000-\u9FFF\uF900-\uFAFF]/g) || []).length + hangul;
     const latin = (text.match(/[a-zA-Z]/g) || []).length;
     const total = cjk + latin;
     if (total === 0 || cjk / total < 0.15) return null; // too little CJK to guess

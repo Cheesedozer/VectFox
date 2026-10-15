@@ -19,7 +19,6 @@ import {
     embedDataInPNG,
     extractDataFromPNG,
     readPNGFile,
-    isVectFoxPNG,
     createDefaultPNG,
     downloadPNG,
 } from '../core/png-export.js';
@@ -271,62 +270,6 @@ describe('readPNGFile', () => {
         const out = await readPNGFile(fileLike);
         expect(out).toBeInstanceOf(Uint8Array);
         expect(Array.from(out)).toEqual(Array.from(bytes));
-    });
-});
-
-describe('isVectFoxPNG', () => {
-    const fileFrom = (bytes, { name = 'export.png', type = 'image/png' } = {}) => ({
-        name, type, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
-    });
-
-    it('accepts a PNG carrying VectFox data', async () => {
-        const png = await embedDataInPNG(sampleExport, makeBasePNG());
-        expect(await isVectFoxPNG(fileFrom(png))).toBe(true);
-    });
-
-    it('accepts by .png filename even when the MIME type is wrong', async () => {
-        const png = await embedDataInPNG(sampleExport, makeBasePNG());
-        expect(await isVectFoxPNG(fileFrom(png, { type: 'application/octet-stream' }))).toBe(true);
-    });
-
-    it('is case-insensitive about the .PNG extension', async () => {
-        const png = await embedDataInPNG(sampleExport, makeBasePNG());
-        expect(await isVectFoxPNG(fileFrom(png, { name: 'EXPORT.PNG', type: '' }))).toBe(true);
-    });
-
-    it('rejects non-PNG files without reading them', async () => {
-        const file = { name: 'notes.txt', type: 'text/plain', arrayBuffer: vi.fn() };
-        expect(await isVectFoxPNG(file)).toBe(false);
-        expect(file.arrayBuffer).not.toHaveBeenCalled();
-    });
-
-    it('rejects a plain PNG with no embedded data', async () => {
-        expect(await isVectFoxPNG(fileFrom(makeBasePNG()))).toBe(false);
-    });
-
-    it('returns false (never throws) for corrupt bytes', async () => {
-        expect(await isVectFoxPNG(fileFrom(new Uint8Array([1, 2, 3])))).toBe(false);
-    });
-
-    it('returns the raw version STRING, not a boolean, for a non-VectFox versioned payload', async () => {
-        // BUG-SHAPED: the JSDoc promises Promise<boolean>, but the expression
-        // `data !== null && (data.generator === 'VectFox' || data.version)`
-        // short-circuits to `data.version` itself. Truthy, so `if` callers are
-        // unaffected — but `=== true` comparisons would silently fail.
-        const png = makeBasePNG([textChunk('VectFox', btoa('{"version":"1.0","generator":"SomethingElse"}'))]);
-        expect(await isVectFoxPNG(fileFrom(png))).toBe('1.0');
-    });
-
-    it('returns undefined, not false, for a VectFox chunk with neither generator nor version', async () => {
-        // Same leak as above on the negative side.
-        const png = makeBasePNG([textChunk('VectFox', btoa('{"chunks":[]}'))]);
-        expect(await isVectFoxPNG(fileFrom(png))).toBeUndefined();
-    });
-
-    it('does return a real boolean on the paths that short-circuit early', async () => {
-        expect(await isVectFoxPNG({ name: 'a.txt', type: 'text/plain', arrayBuffer: vi.fn() })).toBe(false);
-        const png = await embedDataInPNG(sampleExport, makeBasePNG());
-        expect(await isVectFoxPNG(fileFrom(png))).toBe(true);
     });
 });
 

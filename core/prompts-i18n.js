@@ -334,7 +334,7 @@ const _PLANNER_PROMPTS = {
  * @returns {string}
  */
 export function getAgenticPlannerPrompt(mode) {
-    return _PLANNER_PROMPTS[mode] ?? _PLANNER_PROMPTS.intl;
+    return Object.hasOwn(_PLANNER_PROMPTS, mode) ? _PLANNER_PROMPTS[mode] : _PLANNER_PROMPTS.intl;
 }
 
 
@@ -443,7 +443,7 @@ const _SUMMARIZE_PROMPTS = {
  * @returns {string}
  */
 export function getDefaultSummarizePrompt(mode) {
-    return _SUMMARIZE_PROMPTS[mode] ?? _SUMMARIZE_PROMPTS.intl;
+    return Object.hasOwn(_SUMMARIZE_PROMPTS, mode) ? _SUMMARIZE_PROMPTS[mode] : _SUMMARIZE_PROMPTS.intl;
 }
 
 
@@ -731,7 +731,7 @@ const _EXTRACTION_PROMPTS = {
  * @returns {string}
  */
 export function getEventBaseExtractionPrompt(mode) {
-    return _EXTRACTION_PROMPTS[mode] ?? _EXTRACTION_PROMPTS.intl;
+    return Object.hasOwn(_EXTRACTION_PROMPTS, mode) ? _EXTRACTION_PROMPTS[mode] : _EXTRACTION_PROMPTS.intl;
 }
 
 
