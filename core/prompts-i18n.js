@@ -461,7 +461,7 @@ export function getDefaultSummarizePrompt(mode) {
 
 // ── Shared TOP: intro + ABSOLUTE RULES heading ───────────────────────────────
 const _EXTRACTION_TOP =
-`You are a story event archivist for a roleplay session. Extract ONLY narratively significant story events from the excerpt below.
+`You are a story event archivist for a roleplay session. Extract the narratively significant story events from the EXCERPT above.
 
 =========================
 ABSOLUTE RULES (DO NOT BREAK)
@@ -695,25 +695,30 @@ const _EXTRACTION_EXAMPLES_OTHERS =
 
 `;
 
-// ── Shared FOOTER: the excerpt slot, then the closing instruction ────────────
-// The instruction after the excerpt is load-bearing: without it, small models
-// (observed with google/gemini-3.5-flash-lite) answer [] for every window.
-const _EXTRACTION_FOOTER =
+// ── The excerpt goes FIRST, the closing instruction LAST ────────────────────
+// Both are load-bearing for small models. With the excerpt after ~9k chars
+// of rules, google/gemini-3.5-flash-lite answered [] for 8 of 8 samples of a
+// scene containing an explicit promise; with the excerpt first it extracted
+// events in 8 of 8.
+const _EXTRACTION_EXCERPT =
 `=========================
 EXCERPT
 =========================
 {{text}}
 
-=========================
+`;
+
+const _EXTRACTION_FOOTER =
+`=========================
 Output the JSON array of events for the EXCERPT above.`;
 
 const _EXTRACTION_PROMPTS = {
-    intl:           _EXTRACTION_TOP + _EXTRACTION_LANG_INTL           + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_INTL           + _EXTRACTION_FOOTER,
-    jieba:          _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA          + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA          + _EXTRACTION_FOOTER,
-    jieba_tw:       _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA_TW       + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA_TW       + _EXTRACTION_FOOTER,
-    tiny_segmenter: _EXTRACTION_TOP + _EXTRACTION_LANG_TINY_SEGMENTER + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_TINY_SEGMENTER + _EXTRACTION_FOOTER,
-    korean:         _EXTRACTION_TOP + _EXTRACTION_LANG_KOREAN         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_KOREAN         + _EXTRACTION_FOOTER,
-    others:         _EXTRACTION_TOP + _EXTRACTION_LANG_OTHERS         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_OTHERS         + _EXTRACTION_FOOTER,
+    intl:           _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_INTL           + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_INTL           + _EXTRACTION_FOOTER,
+    jieba:          _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA          + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA          + _EXTRACTION_FOOTER,
+    jieba_tw:       _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA_TW       + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA_TW       + _EXTRACTION_FOOTER,
+    tiny_segmenter: _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_TINY_SEGMENTER + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_TINY_SEGMENTER + _EXTRACTION_FOOTER,
+    korean:         _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_KOREAN         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_KOREAN         + _EXTRACTION_FOOTER,
+    others:         _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_OTHERS         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_OTHERS         + _EXTRACTION_FOOTER,
 };
 
 /**

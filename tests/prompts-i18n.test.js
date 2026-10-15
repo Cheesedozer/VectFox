@@ -140,12 +140,14 @@ describe('getEventBaseExtractionPrompt', () => {
         }
     });
 
-    it('ends with the EXCERPT block followed by the output instruction', () => {
-        // Without the closing instruction gemini-3.5-flash-lite answers [] for every window.
+    it('opens with the EXCERPT block and ends with the output instruction', () => {
+        // Both placements are load-bearing for small models: with the excerpt
+        // after the rules, gemini-3.5-flash-lite answered [] for every window.
         for (const mode of MODES) {
-            expect(getEventBaseExtractionPrompt(mode).endsWith(
-                'EXCERPT\n=========================\n{{text}}\n\n=========================\nOutput the JSON array of events for the EXCERPT above.',
-            )).toBe(true);
+            const p = getEventBaseExtractionPrompt(mode);
+            expect(p.startsWith('=========================\nEXCERPT\n=========================\n{{text}}\n')).toBe(true);
+            expect(p.endsWith('\nOutput the JSON array of events for the EXCERPT above.')).toBe(true);
+            expect(p.match(/\{\{text\}\}/g)).toHaveLength(1);
         }
     });
 
