@@ -19,7 +19,7 @@ import { queryCollection } from './core-vector-api.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
 import { EventBaseFatalError, EventBaseExtractionError } from './eventbase-schema.js';
 import { extractEvents } from './eventbase-extractor.js';
-import { insertEvents, isWindowAlreadyExtracted, markWindowExtracted, clearExtractionCachesForChat, buildEventBaseCollectionId, isLastWindowExtracted, setVectorizationTip, ensureVectorizationTip, shouldUseTipFallback } from './eventbase-store.js';
+import { insertEvents, isWindowAlreadyExtracted, markWindowExtracted, clearExtractionCachesForChat, buildEventBaseCollectionId, isLastWindowExtracted, setVectorizationTip, ensureVectorizationTip, shouldUseTipFallback, getIngestibleMessages } from './eventbase-store.js';
 import { getSavedHashes } from './core-vector-api.js';
 import { retrieveEvents } from './eventbase-retrieval.js';
 import { retrieveEventsWithAgent } from './agentic-retrieval.js';
@@ -50,14 +50,15 @@ const EVENTBASE_PROMPT_TAG = `${EXTENSION_PROMPT_TAG}_eventbase`;
  * overrides and read the settings keys directly.
  *
  * @param {object} params
- * @param {object[]} params.messages    - Chat messages to process (array of ST message objects)
+ * @param {object[]} params.messages    - Ingestible chat messages (see getIngestibleMessages), possibly a Start-From slice
+ * @param {number}  [params.indexOffset] - Position of messages[0] in the full ingestible list (Start-From slices)
  * @param {string}  [params.chatUUID]   - Override chat UUID
  * @param {object}   params.settings    - VectFox settings
  * @param {AbortSignal|null} [params.abortSignal]
  * @param {{ strategy?: string, batchSize?: number, totalChunks?: number }|null} [params.progressPlan]
  * @returns {Promise<{ eventsExtracted: number, windowsProcessed: number, windowsSkipped: number }>}
  */
-export async function runEventBaseIngestion({ messages, chatUUID, settings, abortSignal = null, progressPlan = null, collectionIdOverride = null, parallelWindows = 3, isAutoSync = false, suppressAutoSyncPopup = false, skipTipFallback = false }) {
+export async function runEventBaseIngestion({ messages, chatUUID, settings, abortSignal = null, progressPlan = null, collectionIdOverride = null, parallelWindows = 3, isAutoSync = false, suppressAutoSyncPopup = false, skipTipFallback = false, indexOffset = 0 }) {
     const uuid = chatUUID || getChatUUID();
 
     // Respect the global collection pause toggle before doing any extraction,
@@ -166,12 +167,16 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     // popupShown=false here means popup was suppressed (e.g. MESSAGE_SENT) — extraction still runs.
     if (isAutoSync) log.lifecycle(`[VectFox AutoSync] running — messages=${messages.length}, popupShown=${popupAllowed}`);
 
+    // start/end are positions in the full ingestible-message list
+    // (getIngestibleMessages). When the caller passed a Start-From slice,
+    // indexOffset is where that slice begins, so stored indices stay
+    // comparable with the chat length used for recency.
     let windows = [];
-    for (let start = 0; start < messages.length; start += step) {
-        const end = Math.min(start + windowSize - 1, messages.length - 1);
-        const msgs = messages.slice(start, end + 1);
+    for (let pos = 0; pos < messages.length; pos += step) {
+        const endPos = Math.min(pos + windowSize - 1, messages.length - 1);
+        const msgs = messages.slice(pos, endPos + 1);
         if (msgs.length < windowSize) break; // tail is incomplete — wait for more messages
-        windows.push({ start, end, msgs });
+        windows.push({ start: pos + indexOffset, end: endPos + indexOffset, msgs });
     }
 
     // AutoSync start-marker gate. The marker says "everything before this
@@ -996,7 +1001,8 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     const { events, debug } = await retrieveFn({
         searchText: effectiveSearchText,
         keywordQuery,
-        chatLength: getContext().chat?.length || chat?.length || 0,
+        // Same index space as the stored source_window_end values.
+        chatLength: getIngestibleMessages(getContext().chat || chat).length,
         settings,
         // Canonical routing (Doc/collection_helper.md): pass registry-key form
         // ("backend:id") so queryCollection's resolveBackendForCollection picks the right
@@ -1200,9 +1206,7 @@ export async function getChatAutoSyncStatus(settings) {
     if (!match) return { state: 'no-collection' };
 
     const ctx = getContext();
-    const messages = Array.isArray(ctx?.chat)
-        ? ctx.chat.filter(m => m.mes && m.mes.trim().length > 0)
-        : [];
+    const messages = getIngestibleMessages(ctx?.chat);
     const chatMessageCount = messages.length;
 
     // Read the auto-sync marker (per-chat message-index threshold). When this

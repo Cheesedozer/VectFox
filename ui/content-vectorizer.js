@@ -3669,7 +3669,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             await prepareForFreshExtraction(uuid);
         };
 
-        let messages, chatUUID, collectionIdOverride = null; // only used by archive route
+        let messages, chatUUID, collectionIdOverride = null, archiveIndexOffset = 0; // only used by archive route
 
         if (source?.type === 'file') {
             // Archive upload route — .jsonl / .json / .txt
@@ -3677,13 +3677,13 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
                 toastr.warning('Archive contains no usable messages', 'EventBase');
                 return;
             }
-            const allMessages = source.messages.filter(m => m.mes && m.mes.trim().length > 0);
-            messages = allMessages;
-            if (startFromMessage > 1) {
-                const sliceIdx = Math.min(startFromMessage - 1, allMessages.length);
-                console.log(`[EventBase] Archive start-from message ${startFromMessage} — skipping first ${sliceIdx} messages, ${allMessages.length - sliceIdx} remaining`);
-                messages = allMessages.slice(sliceIdx);
+            const { getIngestibleMessages } = await import('../core/eventbase-store.js');
+            const allMessages = getIngestibleMessages(source.messages);
+            archiveIndexOffset = startFromMessage > 1 ? Math.min(startFromMessage - 1, allMessages.length) : 0;
+            if (archiveIndexOffset > 0) {
+                console.log(`[EventBase] Archive start-from message ${startFromMessage} — skipping first ${archiveIndexOffset} messages, ${allMessages.length - archiveIndexOffset} remaining`);
             }
+            messages = allMessages.slice(archiveIndexOffset);
             chatUUID = source.archiveUUID;
             collectionIdOverride = buildArchiveEventCollectionId({
                 filenameCharName: source.filenameCharName,
@@ -3701,6 +3701,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
                 abortSignal: activeVectorizeAbortController.signal,
                 parallelWindows,
                 collectionIdOverride,
+                indexOffset: archiveIndexOffset,
                 // When the caller cleared the caches (Reset & Vectorize popup), also
                 // bypass the tip-based fallback in the workflow — otherwise the workflow
                 // re-derives the tip from Qdrant contents and silently fast-forwards past

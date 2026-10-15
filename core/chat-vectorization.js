@@ -30,7 +30,8 @@ import { buildSearchContext, filterChunksByConditions, processChunkLinks } from 
 import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
 
 import { createDebugData, setLastSearchDebug, addTrace, recordChunkFate } from '../ui/search-debug.js';
-import { Queue, LRUCache } from '../utils/data-structures.js';
+import { LRUCache } from '../utils/data-structures.js';
+import { getIngestibleMessages } from './eventbase-store.js';
 import { getRequestHeaders } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import AsyncUtils from '../utils/async-utils.js';
@@ -249,7 +250,7 @@ export async function synchronizeChat(settings, batchSize = 5, triggerEvent = nu
     }
 
     const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
-    const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
+    const messages = getIngestibleMessages(context.chat);
     log.lifecycle(`[AutoSync] calling runEventBaseIngestion: messages=${messages.length}`);
     let result;
     try {
@@ -1600,10 +1601,9 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null, {
         const context = getContext();
         if (!Array.isArray(context.chat)) return;
 
-        const allMessages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
-        const messages = startFromMessage > 1
-            ? allMessages.slice(Math.min(startFromMessage - 1, allMessages.length))
-            : allMessages;
+        const allMessages = getIngestibleMessages(context.chat);
+        const indexOffset = startFromMessage > 1 ? Math.min(startFromMessage - 1, allMessages.length) : 0;
+        const messages = allMessages.slice(indexOffset);
 
         const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
         const result = await runEventBaseIngestion({
@@ -1615,6 +1615,7 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null, {
             parallelWindows,
             progressPlan,
             skipTipFallback,
+            indexOffset,
         });
 
         if (chatId !== getCurrentChatId()) {

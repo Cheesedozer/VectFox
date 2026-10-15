@@ -338,6 +338,18 @@ export function clearAutoSyncMarker(chatUUID) {
 }
 
 /**
+ * The chat messages EventBase extracts from (blank and image-only messages
+ * are skipped). Window indices (source_window_start/end) are positions in
+ * this list, so anything comparing them with "how long the chat is" must use
+ * this list's length, not chat.length.
+ * @param {object[]} chat
+ * @returns {object[]}
+ */
+export function getIngestibleMessages(chat) {
+    return Array.isArray(chat) ? chat.filter(m => m.mes && m.mes.trim().length > 0) : [];
+}
+
+/**
  * Stamp the auto-sync start marker for a chat. Used to gate which windows
  * the auto-sync workflow will process.
  *
@@ -358,7 +370,7 @@ export async function stampAutoSyncMarker(chatUUID, settings) {
     const store = extension_settings?.vectfox;
     if (!store) return 0;
 
-    const chatLength = getContext()?.chat?.length ?? 0;
+    const chatLength = getIngestibleMessages(getContext()?.chat).length;
 
     // Find the EventBase collection for this chat, if any.
     const backend = getRegistryBackend(settings?.vector_backend);
