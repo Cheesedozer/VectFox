@@ -415,7 +415,7 @@ CJK 的單字元過濾更完善，並針對高訊號的單字 RPG/日常生活/�
 3. 點擊 **"Install Extension"**
 4. 貼上這個 URL：
    ```
-   https://github.com/KritBlade/VectFox
+   https://github.com/Cheesedozer/VectFox
    ```
 5. 點擊 **Install**
 
@@ -444,7 +444,7 @@ CJK 的單字元過濾更完善，並針對高訊號的單字 RPG/日常生活/�
 ```bash
 在 Windows 上開啟命令提示字元，或在 Linux/Mac 上開啟終端機；如果你是在 docker 上，請進入 Console
 cd SillyTavern/plugins
-git clone -b Similharity-Plugin https://github.com/KritBlade/VectFox.git similharity
+git clone -b Similharity-Plugin https://github.com/Cheesedozer/VectFox.git similharity
 cd similharity
 npm install
 ```

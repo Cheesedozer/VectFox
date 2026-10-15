@@ -659,17 +659,21 @@ jQuery(async () => {
         }).catch(() => {});
     }
 
-    // D5: Cross-repo version check — warn loud if similharity is behind.
-    const SIMILHARITY_EXPECTED_VERSION = '3.3.1';
+    // Warn when the Similharity plugin is older than this VectFox needs.
+    // Newer plugin versions are fine.
+    const SIMILHARITY_MIN_VERSION = '3.3.1';
     (async () => {
         try {
             const resp = await fetch('/api/plugins/similharity/version');
             if (resp.ok) {
                 const { pluginVersion } = await resp.json();
-                if (pluginVersion !== SIMILHARITY_EXPECTED_VERSION) {
-                    console.warn(`[VectFox] VERSION MISMATCH: expected similharity v${SIMILHARITY_EXPECTED_VERSION}, got v${pluginVersion}. Pull matching versions.`);
+                const parts = v => String(v || '').split('.').map(n => parseInt(n, 10) || 0);
+                const [have, need] = [parts(pluginVersion), parts(SIMILHARITY_MIN_VERSION)];
+                const diff = [0, 1, 2].map(i => (have[i] ?? 0) - (need[i] ?? 0)).find(d => d !== 0) ?? 0;
+                if (diff < 0) {
+                    console.warn(`[VectFox] Similharity plugin v${pluginVersion} is older than the required v${SIMILHARITY_MIN_VERSION}. Update it: cd plugins/similharity && git pull`);
                     toastr.warning(
-                        `similharity version mismatch (expected ${SIMILHARITY_EXPECTED_VERSION}, got ${pluginVersion}) — see console`,
+                        `The Similharity plugin is v${pluginVersion}; VectFox needs v${SIMILHARITY_MIN_VERSION} or newer. Update it with "git pull" in plugins/similharity and restart.`,
                         'VectFox',
                         { timeOut: 10000 }
                     );

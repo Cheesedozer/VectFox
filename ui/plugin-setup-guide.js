@@ -26,10 +26,9 @@ export async function showPluginSetupGuide() {
         SillyTavern <strong>server plugin</strong>, which has to be installed once on the machine that
         runs SillyTavern:</p>
         <ol style="text-align:left; line-height:1.7;">
-            <li>Open a terminal in your <strong>VectFox extension folder</strong> and run:<br>
-                <code style="user-select:all;">npm run install-plugin</code><br>
-                <small>(copies the bundled plugin into SillyTavern/plugins and installs its dependencies;
-                if this VectFox has no bundled copy, the script prints the git command to fetch it)</small></li>
+            <li>Open a terminal in the <strong>plugins</strong> folder of SillyTavern / SillyBunny and run:<br>
+                <code style="user-select:all;">git clone -b Similharity-Plugin https://github.com/Cheesedozer/VectFox.git similharity</code><br>
+                <code style="user-select:all;">cd similharity &amp;&amp; npm install</code></li>
             <li>In SillyTavern's <code>config.yaml</code>, set:<br>
                 <code style="user-select:all;">enableServerPlugins: true</code></li>
             <li><strong>Restart SillyTavern.</strong></li>

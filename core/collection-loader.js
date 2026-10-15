@@ -492,16 +492,7 @@ export async function checkPluginAvailable() {
         if (response.ok) {
             const data = await response.json();
             pluginAvailable = data.status === 'ok';
-            detectedPluginVersion = data.version || null;
             log.lifecycle(`VectFox: Plugin ${pluginAvailable ? 'detected' : 'not found'} (v${data.version || 'unknown'})`);
-            if (pluginAvailable) {
-                // Dynamic import: plugin-version.js imports this module, so a
-                // static import here would be circular. Warning is one-time
-                // and best-effort.
-                import('./plugin-version.js')
-                    .then(m => m.warnOnPluginVersionMismatch())
-                    .catch(() => {});
-            }
         } else {
             pluginAvailable = false;
         }
@@ -512,17 +503,6 @@ export async function checkPluginAvailable() {
     return pluginAvailable;
 }
 
-// Version string reported by the plugin's /health endpoint (null until a
-// successful check). Consumed by core/plugin-version.js for compat warnings.
-let detectedPluginVersion = null;
-
-/**
- * @returns {string|null} Plugin version from the last successful health check
- */
-export function getDetectedPluginVersion() {
-    return detectedPluginVersion;
-}
-
 /**
  * Drops the cached health-check result so the next checkPluginAvailable()
  * really probes the server. Used by the plugin setup guide's "Check again"
@@ -530,7 +510,6 @@ export function getDetectedPluginVersion() {
  */
 export function resetPluginAvailability() {
     pluginAvailable = null;
-    detectedPluginVersion = null;
 }
 
 // Cache for plugin collection data
