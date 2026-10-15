@@ -24,7 +24,8 @@ import {
     CHARACTER_FIELDS,
 } from '../core/content-types.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
-import { saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
+import { Readability } from '../../../../../lib.js';
 import { getChatUUID, vectorizeAll } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
 import { getOpenRouterApiKey } from '../core/api-keys.js';
@@ -2166,19 +2167,27 @@ async function fetchUrl() {
     preview.hide();
 
     try {
-        // Use ST's readability endpoint if available
-        const response = await fetch('/api/serpapi/visit', {
+        // The server fetches the page (the browser can't, because of CORS)
+        // and returns raw HTML; Readability extracts the article text.
+        const response = await fetch('/api/search/visit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url, html: true }),
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            throw new Error(response.status === 400
+                ? 'The server refused this URL (it must be a public http(s) address without a port)'
+                : `HTTP ${response.status}`);
         }
 
-        const data = await response.json();
-        const content = data.content || data.text || '';
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const article = new Readability(doc).parse();
+        const content = (article?.textContent || doc.body?.innerText || '')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
 
         if (!content || content.length < 50) {
             throw new Error('No meaningful content found on page');
@@ -2188,7 +2197,7 @@ async function fetchUrl() {
             type: 'url',
             url: url,
             content: content,
-            title: data.title || url,
+            title: article?.title || doc.title || url,
         };
 
         status.html('');
@@ -2279,7 +2288,7 @@ async function isWikiPluginAvailable(wikiType) {
 
         const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getRequestHeaders(),
         });
 
         return response.ok;
@@ -2423,7 +2432,7 @@ async function scrapeViaPlugin(wikiType, url, filter) {
 
     const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getRequestHeaders(),
         body: JSON.stringify(requestBody),
     });
 
@@ -2995,7 +3004,7 @@ async function fetchYouTubeTranscript() {
     try {
         const response = await fetch('/api/search/transcript', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getRequestHeaders(),
             body: JSON.stringify({ id: videoId, lang: lang || undefined }),
         });
 
