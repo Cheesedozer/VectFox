@@ -560,18 +560,13 @@ const _EXTRACTION_RULES_BODY =
 `2. EVENT COUNT:
    - Return AT MOST {{maxCount}} events.
    - Return as many real events as actually occurred — do not artificially cap or pad.
-   - Zero events ([]) is correct only when the excerpt is pure filler with no character interaction, relationship movement, world information, or narrative consequence whatsoever.
    - DO NOT invent events. DO NOT duplicate the same event under different names.
 
-3. WHEN TO RETURN ZERO EVENTS ([]):
-   Return [] if BOTH of the following are true:
-   a) The excerpt does not contain any event that maps to the defined event_type list above.
-   OR
-   b) It does map to an event_type, but the event has no lasting consequence worth retrieving later.
-
-   THE ONE-WEEK TEST — ask yourself: "If someone reads this story one week from now, would knowing this event change their understanding of the characters, world, or plot?"
-   - If YES → extract it.
+3. WHICH EVENTS TO EXTRACT — THE ONE-WEEK TEST:
+   Ask of each event: "If someone reads this story one week from now, would knowing this event change their understanding of the characters, world, or plot?"
+   - If YES → extract it. New facts about a character's situation, plans, obligations or relationships pass the test.
    - If NO → skip it.
+   Return [] only when nothing in the excerpt passes the test.
 
    Examples that FAIL the test (return []):
    - The party has dinner at home with no plot discussion.
@@ -658,9 +653,6 @@ Each event object MUST have these fields:
 =========================
 VALID OUTPUT EXAMPLES
 =========================
-Zero events (filler scene):
-[]
-
 `;
 
 // ── Per-language EXAMPLES (one localized example per variant) ────────────────
@@ -703,12 +695,17 @@ const _EXTRACTION_EXAMPLES_OTHERS =
 
 `;
 
-// ── Shared FOOTER: the excerpt slot ──────────────────────────────────────────
+// ── Shared FOOTER: the excerpt slot, then the closing instruction ────────────
+// The instruction after the excerpt is load-bearing: without it, small models
+// (observed with google/gemini-3.5-flash-lite) answer [] for every window.
 const _EXTRACTION_FOOTER =
 `=========================
 EXCERPT
 =========================
-{{text}}`;
+{{text}}
+
+=========================
+Output the JSON array of events for the EXCERPT above.`;
 
 const _EXTRACTION_PROMPTS = {
     intl:           _EXTRACTION_TOP + _EXTRACTION_LANG_INTL           + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_INTL           + _EXTRACTION_FOOTER,

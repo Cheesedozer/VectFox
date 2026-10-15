@@ -140,9 +140,12 @@ describe('getEventBaseExtractionPrompt', () => {
         }
     });
 
-    it('ends with the EXCERPT block so the chat text lands last in the prompt', () => {
+    it('ends with the EXCERPT block followed by the output instruction', () => {
+        // Without the closing instruction gemini-3.5-flash-lite answers [] for every window.
         for (const mode of MODES) {
-            expect(getEventBaseExtractionPrompt(mode).endsWith('EXCERPT\n=========================\n{{text}}')).toBe(true);
+            expect(getEventBaseExtractionPrompt(mode).endsWith(
+                'EXCERPT\n=========================\n{{text}}\n\n=========================\nOutput the JSON array of events for the EXCERPT above.',
+            )).toBe(true);
         }
     });
 
