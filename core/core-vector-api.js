@@ -211,7 +211,7 @@ function chunkArray(array, size) {
  * @param {object} ctx - { debugOn, batchIdx, totalBatches, provider } for logging
  * @returns {Promise<*>} - Result of the first attempt to succeed
  */
-async function callWithHedge(fn, thresholdMs, maxHedges, ctx) {
+export async function callWithHedge(fn, thresholdMs, maxHedges, ctx) {
     return new Promise((resolve, reject) => {
         let settled = false;
         const timers = [];
@@ -261,7 +261,14 @@ async function callWithHedge(fn, thresholdMs, maxHedges, ctx) {
                         settle('err', e);
                         return;
                     }
-                    // Don't settle on other individual failures — later hedges may still succeed
+                    // A permanent error (bad key, bad model, 4xx) will fail the same way
+                    // on every hedge; report it now, unchanged, instead of waiting out
+                    // the cutoff and replacing it with a HedgeFatalError.
+                    if (!RETRY_CONFIG.shouldRetry(e)) {
+                        settle('err', e);
+                        return;
+                    }
+                    // Transient failures don't settle — a later hedge may still succeed
                 },
             );
         };
