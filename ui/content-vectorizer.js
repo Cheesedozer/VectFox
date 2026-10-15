@@ -18,7 +18,6 @@ import {
     getChunkingStrategies,
     getChunkingStrategy,
     strategyNeedsSize,
-    strategyNeedsOverlap,
     getContentTypeDefaults,
     hasFeature,
     SCOPE_OPTIONS,
@@ -277,18 +276,6 @@ function createModal() {
                                     <div class="vectfox-cv-slider-hints">
                                         <span>Precise</span>
                                         <span>Contextual</span>
-                                    </div>
-                                </div>
-                                <div class="vectfox-cv-slider-row" id="vectfox_cv_overlap_row">
-                                    <label>
-                                        Chunk Overlap
-                                        <span class="vectfox-cv-value" id="vectfox_cv_overlap_val">50</span> chars
-                                    </label>
-                                    <input type="range" id="vectfox_cv_overlap"
-                                           min="0" max="200" step="10" value="50">
-                                    <div class="vectfox-cv-slider-hints">
-                                        <span>Off</span>
-                                        <span>High</span>
                                     </div>
                                 </div>
                                 <!-- Batch size - only shown for message_batch strategy -->
@@ -1245,13 +1232,10 @@ function updateChunkingSection(type) {
     // Get strategy-specific defaults if available
     const strategyDefaults = currentStrategy || {};
     const chunkSize = currentSettings.chunkSize || strategyDefaults.defaultSize || defaults.chunkSize;
-    const chunkOverlap = currentSettings.chunkOverlap || strategyDefaults.defaultOverlap || defaults.chunkOverlap;
 
     // Update size controls values
     $('#vectfox_cv_chunk_size').val(chunkSize);
     $('#vectfox_cv_chunk_size_val').text(chunkSize);
-    $('#vectfox_cv_overlap').val(chunkOverlap);
-    $('#vectfox_cv_overlap_val').text(chunkOverlap === 0 ? 'Off' : chunkOverlap);
 
     const batchSize = currentSettings.batchSize || defaults.batchSize || 4;
 
@@ -1290,25 +1274,17 @@ function updateChunkingSection(type) {
 
 /**
  * Show/hide size controls based on strategy requirements
- * Unit-based strategies (per_message, per_entry, etc.) don't need size/overlap
- * Text-based strategies (recursive, paragraph, sliding) need them
+ * Unit-based strategies (per_message, per_entry, etc.) don't need a size control
  */
 function updateSizeControlsVisibility() {
     const strategyId = $('#vectfox_cv_strategy').val();
     const strategy = getChunkingStrategy(strategyId);
 
     const needsSize = strategy?.needsSize ?? false;
-    const needsOverlap = strategy?.needsOverlap ?? false;
-
     const needsMessageBatchControl = strategyId === 'message_batch';
 
-    // Show/hide size controls based on strategy requirements
-    const hasAnyControls = needsSize || needsOverlap;
-    $('#vectfox_cv_size_controls').toggle(hasAnyControls || needsMessageBatchControl);
-
-    // Show/hide individual controls
+    $('#vectfox_cv_size_controls').toggle(needsSize || needsMessageBatchControl);
     $('#vectfox_cv_chunk_size_row').toggle(needsSize);
-    $('#vectfox_cv_overlap_row').toggle(needsOverlap);
     $('#vectfox_cv_batch_size_row').toggle(needsMessageBatchControl);
 
     // Update description when strategy changes
@@ -1611,12 +1587,6 @@ function bindEvents() {
         const val = $(this).val();
         $('#vectfox_cv_chunk_size_val').text(val);
         currentSettings.chunkSize = parseInt(val);
-    });
-
-    $('#vectfox_cv_overlap').on('input', function() {
-        const val = parseInt($(this).val());
-        $('#vectfox_cv_overlap_val').text(val === 0 ? 'Off' : val);
-        currentSettings.chunkOverlap = val;
     });
 
     $('#vectfox_cv_batch_size').on('input', function() {
@@ -3394,7 +3364,6 @@ async function previewChunks() {
         const chunks = await chunkText(contentText, {
             strategy: currentSettings.strategy || type.defaultStrategy,
             chunkSize: currentSettings.chunkSize || type.defaults.chunkSize,
-            chunkOverlap: currentSettings.chunkOverlap || type.defaults.chunkOverlap,
             batchSize: currentSettings.batchSize || 4,
         });
 
@@ -3811,7 +3780,6 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             const legacyChunks = await chunkText(context.chat.filter(m => m.mes && m.mes.trim().length > 0), {
                 strategy: legacyStrategy,
                 chunkSize: currentSettings.chunkSize || 1000,
-                chunkOverlap: currentSettings.chunkOverlap || 200,
                 batchSize: legacyBatchSize,
             });
             const legacyTotalChunks = Array.isArray(legacyChunks) ? legacyChunks.length : 0;

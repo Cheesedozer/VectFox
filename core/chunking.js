@@ -26,7 +26,7 @@
  * ============================================================================
  */
 
-import { DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP } from './constants.js';
+import { DEFAULT_CHUNK_SIZE } from './constants.js';
 
 /**
  * Main entry point - chunks text using specified strategy
@@ -41,7 +41,6 @@ export async function chunkText(text, options = {}) {
     const {
         strategy = 'adaptive',
         chunkSize = DEFAULT_CHUNK_SIZE,
-        chunkOverlap = DEFAULT_CHUNK_OVERLAP,
         batchSize = 4,
     } = options;
 
@@ -57,7 +56,7 @@ export async function chunkText(text, options = {}) {
 
     // Select strategy
     const strategyFn = STRATEGIES[strategy] || STRATEGIES.adaptive;
-    const chunks = strategyFn(text, { chunkSize, chunkOverlap, batchSize });
+    const chunks = strategyFn(text, { chunkSize, batchSize });
 
     // Add metadata to each chunk
     return chunks.map((chunk, index) => ({
@@ -218,6 +217,14 @@ const STRATEGIES = {
         }
 
         const headerRegex = /^(#{1,6})\s+(.+)$/gm;
+
+        // No headers at all: splitting "by section" would return the whole
+        // text as one chunk, so split by paragraph instead.
+        if (!headerRegex.test(text)) {
+            return STRATEGIES.paragraph(text, options);
+        }
+        headerRegex.lastIndex = 0;
+
         const sections = [];
         let lastIndex = 0;
         let match;
@@ -234,11 +241,6 @@ const STRATEGIES = {
 
         if (lastIndex < text.length) {
             sections.push(text.slice(lastIndex).trim());
-        }
-
-        // If no headers found, fall back to paragraph
-        if (sections.length === 0) {
-            return STRATEGIES.paragraph(text, options);
         }
 
         return sections.filter(s => s);
@@ -296,6 +298,20 @@ const STRATEGIES = {
                 },
             };
         });
+    },
+
+    /**
+     * Per Page - each wiki page becomes one chunk. Input is the
+     * [{text, metadata: {pageTitle}}] array built by prepareWikiContent;
+     * the page metadata is kept so the title reaches entryName.
+     */
+    per_page: (pages, options) => {
+        if (!Array.isArray(pages)) {
+            return adaptiveChunk(pages, options);
+        }
+        return pages
+            .map(p => (typeof p === 'string' ? { text: p, metadata: {} } : { text: p.text || '', metadata: p.metadata || {} }))
+            .filter(p => p.text.trim());
     },
 
     /**
@@ -435,8 +451,14 @@ function splitLargeParagraph(text, maxSize) {
             if (currentChunk) chunks.push(currentChunk);
 
             if (sentence.length > maxSize) {
-                // Split by words
-                const words = sentence.split(/\s+/);
+                // Split by words. A "word" longer than maxSize (CJK text has
+                // no spaces) is cut into maxSize pieces so no chunk exceeds it.
+                const words = sentence.split(/\s+/).flatMap(word => {
+                    if (word.length <= maxSize) return [word];
+                    const pieces = [];
+                    for (let i = 0; i < word.length; i += maxSize) pieces.push(word.slice(i, i + maxSize));
+                    return pieces;
+                });
                 let wordChunk = '';
                 for (const word of words) {
                     if (wordChunk.length + word.length + 1 <= maxSize) {
@@ -458,22 +480,8 @@ function splitLargeParagraph(text, maxSize) {
 }
 
 /**
- * Get available strategies
- */
-export function getAvailableStrategies() {
-    return Object.keys(STRATEGIES);
-}
-
-/**
  * Check if a strategy is unit-based (doesn't use size controls)
  */
 export function isUnitStrategy(strategyId) {
     return ['per_message', 'conversation_turns', 'message_batch', 'per_entry', 'per_field'].includes(strategyId);
-}
-
-/**
- * Get chat-specific strategies
- */
-export function getChatStrategies() {
-    return ['per_message', 'conversation_turns', 'message_batch', 'adaptive'];
 }

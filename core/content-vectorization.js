@@ -143,7 +143,6 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             chunks = await chunkText(preparedContent.text || preparedContent, {
                 strategy: settings.strategy || type.defaultStrategy,
                 chunkSize: settings.chunkSize || type.defaults.chunkSize,
-                chunkOverlap: settings.chunkOverlap || type.defaults.chunkOverlap,
                 batchSize: settings.batchSize || 4,
             });
         }

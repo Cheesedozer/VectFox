@@ -17,7 +17,6 @@
 /**
  * Chunking strategy metadata
  * needsSize: whether chunk size slider should appear
- * needsOverlap: whether overlap slider should appear
  * needsBatchSize: whether batch size slider should appear (for message_batch)
  */
 export const CHUNKING_STRATEGIES = {
@@ -29,7 +28,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Per Message',
         description: 'Each message becomes one chunk. Best for precise recall.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['chat'],
     },
@@ -38,7 +36,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Conversation Turns',
         description: 'Pairs user + AI messages together. Good for dialogue context.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['chat'],
     },
@@ -47,7 +44,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Message Batch',
         description: 'Groups N messages together. Configurable batch size.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: true,
         bestFor: ['chat'],
     },
@@ -59,7 +55,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Per Entry',
         description: 'Each lorebook entry becomes one chunk. Preserves WI structure.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['lorebook'],
     },
@@ -68,7 +63,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Per Field',
         description: 'Each character field becomes one chunk. Enables field-specific retrieval.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['character'],
     },
@@ -77,7 +71,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Per Page',
         description: 'Each wiki page becomes one chunk. Best for multi-page scrapes.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['wiki'],
     },
@@ -90,7 +83,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Adaptive',
         description: 'Intelligently splits at natural boundaries (paragraphs → sentences → words).',
         needsSize: true,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['chat', 'document', 'url', 'wiki', 'youtube'],
         defaultSize: 500,
@@ -100,7 +92,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'By Paragraph',
         description: 'Splits on double newlines. Each paragraph becomes a chunk.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['document', 'url', 'lorebook'],
     },
@@ -109,7 +100,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'By Section Headers',
         description: 'Splits on markdown headers (#, ##). Each section becomes a chunk.',
         needsSize: false,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['document', 'url', 'wiki'],
     },
@@ -118,7 +108,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'By Sentence',
         description: 'Groups sentences up to target size. Most granular text splitting.',
         needsSize: true,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['document'],
         defaultSize: 300,
@@ -128,7 +117,6 @@ export const CHUNKING_STRATEGIES = {
         name: 'Dialogue-Aware',
         description: 'Keeps quoted speech intact. Best for transcripts and scripts.',
         needsSize: true,
-        needsOverlap: false,
         needsBatchSize: false,
         bestFor: ['document', 'youtube'],
         defaultSize: 400,
@@ -147,13 +135,6 @@ export function getChunkingStrategy(strategyId) {
  */
 export function strategyNeedsSize(strategyId) {
     return CHUNKING_STRATEGIES[strategyId]?.needsSize ?? false;
-}
-
-/**
- * Check if a strategy needs overlap controls
- */
-export function strategyNeedsOverlap(strategyId) {
-    return CHUNKING_STRATEGIES[strategyId]?.needsOverlap ?? false;
 }
 
 /**
