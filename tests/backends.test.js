@@ -25,43 +25,27 @@ vi.mock('../../../../extensions.js', () => ({
 vi.mock('../../../../textgen-settings.js', () => ({
     textgen_types: {
         OLLAMA: 'ollama',
-        LLAMACPP: 'llamacpp',
         VLLM: 'vllm',
     },
     textgenerationwebui_settings: {
         server_urls: {
             ollama: 'http://localhost:11434',
-            llamacpp: 'http://localhost:8080',
             vllm: 'http://localhost:8000',
         },
-    },
-}));
-
-// Mock openai.js
-vi.mock('../../../../openai.js', () => ({
-    oai_settings: {
-        vertexai_auth_mode: 'service_account',
-        vertexai_region: 'us-central1',
-        vertexai_express_project_id: 'test-project',
     },
 }));
 
 // Mock secrets.js
 vi.mock('../../../../secrets.js', () => ({
     secret_state: {},
+    SECRET_KEYS: { OPENROUTER: 'api_key_openrouter' },
 }));
 
-// Mock providers.js
-vi.mock('../core/providers.js', () => ({
-    getModelField: vi.fn((source) => {
-        const modelFields = {
-            openai: 'openai_model',
-            cohere: 'cohere_model',
-            ollama: 'ollama_model',
-            transformers: null,
-        };
-        return modelFields[source] || null;
-    }),
+// providers.js: real getEmbeddingRequestParams (the request fields the
+// backends send), stubbed model lookups.
+vi.mock('../core/providers.js', async (importOriginal) => ({
+    ...(await importOriginal()),
+    getModelField: vi.fn((source) => (source === 'ollama' ? 'ollama_model' : null)),
     getModelFromSettings: vi.fn(() => 'test-model'),
 }));
 
@@ -111,8 +95,6 @@ function mockFetchError(status, message) {
 const defaultSettings = {
     source: 'transformers',
     score_threshold: 0.25,
-    openai_model: 'text-embedding-ada-002',
-    cohere_model: 'embed-english-v3.0',
     ollama_model: 'mxbai-embed-large',
 };
 
@@ -237,6 +219,25 @@ describe('StandardBackend', () => {
             const result = await backend.getSavedHashes('test-collection', defaultSettings);
 
             expect(result).toEqual([12345, 67890]);
+        });
+
+        it('sends the per-provider Ollama alternative endpoint (not the unused shared use_alt_endpoint)', async () => {
+            fetchMock.mockResolvedValueOnce(mockFetchResponse([]));
+
+            await backend.getSavedHashes('test-collection', {
+                ...defaultSettings,
+                source: 'ollama',
+                ollama_use_alt_endpoint: true,
+                ollama_alt_endpoint_url: 'http://gpu-box:11434',
+                // Legacy keys nothing writes any more; must be ignored.
+                use_alt_endpoint: false,
+                alt_endpoint_url: 'http://wrong:1',
+            });
+
+            const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+            expect(body.source).toBe('ollama');
+            expect(body.apiUrl).toBe('http://gpu-box:11434');
+            expect(body.keep).toBe(false);
         });
 
         it('should return empty array on 500 status', async () => {

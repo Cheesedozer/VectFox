@@ -21,29 +21,8 @@ vi.mock('../../../../extensions.js', () => ({
     modules: [],
 }));
 
-vi.mock('../../../../secrets.js', () => ({ secret_state: {} }));
-
-vi.mock('../../../../textgen-settings.js', () => ({
-    textgen_types: { OLLAMA: 'ollama', LLAMACPP: 'llamacpp', VLLM: 'vllm' },
-    textgenerationwebui_settings: { server_urls: {} },
-}));
-
-vi.mock('../../../../openai.js', () => ({ oai_settings: {} }));
-
 vi.mock('../core/providers.js', () => ({
-    getProviderConfig: () => ({}),
-    getModelField: () => null,
     getModelFromSettings: () => 'test-model',
-    getSecretKey: () => '',
-    requiresApiKey: () => false,
-    requiresUrl: () => false,
-    getUrlProviders: () => [],
-}));
-
-vi.mock('../../../shared.js', () => ({ isWebLlmSupported: () => false }));
-
-vi.mock('../providers/webllm.js', () => ({
-    getWebLlmProvider: () => ({}),
 }));
 
 const savedHashesSpy = vi.fn(async () => [1, 2, 3]);

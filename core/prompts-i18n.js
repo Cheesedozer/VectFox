@@ -334,7 +334,7 @@ const _PLANNER_PROMPTS = {
  * @returns {string}
  */
 export function getAgenticPlannerPrompt(mode) {
-    return _PLANNER_PROMPTS[mode] ?? _PLANNER_PROMPTS.intl;
+    return Object.hasOwn(_PLANNER_PROMPTS, mode) ? _PLANNER_PROMPTS[mode] : _PLANNER_PROMPTS.intl;
 }
 
 
@@ -443,7 +443,7 @@ const _SUMMARIZE_PROMPTS = {
  * @returns {string}
  */
 export function getDefaultSummarizePrompt(mode) {
-    return _SUMMARIZE_PROMPTS[mode] ?? _SUMMARIZE_PROMPTS.intl;
+    return Object.hasOwn(_SUMMARIZE_PROMPTS, mode) ? _SUMMARIZE_PROMPTS[mode] : _SUMMARIZE_PROMPTS.intl;
 }
 
 
@@ -461,7 +461,7 @@ export function getDefaultSummarizePrompt(mode) {
 
 // ── Shared TOP: intro + ABSOLUTE RULES heading ───────────────────────────────
 const _EXTRACTION_TOP =
-`You are a story event archivist for a roleplay session. Extract ONLY narratively significant story events from the excerpt below.
+`You are a story event archivist for a roleplay session. Extract the narratively significant story events from the EXCERPT above.
 
 =========================
 ABSOLUTE RULES (DO NOT BREAK)
@@ -560,18 +560,13 @@ const _EXTRACTION_RULES_BODY =
 `2. EVENT COUNT:
    - Return AT MOST {{maxCount}} events.
    - Return as many real events as actually occurred — do not artificially cap or pad.
-   - Zero events ([]) is correct only when the excerpt is pure filler with no character interaction, relationship movement, world information, or narrative consequence whatsoever.
    - DO NOT invent events. DO NOT duplicate the same event under different names.
 
-3. WHEN TO RETURN ZERO EVENTS ([]):
-   Return [] if BOTH of the following are true:
-   a) The excerpt does not contain any event that maps to the defined event_type list above.
-   OR
-   b) It does map to an event_type, but the event has no lasting consequence worth retrieving later.
-
-   THE ONE-WEEK TEST — ask yourself: "If someone reads this story one week from now, would knowing this event change their understanding of the characters, world, or plot?"
-   - If YES → extract it.
+3. WHICH EVENTS TO EXTRACT — THE ONE-WEEK TEST:
+   Ask of each event: "If someone reads this story one week from now, would knowing this event change their understanding of the characters, world, or plot?"
+   - If YES → extract it. New facts about a character's situation, plans, obligations or relationships pass the test.
    - If NO → skip it.
+   Return [] only when nothing in the excerpt passes the test.
 
    Examples that FAIL the test (return []):
    - The party has dinner at home with no plot discussion.
@@ -658,9 +653,6 @@ Each event object MUST have these fields:
 =========================
 VALID OUTPUT EXAMPLES
 =========================
-Zero events (filler scene):
-[]
-
 `;
 
 // ── Per-language EXAMPLES (one localized example per variant) ────────────────
@@ -703,20 +695,30 @@ const _EXTRACTION_EXAMPLES_OTHERS =
 
 `;
 
-// ── Shared FOOTER: the excerpt slot ──────────────────────────────────────────
-const _EXTRACTION_FOOTER =
+// ── The excerpt goes FIRST, the closing instruction LAST ────────────────────
+// Both are load-bearing for small models. With the excerpt after ~9k chars
+// of rules, google/gemini-3.5-flash-lite answered [] for 8 of 8 samples of a
+// scene containing an explicit promise; with the excerpt first it extracted
+// events in 8 of 8.
+const _EXTRACTION_EXCERPT =
 `=========================
 EXCERPT
 =========================
-{{text}}`;
+{{text}}
+
+`;
+
+const _EXTRACTION_FOOTER =
+`=========================
+Output the JSON array of events for the EXCERPT above.`;
 
 const _EXTRACTION_PROMPTS = {
-    intl:           _EXTRACTION_TOP + _EXTRACTION_LANG_INTL           + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_INTL           + _EXTRACTION_FOOTER,
-    jieba:          _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA          + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA          + _EXTRACTION_FOOTER,
-    jieba_tw:       _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA_TW       + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA_TW       + _EXTRACTION_FOOTER,
-    tiny_segmenter: _EXTRACTION_TOP + _EXTRACTION_LANG_TINY_SEGMENTER + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_TINY_SEGMENTER + _EXTRACTION_FOOTER,
-    korean:         _EXTRACTION_TOP + _EXTRACTION_LANG_KOREAN         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_KOREAN         + _EXTRACTION_FOOTER,
-    others:         _EXTRACTION_TOP + _EXTRACTION_LANG_OTHERS         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_OTHERS         + _EXTRACTION_FOOTER,
+    intl:           _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_INTL           + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_INTL           + _EXTRACTION_FOOTER,
+    jieba:          _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA          + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA          + _EXTRACTION_FOOTER,
+    jieba_tw:       _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_JIEBA_TW       + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_JIEBA_TW       + _EXTRACTION_FOOTER,
+    tiny_segmenter: _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_TINY_SEGMENTER + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_TINY_SEGMENTER + _EXTRACTION_FOOTER,
+    korean:         _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_KOREAN         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_KOREAN         + _EXTRACTION_FOOTER,
+    others:         _EXTRACTION_EXCERPT + _EXTRACTION_TOP + _EXTRACTION_LANG_OTHERS         + _EXTRACTION_RULES_BODY + _EXTRACTION_EXAMPLES_OTHERS         + _EXTRACTION_FOOTER,
 };
 
 /**
@@ -731,7 +733,7 @@ const _EXTRACTION_PROMPTS = {
  * @returns {string}
  */
 export function getEventBaseExtractionPrompt(mode) {
-    return _EXTRACTION_PROMPTS[mode] ?? _EXTRACTION_PROMPTS.intl;
+    return Object.hasOwn(_EXTRACTION_PROMPTS, mode) ? _EXTRACTION_PROMPTS[mode] : _EXTRACTION_PROMPTS.intl;
 }
 
 
@@ -791,7 +793,8 @@ export function buildPlannerUserMessage({ recentTurns, userMessage, candidates }
  * Format: E<N> [score] type — text (chars: [...], concepts: [...], importance: X)
  */
 function _formatCandidateLine(ev, idx) {
-    const score = typeof ev.score === 'number' ? ev.score.toFixed(2)
+    const score = typeof ev._finalScore === 'number' ? ev._finalScore.toFixed(2)
+        : typeof ev.score === 'number' ? ev.score.toFixed(2)
         : typeof ev.vectorScore === 'number' ? ev.vectorScore.toFixed(2)
         : '—';
     const type = ev.event_type || ev.metadata?.event_type || 'event';

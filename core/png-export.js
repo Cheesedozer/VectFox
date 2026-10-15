@@ -259,17 +259,21 @@ function insertChunkBeforeIEND(originalPng, newChunk) {
         throw new Error('PNG missing IEND chunk');
     }
 
-    // Calculate new file size
-    const iendChunk = chunks[iendIndex];
-    const beforeIEND = originalPng.slice(0, iendChunk.offset);
-    const iendData = originalPng.slice(iendChunk.offset);
+    // Keep every chunk except IEND and any earlier VectFox payload, so
+    // re-exporting through an already-embedded PNG replaces the old data.
+    const keywordPrefix = new TextEncoder().encode(VectFox_KEYWORD + '\0');
+    const isVectFoxText = c => (c.type === 'tEXt' || c.type === 'zTXt')
+        && keywordPrefix.every((b, i) => c.data[i] === b);
+    const parts = [originalPng.slice(0, 8)];
+    for (const c of chunks.slice(0, iendIndex)) {
+        if (isVectFoxText(c)) continue;
+        parts.push(originalPng.slice(c.offset, c.offset + 12 + c.data.length));
+    }
+    parts.push(newChunk, originalPng.slice(chunks[iendIndex].offset));
 
-    // Combine: original (minus IEND) + new chunk + IEND
-    const result = new Uint8Array(beforeIEND.length + newChunk.length + iendData.length);
-    result.set(beforeIEND, 0);
-    result.set(newChunk, beforeIEND.length);
-    result.set(iendData, beforeIEND.length + newChunk.length);
-
+    const result = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let pos = 0;
+    for (const p of parts) { result.set(p, pos); pos += p.length; }
     return result;
 }
 
@@ -553,23 +557,4 @@ export function downloadPNG(pngData, filename) {
 export async function readPNGFile(file) {
     const buffer = await file.arrayBuffer();
     return new Uint8Array(buffer);
-}
-
-/**
- * Checks if a file is a PNG with VectFox data
- * @param {File} file - File to check
- * @returns {Promise<boolean>}
- */
-export async function isVectFoxPNG(file) {
-    if (!file.type.includes('png') && !file.name.toLowerCase().endsWith('.png')) {
-        return false;
-    }
-
-    try {
-        const data = await readPNGFile(file);
-        const exportData = await extractDataFromPNG(data);
-        return exportData !== null && (exportData.generator === 'VectFox' || exportData.version);
-    } catch {
-        return false;
-    }
 }

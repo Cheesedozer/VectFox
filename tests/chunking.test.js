@@ -11,9 +11,6 @@
 import { describe, it, expect } from 'vitest';
 import {
     chunkText,
-    getAvailableStrategies,
-    isUnitStrategy,
-    getChatStrategies,
 } from '../core/chunking.js';
 import { DEFAULT_CHUNK_SIZE } from '../core/constants.js';
 
@@ -247,13 +244,18 @@ describe('adaptive strategy', () => {
         ]);
     });
 
-    it('emits an oversized chunk when a single WORD exceeds chunkSize (no hard split)', async () => {
-        // BUG-SHAPED: splitLargeParagraph falls back to word splitting, but a
-        // single word longer than maxSize is never broken up.
+    it('hard-splits a single WORD longer than chunkSize', async () => {
         const monster = 'z'.repeat(120);
         const out = await chunkText(monster, { strategy: 'adaptive', chunkSize: 20 });
-        expect(out).toHaveLength(1);
-        expect(out[0].text.length).toBe(120);
+        expect(out).toHaveLength(6);
+        expect(out.every(c => c.text.length <= 20)).toBe(true);
+        expect(out.map(c => c.text).join('')).toBe(monster);
+    });
+
+    it('splits long CJK text that has no spaces or punctuation', async () => {
+        const out = await chunkText('一'.repeat(3000), { strategy: 'adaptive', chunkSize: 500 });
+        expect(out).toHaveLength(6);
+        expect(out.every(c => c.text.length <= 500)).toBe(true);
     });
 
     it('returns the raw text as one chunk when the input is only whitespace', async () => {
@@ -313,20 +315,13 @@ describe('section strategy', () => {
         expect(out.map(c => c.text)).toEqual(['intro text', '# Heading\nbody']);
     });
 
-    it('returns header-less text as ONE chunk — the paragraph fallback is dead code', async () => {
-        // BUG-SHAPED: the `if (sections.length === 0) return paragraph(...)`
-        // branch can never run. With no headers the while loop never executes,
-        // so `lastIndex (0) < text.length` always pushes the whole text as a
-        // single section, making sections.length === 1. Header-less documents
-        // are therefore NOT split at all, contrary to the code's intent.
+    it('falls back to paragraph splitting for header-less text', async () => {
         const out = await chunkText('alpha\n\nbeta', { strategy: 'section' });
-        expect(out.map(c => c.text)).toEqual(['alpha\n\nbeta']);
+        expect(out.map(c => c.text)).toEqual(['alpha', 'beta']);
         expect(out[0].metadata.strategy).toBe('section');
     });
 
-    it('returns [] for whitespace-only input (the one case sections ends up empty)', async () => {
-        // The single pushed section trims to '' and is then removed by
-        // `.filter(s => s)` — the only path where section yields nothing.
+    it('returns [] for whitespace-only input', async () => {
         expect(await chunkText('   \n  ', { strategy: 'section' })).toEqual([]);
     });
 
@@ -382,11 +377,6 @@ describe('dialogue strategy', () => {
         const out = await chunkText('彼は「行こう」と言った。', { strategy: 'dialogue', chunkSize: 500 });
         expect(out[0].text).toBe('彼は「行こう」と言った。');
     });
-
-    it('is reachable via chunkText even though it is not listed in getChatStrategies()', async () => {
-        expect(getChatStrategies()).not.toContain('dialogue');
-        expect(getAvailableStrategies()).toContain('dialogue');
-    });
 });
 
 // ---------------------------------------------------------------------------
@@ -434,6 +424,20 @@ describe('per_entry strategy', () => {
             text: 'single entry',
             metadata: { chunkIndex: 0, totalChunks: 1, strategy: 'per_entry' },
         }]);
+    });
+});
+
+describe('per_page strategy', () => {
+    it('keeps one chunk per wiki page with its pageTitle metadata', async () => {
+        const pages = [
+            { text: '# Bulwark\n\nA hero.', metadata: { pageTitle: 'Bulwark' } },
+            { text: '   ', metadata: { pageTitle: 'Empty' } },
+            { text: '# Solaris\n\nAnother hero.', metadata: { pageTitle: 'Solaris' } },
+        ];
+        const out = await chunkText(pages, { strategy: 'per_page' });
+        expect(out.map(c => c.metadata.pageTitle)).toEqual(['Bulwark', 'Solaris']);
+        expect(out[0].metadata.speaker).toBeUndefined();
+        expect(out[0].metadata.strategy).toBe('per_page');
     });
 });
 
@@ -508,39 +512,3 @@ describe('combined strategy', () => {
 // ---------------------------------------------------------------------------
 // Strategy metadata helpers
 // ---------------------------------------------------------------------------
-
-describe('strategy introspection helpers', () => {
-    it('lists exactly the strategies that are implemented', () => {
-        expect(getAvailableStrategies()).toEqual([
-            'per_message',
-            'conversation_turns',
-            'message_batch',
-            'adaptive',
-            'paragraph',
-            'section',
-            'sentence',
-            'per_entry',
-            'per_field',
-            'combined',
-            'dialogue',
-        ]);
-    });
-
-    it('classifies unit strategies (size controls do not apply)', () => {
-        for (const s of ['per_message', 'conversation_turns', 'message_batch', 'per_entry', 'per_field']) {
-            expect(isUnitStrategy(s)).toBe(true);
-        }
-        for (const s of ['adaptive', 'paragraph', 'section', 'sentence', 'combined', 'dialogue', 'bogus']) {
-            expect(isUnitStrategy(s)).toBe(false);
-        }
-    });
-
-    it('offers four chat strategies', () => {
-        expect(getChatStrategies()).toEqual([
-            'per_message',
-            'conversation_turns',
-            'message_batch',
-            'adaptive',
-        ]);
-    });
-});

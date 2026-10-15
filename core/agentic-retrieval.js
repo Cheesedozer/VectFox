@@ -63,7 +63,7 @@ export async function retrieveEventsWithAgent(params) {
     }
     if (settings.vector_backend !== 'qdrant') {
         if (agenticDebug) {
-            log.domain('agent', 'lifecycle', '[VectFox-Agentic] mode=SKIPPED reason=requires_qdrant_backend');
+            log.domain('agent', '[VectFox-Agentic] mode=SKIPPED reason=requires_qdrant_backend');
         }
         return preSearch;
     }
@@ -80,18 +80,18 @@ export async function retrieveEventsWithAgent(params) {
 
     if (agenticDebug) {
         const topScore = preSearch.events?.[0]?._finalScore ?? preSearch.events?.[0]?.score ?? 0;
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] mode=ON  trigger=user_message_len=${(keywordQuery || '').length}`);
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] Pre-search returned ${preSearch.events?.length || 0} candidates (top score=${typeof topScore === 'number' ? topScore.toFixed(3) : '—'})`);
+        log.domain('agent', `[VectFox-Agentic] mode=ON  trigger=user_message_len=${(keywordQuery || '').length}`);
+        log.domain('agent', `[VectFox-Agentic] Pre-search returned ${preSearch.events?.length || 0} candidates (top score=${typeof topScore === 'number' ? topScore.toFixed(3) : '—'})`);
     }
 
     const recentTurns = _getRecentChatForPlanner(settings);
     if (agenticDebug) {
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] Past chat turns sent to planner: ${recentTurns.length}`);
-        log.domain('agent', 'verbose', '[VectFox-Agentic] Narrative context preview (one ~50-word snippet per turn):');
+        log.domain('agent', `[VectFox-Agentic] Past chat turns sent to planner: ${recentTurns.length}`);
+        log.domain('agent', '[VectFox-Agentic] Narrative context preview (one ~50-word snippet per turn):');
         recentTurns.forEach((turn, idx) => {
             const label = `[-${recentTurns.length - idx}]`;
             const snippet = _firstNWords(turn.text || '', 50);
-            log.domain('agent', 'trace', `  ${label} ${turn.speaker}: ${snippet}`);
+            log.domain('agent', `  ${label} ${turn.speaker}: ${snippet}`);
         });
     }
 
@@ -111,7 +111,7 @@ export async function retrieveEventsWithAgent(params) {
         // core/agentic-prompt.js for inspection.
         const systemPromptText = getAgenticPlannerPrompt(settings?.cjk_tokenizer_mode);
         const approxTokens = Math.round((systemPromptText.length + userMessage.length) / 4);
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] LLM prompt size: system+user approx ${approxTokens} tokens (${systemPromptText.length}+${userMessage.length} chars)`);
+        log.domain('agent', `[VectFox-Agentic] LLM prompt size: system+user approx ${approxTokens} tokens (${systemPromptText.length}+${userMessage.length} chars)`);
     }
 
     const timeoutMs = settings.agentic_retrieval_timeout_ms || 30000;
@@ -158,12 +158,12 @@ export async function retrieveEventsWithAgent(params) {
             const tokPerSec = usage.completion_tokens != null && tLlmMs > 0
                 ? (usage.completion_tokens / (tLlmMs / 1000)).toFixed(1)
                 : '—';
-            log.domain('agent', 'verbose', `[VectFox-Agentic] LLM call complete: ${tLlmMs}ms — prompt=${usage.prompt_tokens} tok, completion=${usage.completion_tokens ?? '?'} tok, total=${usage.total_tokens ?? '?'} tok (${tokPerSec} tok/s output)`);
+            log.domain('agent', `[VectFox-Agentic] LLM call complete: ${tLlmMs}ms — prompt=${usage.prompt_tokens} tok, completion=${usage.completion_tokens ?? '?'} tok, total=${usage.total_tokens ?? '?'} tok (${tokPerSec} tok/s output)`);
         } else {
-            log.domain('agent', 'verbose', `[VectFox-Agentic] LLM call complete: ${tLlmMs}ms (provider did not return usage data)`);
+            log.domain('agent', `[VectFox-Agentic] LLM call complete: ${tLlmMs}ms (provider did not return usage data)`);
         }
-        log.domain('agent', 'verbose', '[VectFox-Agentic] Planner output:');
-        log.domain('agent', 'verbose', JSON.stringify(plan, null, 2));
+        log.domain('agent', '[VectFox-Agentic] Planner output:');
+        log.domain('agent', JSON.stringify(plan, null, 2));
     }
 
     // Validate planner output.
@@ -171,7 +171,7 @@ export async function retrieveEventsWithAgent(params) {
     const validatedQueries = _validateAndTrimQueries(plan?.queries, maxQueries);
     if (validatedQueries.length === 0) {
         if (agenticDebug) {
-            log.domain('agent', 'lifecycle', '[VectFox-Agentic] Planner returned 0 valid queries — falling back to pre-search only');
+            log.domain('agent', '[VectFox-Agentic] Planner returned 0 valid queries — falling back to pre-search only');
         }
         return preSearch;
     }
@@ -179,7 +179,7 @@ export async function retrieveEventsWithAgent(params) {
     // STAGE 4 — run planner queries in parallel against all live collections.
     if (!liveCollectionIds?.length) {
         if (agenticDebug) {
-            log.domain('agent', 'lifecycle', '[VectFox-Agentic] No live collections to query — falling back to pre-search only');
+            log.domain('agent', '[VectFox-Agentic] No live collections to query — falling back to pre-search only');
         }
         return preSearch;
     }
@@ -193,9 +193,9 @@ export async function retrieveEventsWithAgent(params) {
     const plannerFilters = _validatePlannerFilters(plan?.filters, settings);
     if (agenticDebug) {
         if (Object.keys(plannerFilters).length === 0) {
-            log.domain('agent', 'verbose', '[VectFox-Agentic] Planner filters: (none — running unfiltered)');
+            log.domain('agent', '[VectFox-Agentic] Planner filters: (none — running unfiltered)');
         } else {
-            log.domain('agent', 'verbose', `[VectFox-Agentic] Planner filters applied: ${JSON.stringify(plannerFilters)}`);
+            log.domain('agent', `[VectFox-Agentic] Planner filters applied: ${JSON.stringify(plannerFilters)}`);
         }
     }
 
@@ -223,16 +223,16 @@ export async function retrieveEventsWithAgent(params) {
     const agenticHits = fanoutResults.flatMap(r => r.hits);
 
     if (agenticDebug) {
-        log.domain('agent', 'verbose', `[VectFox-Agentic] Qdrant fanout: ${validatedQueries.length} queries × ${liveCollectionIds.length} collection(s) = ${fanoutPromises.length} parallel calls`);
-        log.domain('agent', 'verbose', `[VectFox-Agentic] Qdrant fanout complete: ${tFanoutMs}ms`);
-        log.domain('agent', 'verbose', '[VectFox-Agentic] Per-query hits:');
+        log.domain('agent', `[VectFox-Agentic] Qdrant fanout: ${validatedQueries.length} queries × ${liveCollectionIds.length} collection(s) = ${fanoutPromises.length} parallel calls`);
+        log.domain('agent', `[VectFox-Agentic] Qdrant fanout complete: ${tFanoutMs}ms`);
+        log.domain('agent', '[VectFox-Agentic] Per-query hits:');
         fanoutResults.forEach((r, i) => {
             const topScore = r.hits[0]?.score ?? r.hits[0]?.vectorScore ?? 0;
-            log.domain('agent', 'trace', `  Q${i + 1} "${r.queryText.slice(0, 60)}" → ${r.hits.length} hits (top score=${typeof topScore === 'number' ? topScore.toFixed(3) : '—'})`);
+            log.domain('agent', `  Q${i + 1} "${r.queryText.slice(0, 60)}" → ${r.hits.length} hits (top score=${typeof topScore === 'number' ? topScore.toFixed(3) : '—'})`);
         });
         const preSearchIds = new Set((preSearch.events || []).map(e => e.event_id ?? e._hash));
         const newHits = agenticHits.filter(h => !preSearchIds.has(h.event_id ?? h._hash));
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] Agentic-only hits (not already in pre-search): ${newHits.length}`);
+        log.domain('agent', `[VectFox-Agentic] Agentic-only hits (not already in pre-search): ${newHits.length}`);
     }
 
     // STAGE 5 — re-feed merged candidates through retrieveEvents for canonical rerank.
@@ -254,8 +254,8 @@ export async function retrieveEventsWithAgent(params) {
 
     const tTotalMs = _ms(tAgentStart);
     if (agenticDebug) {
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] Final merged candidates: ${(preSearch.events || []).length} pre-search + ${agenticHits.length} agentic = ${mergedAdditional.length} total → ${final.events?.length || 0} after rerank/dedup/trim`);
-        log.domain('agent', 'lifecycle', `[VectFox-Agentic] Total wall-clock for agent overhead: ${tTotalMs}ms (LLM=${tLlmMs}ms, fanout=${tFanoutMs}ms)`);
+        log.domain('agent', `[VectFox-Agentic] Final merged candidates: ${(preSearch.events || []).length} pre-search + ${agenticHits.length} agentic = ${mergedAdditional.length} total → ${final.events?.length || 0} after rerank/dedup/trim`);
+        log.domain('agent', `[VectFox-Agentic] Total wall-clock for agent overhead: ${tTotalMs}ms (LLM=${tLlmMs}ms, fanout=${tFanoutMs}ms)`);
     }
 
     // Annotate debug so callers can detect agentic mode in diagnostics.
@@ -301,7 +301,7 @@ export function _resolveAgenticLLMConfig(settings = {}) {
         // "(empty → inherit summarize key)" placeholder is now a
         // no-op visual hint; all three inputs (embedding/summarize/
         // agentic) write the same SECRET_KEYS.OPENROUTER slot.
-        const apiKey = getOpenRouterApiKey(settings);
+        const apiKey = getOpenRouterApiKey();
         if (!apiKey) {
             return { ok: false, reason: 'missing_openrouter_api_key' };
         }
@@ -316,7 +316,7 @@ export function _resolveAgenticLLMConfig(settings = {}) {
         // Key lives in SECRET_KEYS.CUSTOM (masked client-side). getCustomApiKey
         // returns the masked presence indicator; real key is read server-side
         // by ST's chat-completions proxy. Same shared slot as summarize/agent.
-        const apiKey = getCustomApiKey(settings);
+        const apiKey = getCustomApiKey();
         if (!apiKey) {
             return { ok: false, reason: 'missing_vllm_api_key' };
         }

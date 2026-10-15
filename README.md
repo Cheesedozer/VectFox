@@ -437,7 +437,7 @@ Use **Qdrant vector database** for any ultra fast and accurate delopment — A3 
 4. Paste this URL:
 
    ```
-   https://github.com/KritBlade/VectFox
+   https://github.com/Cheesedozer/VectFox
    ```
 5. Click **Install**
 
@@ -465,8 +465,8 @@ If you are on the Standard backend and do not install the plugin, event search a
 
 ```bash
 Open Command prompt on Windows or Terminal on Linux/Mac or Get into Console if you are on docker
-cd SillyTavern/plugins
-git clone -b Similharity-Plugin https://github.com/KritBlade/VectFox.git similharity
+cd SillyTavern/plugins        (or SillyBunny/plugins)
+git clone -b Similharity-Plugin https://github.com/Cheesedozer/VectFox.git similharity
 cd similharity
 npm install
 ```

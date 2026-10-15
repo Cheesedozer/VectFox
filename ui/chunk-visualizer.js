@@ -23,8 +23,7 @@ import {
     updateChunkMetadata,
 } from '../core/core-vector-api.js';
 import { getStringHash } from '../../../../utils.js';
-import { getContext } from '../../../../extensions.js';
-import { eventSource, getRequestHeaders } from '../../../../../script.js';
+import { getRequestHeaders } from '../../../../../script.js';
 import StringUtils from '../utils/string-utils.js';
 
 // ============================================================================

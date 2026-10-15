@@ -325,6 +325,18 @@ describe('BM25Scorer', () => {
             expect(scorer.scoreDocument([], 0)).toBe(0);
         });
 
+        it('should score a term repeated in the document above a single mention', () => {
+            const tfScorer = new BM25Scorer({ fieldBoosting: false });
+            tfScorer.indexDocuments([
+                { text: 'dragon dragon dragon castle' },
+                { text: 'dragon castle tower moat' },
+                { text: 'river bridge forest' },
+            ]);
+            const q = tokenize('dragon');
+            expect(tfScorer.documentLengths[0]).toBe(4);
+            expect(tfScorer.scoreDocument(q, 0)).toBeGreaterThan(tfScorer.scoreDocument(q, 1));
+        });
+
         it('should return 0 for invalid document index', () => {
             const queryTokens = tokenize('fox');
             expect(scorer.scoreDocument(queryTokens, -1)).toBe(0);

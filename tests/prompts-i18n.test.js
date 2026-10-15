@@ -47,13 +47,9 @@ describe('prompt mode resolution', () => {
                 expect(getter()).toBe(intl);
             });
 
-            it('does NOT fall back for prototype-chain keys — they resolve to undefined... no, ?? keeps intl', () => {
-                // `_PROMPTS[mode] ?? _PROMPTS.intl` — 'toString' resolves to
-                // Object.prototype.toString (a function, not nullish), so the
-                // fallback is skipped and a FUNCTION is returned instead of a
-                // prompt string. Latent bug; unreachable from the settings UI.
-                expect(typeof getter('toString')).toBe('function');
-                expect(typeof getter('constructor')).toBe('function');
+            it('falls back to intl for prototype-chain keys like toString', () => {
+                expect(getter('toString')).toBe(getter('intl'));
+                expect(getter('constructor')).toBe(getter('intl'));
             });
 
             it('returns the identical string instance on repeated calls (module constants, not rebuilt)', () => {
@@ -144,9 +140,14 @@ describe('getEventBaseExtractionPrompt', () => {
         }
     });
 
-    it('ends with the EXCERPT block so the chat text lands last in the prompt', () => {
+    it('opens with the EXCERPT block and ends with the output instruction', () => {
+        // Both placements are load-bearing for small models: with the excerpt
+        // after the rules, gemini-3.5-flash-lite answered [] for every window.
         for (const mode of MODES) {
-            expect(getEventBaseExtractionPrompt(mode).endsWith('EXCERPT\n=========================\n{{text}}')).toBe(true);
+            const p = getEventBaseExtractionPrompt(mode);
+            expect(p.startsWith('=========================\nEXCERPT\n=========================\n{{text}}\n')).toBe(true);
+            expect(p.endsWith('\nOutput the JSON array of events for the EXCERPT above.')).toBe(true);
+            expect(p.match(/\{\{text\}\}/g)).toHaveLength(1);
         }
     });
 

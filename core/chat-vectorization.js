@@ -9,29 +9,24 @@
  * ============================================================================
  */
 
-import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, chat_metadata, extension_prompts } from '../../../../../script.js';
+import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
 import { getStringHash as calculateHash } from '../../../../utils.js';
-import { isUnitStrategy } from './chunking.js';
 import { extractChatKeywords } from './keyword-boost.js';
-import { cleanText } from './text-cleaning.js';
 import {
     getSavedHashes,
-    insertVectorItems,
     queryCollection,
-    queryActiveCollections,
-    deleteVectorItems,
 } from './core-vector-api.js';
 import { isBackendAvailable } from '../backends/backend-manager.js';
-import { registerCollection, getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
-import { isCollectionEnabled, filterActiveCollections, setCollectionLock } from './collection-metadata.js';
+import { getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
+import { isCollectionEnabled, filterActiveCollections } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { buildSearchContext, filterChunksByConditions, processChunkLinks } from './conditional-activation.js';
 import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
 
 import { createDebugData, setLastSearchDebug, addTrace, recordChunkFate } from '../ui/search-debug.js';
-import { Queue, LRUCache } from '../utils/data-structures.js';
-import { getRequestHeaders } from '../../../../../script.js';
+import { LRUCache } from '../utils/data-structures.js';
+import { getIngestibleMessages } from './eventbase-store.js';
 import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import AsyncUtils from '../utils/async-utils.js';
 import { log } from './log.js';
@@ -143,60 +138,6 @@ function trackChunkActivation(hash, messageCount) {
 }
 
 /**
- * Rerank chunks using BananaBread's reranking endpoint
- * @param {string} query The search query
- * @param {Array} chunks Array of chunks with text
- * @param {object} settings VECTFOX settings
- * @returns {Promise<Array>} Chunks with updated scores from reranker
- */
-async function rerankWithBananaBread(query, chunks, settings) {
-    if (!chunks.length) return chunks;
-
-    const apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : 'http://localhost:8008';
-    const documents = chunks.map(c => c.text);
-
-    try {
-        const response = await fetch('/api/plugins/similharity/rerank', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                apiUrl,
-                apiKey: settings.bananabread_api_key || '', // Include API key for authentication
-                query,
-                documents,
-                top_k: chunks.length
-            }),
-        });
-
-        if (!response.ok) {
-            log.warn('VectFox: Reranking failed, using original scores');
-            return chunks;
-        }
-
-        const data = await response.json();
-        if (!data.results || !Array.isArray(data.results)) {
-            return chunks;
-        }
-
-        // Apply rerank scores - results are sorted by score desc
-        // Each result has { index, score } where index refers to original position
-        const rerankedChunks = data.results.map(r => {
-            const chunk = { ...chunks[r.index] };
-            chunk.rerankScore = r.score;
-            chunk.originalScore = chunk.score;
-            chunk.score = r.score; // Replace score with rerank score
-            return chunk;
-        });
-
-        log.lifecycle(`VectFox: Reranked ${rerankedChunks.length} chunks with BananaBread`);
-        return rerankedChunks;
-    } catch (error) {
-        log.warn('VectFox: Reranking error:', error.message);
-        return chunks;
-    }
-}
-
-/**
  * Synchronizes chat with vector index using simple FIFO queue
  *
  * How it works:
@@ -206,10 +147,10 @@ async function rerankWithBananaBread(query, chunks, settings) {
  * 4. Repeat until queue empty
  *
  * @param {object} settings VECTFOX settings
- * @param {number} batchSize Number of messages to process per call
+ * @param {string|null} [triggerEvent] SillyTavern event that triggered the sync (for logging)
  * @returns {Promise<object>} Progress info
  */
-export async function synchronizeChat(settings, batchSize = 5, triggerEvent = null) {
+export async function synchronizeChat(settings, triggerEvent = null) {
     log.lifecycle(`[AutoSync] synchronizeChat: invoked (trigger=${triggerEvent || 'unknown'})`);
 
     const chatId = getCurrentChatId();
@@ -249,7 +190,7 @@ export async function synchronizeChat(settings, batchSize = 5, triggerEvent = nu
     }
 
     const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
-    const messages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
+    const messages = getIngestibleMessages(context.chat);
     log.lifecycle(`[AutoSync] calling runEventBaseIngestion: messages=${messages.length}`);
     let result;
     try {
@@ -1018,26 +959,26 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
     const injectionDebug = log.domainEnabled('injection');
     // Control print: Log chunks QUEUED for injection (not yet injected)
     if (injectionDebug) {
-        log.domain('injection', 'trace', `[VECTFOX Injection Control] Preparing to inject ${chunksToInject.length} chunks`);
-        log.domain('injection', 'trace', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        log.domain('injection', `[VECTFOX Injection Control] Preparing to inject ${chunksToInject.length} chunks`);
+        log.domain('injection', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         let emptyTextCount = 0;
         chunksToInject.forEach((chunk, idx) => {
             const textLength = chunk.text?.length || 0;
             const hasValidText = textLength > 0 && chunk.text !== '(text not found)' && chunk.text !== '(text not available)';
             if (!hasValidText) emptyTextCount++;
 
-            log.domain('injection', 'trace', `  [${idx + 1}/${chunksToInject.length}] CHUNK QUEUED FOR INJECTION ${!hasValidText ? '⚠️ EMPTY/INVALID TEXT' : ''}`);
-            log.domain('injection', 'trace', `      Hash: ${chunk.hash}`);
-            log.domain('injection', 'trace', `      Score: ${chunk.score?.toFixed(4)}`);
-            log.domain('injection', 'trace', `      Collection: ${chunk.collectionId}`);
-            log.domain('injection', 'trace', `      Text length: ${textLength} chars ${!hasValidText ? '⚠️' : '✓'}`);
-            log.domain('injection', 'trace', `      Text preview: "${chunk.text?.substring(0, 120)}${textLength > 120 ? '...' : ''}"`);
-            log.domain('injection', 'trace', '      ─────────────────────────────────────────────────────────────────');
+            log.domain('injection', `  [${idx + 1}/${chunksToInject.length}] CHUNK QUEUED FOR INJECTION ${!hasValidText ? '⚠️ EMPTY/INVALID TEXT' : ''}`);
+            log.domain('injection', `      Hash: ${chunk.hash}`);
+            log.domain('injection', `      Score: ${chunk.score?.toFixed(4)}`);
+            log.domain('injection', `      Collection: ${chunk.collectionId}`);
+            log.domain('injection', `      Text length: ${textLength} chars ${!hasValidText ? '⚠️' : '✓'}`);
+            log.domain('injection', `      Text preview: "${chunk.text?.substring(0, 120)}${textLength > 120 ? '...' : ''}"`);
+            log.domain('injection', '      ─────────────────────────────────────────────────────────────────');
         });
         if (emptyTextCount > 0) {
             log.warn(`[VECTFOX Injection Control] ⚠️ WARNING: ${emptyTextCount}/${chunksToInject.length} chunks have empty or placeholder text!`);
         }
-        log.domain('injection', 'trace', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        log.domain('injection', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
 
     // Group chunks by resolved injection position+depth
@@ -1059,8 +1000,8 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const insertedText = buildNestedInjectionText(group.chunks, settings);
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Single position injection: position="${group.position}", depth=${group.depth}, chunks=${group.chunks.length}, textLength=${insertedText.length}`);
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection text preview: "${insertedText.substring(0, 200)}${insertedText.length > 200 ? '...' : ''}"`); 
+            log.domain('injection', `[VECTFOX Injection Control] Single position injection: position="${group.position}", depth=${group.depth}, chunks=${group.chunks.length}, textLength=${insertedText.length}`);
+            log.domain('injection', `[VECTFOX Injection Control] Injection text preview: "${insertedText.substring(0, 200)}${insertedText.length > 200 ? '...' : ''}"`); 
         }
 
         setExtensionPrompt(EXTENSION_PROMPT_TAG, insertedText, group.position, group.depth, false);
@@ -1070,8 +1011,8 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const injectionVerified = verifiedPrompt && verifiedPrompt.value === insertedText;
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection verification: ${injectionVerified ? '✓ PASSED' : '✗ FAILED'}`);
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] extension_prompts[${EXTENSION_PROMPT_TAG}]:`, {
+            log.domain('injection', `[VECTFOX Injection Control] Injection verification: ${injectionVerified ? '✓ PASSED' : '✗ FAILED'}`);
+            log.domain('injection', `[VECTFOX Injection Control] extension_prompts[${EXTENSION_PROMPT_TAG}]:`, {
                 exists: !!verifiedPrompt,
                 valueLength: verifiedPrompt?.value?.length,
                 position: verifiedPrompt?.position,
@@ -1100,7 +1041,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
     }
 
     // Multiple injection positions - create separate extension prompts for each
-    if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Multiple position injection: ${positionGroups.size} different positions`);
+    if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Multiple position injection: ${positionGroups.size} different positions`);
 
     // Clear the main tag first (will be unused when multi-position)
     setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, false);
@@ -1115,9 +1056,9 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const groupText = buildNestedInjectionText(group.chunks, groupSettings);
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Position group ${groupIndex + 1}/${positionGroups.size}: key="${key}", chunks=${group.chunks.length}, textLength=${groupText.length}`);
+            log.domain('injection', `[VECTFOX Injection Control] Position group ${groupIndex + 1}/${positionGroups.size}: key="${key}", chunks=${group.chunks.length}, textLength=${groupText.length}`);
             group.chunks.forEach((chunk, idx) => {
-                log.domain('injection', 'trace', `    [${idx + 1}/${group.chunks.length}] Hash: ${chunk.hash}, Score: ${chunk.score?.toFixed(4)}`);
+                log.domain('injection', `    [${idx + 1}/${group.chunks.length}] Hash: ${chunk.hash}, Score: ${chunk.score?.toFixed(4)}`);
             });
         }
 
@@ -1130,7 +1071,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const verifiedPrompt = extension_prompts[tag];
         const verified = verifiedPrompt && verifiedPrompt.value === groupText;
 
-        if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Position group ${groupIndex + 1} verification: ${verified ? '✓ PASSED' : '✗ FAILED'}`);
+        if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Position group ${groupIndex + 1} verification: ${verified ? '✓ PASSED' : '✗ FAILED'}`);
 
         if (!verified) {
             log.warn(`VectFox: ⚠️ Injection verification failed for position ${key}`, {
@@ -1155,7 +1096,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         groupIndex++;
     }
 
-    if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection complete: ${allVerified ? '✓ All verified' : '✗ Some failed'}, ${allTexts.length} groups`);
+    if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Injection complete: ${allVerified ? '✓ All verified' : '✗ Some failed'}, ${allTexts.length} groups`);
 
     return {
         verified: allVerified,
@@ -1448,17 +1389,6 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
             debugData.stats.summariesExpanded = expandedCount;
         }
 
-        // === STAGE 5: BananaBread reranking (optional) ===
-        if (settings.source === 'bananabread' && settings.bananabread_rerank && chunks.length > 0) {
-            addTrace(debugData, 'rerank', 'Starting BananaBread reranking', {
-                chunks: chunks.length,
-                query: queryText.substring(0, 100)
-            });
-            chunks = await rerankWithBananaBread(queryText, chunks, settings);
-            debugData.stages.afterRerank = [...chunks];
-            addTrace(debugData, 'rerank', 'Reranking complete', { rerankedCount: chunks.length });
-        }
-
         // === STAGE 6: Threshold filter ===
         const threshold = settings.score_threshold || 0;
         chunks = applyThresholdFilter(chunks, threshold, debugData);
@@ -1562,9 +1492,9 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
 /**
  * Vectorizes entire chat
  * @param {object} settings VECTFOX settings
- * @param {number} batchSize Batch size
+ * @param {AbortSignal|null} [abortSignal]
  */
-export async function vectorizeAll(settings, batchSize, abortSignal = null, {
+export async function vectorizeAll(settings, abortSignal = null, {
     startFromMessage = 1,
     parallelWindows = 1,
     progressPlan = null,
@@ -1600,10 +1530,9 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null, {
         const context = getContext();
         if (!Array.isArray(context.chat)) return;
 
-        const allMessages = context.chat.filter(m => m.mes && m.mes.trim().length > 0);
-        const messages = startFromMessage > 1
-            ? allMessages.slice(Math.min(startFromMessage - 1, allMessages.length))
-            : allMessages;
+        const allMessages = getIngestibleMessages(context.chat);
+        const indexOffset = startFromMessage > 1 ? Math.min(startFromMessage - 1, allMessages.length) : 0;
+        const messages = allMessages.slice(indexOffset);
 
         const { runEventBaseIngestion } = await import('./eventbase-workflow.js');
         const result = await runEventBaseIngestion({
@@ -1615,6 +1544,7 @@ export async function vectorizeAll(settings, batchSize, abortSignal = null, {
             parallelWindows,
             progressPlan,
             skipTipFallback,
+            indexOffset,
         });
 
         if (chatId !== getCurrentChatId()) {

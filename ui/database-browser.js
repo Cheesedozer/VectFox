@@ -13,8 +13,6 @@
 import {
   loadAllCollections,
   setCollectionEnabled,
-  registerCollection,
-  unregisterCollection,
   clearCollectionRegistry,
   deleteCollection,
   sanitizeHandleId,
@@ -23,34 +21,26 @@ import {
 } from "../core/collection-loader.js";
 import { COLLECTION_PREFIXES } from "../core/collection-ids.js";
 import {
-  purgeVectorIndex,
   queryMultipleCollections,
 } from "../core/core-vector-api.js";
 import { getRequestHeaders, getCurrentChatId, eventSource, event_types } from "../../../../../script.js";
 import {
   cleanupOrphanedMeta,
-  deleteCollectionMeta,
   getCollectionConditions,
   setCollectionConditions,
   getCollectionTriggers,
-  setCollectionTriggers,
   getCollectionMeta,
   setCollectionMeta,
   getCollectionActivationSummary,
-  isCollectionEnabled,
   // Locking API
-  getCollectionLock,
   getCollectionLocks,
   setCollectionLock,
   removeCollectionLock,
-  clearCollectionLock,
   isCollectionLockedToChat,
   getCollectionLockCount,
   // Character Locking API
-  getCollectionCharacterLocks,
   setCollectionCharacterLock,
   removeCollectionCharacterLock,
-  clearCollectionCharacterLocks,
   isCollectionLockedToCharacter,
   getCollectionCharacterLockCount,
   isCollectionActiveForContext,
@@ -65,7 +55,6 @@ import { world_names, loadWorldInfo } from "../../../../world-info.js";
 import { icons } from "./icons.js";
 import StringUtils from "../utils/string-utils.js";
 import { openVisualizer } from "./chunk-visualizer.js";
-import { queryCollection } from "../core/core-vector-api.js";
 import {
   exportCollection,
   importCollection,
@@ -81,7 +70,6 @@ import {
   downloadPNG,
   readPNGFile,
   convertToPNG,
-  isVectFoxPNG,
 } from "../core/png-export.js";
 import { renderSizeInspectorTab } from "./size-inspector.js";
 
@@ -241,7 +229,7 @@ function createBrowserModal() {
                         <strong>Limited Discovery Mode</strong>
                         <span>Similharity plugin not detected. Only registered collections and current chat can be discovered.
                         Collections created outside VECTFOX won't appear here.
-                        <a href="https://github.com/KritBlade/VectFox/tree/Similharity-Plugin#step-2-install-plugin-via-git-recommended" target="_blank">Install the plugin</a> for full filesystem scanning.</span>
+                        <a href="https://github.com/Cheesedozer/VectFox/tree/Similharity-Plugin" target="_blank">Install the plugin</a> for full filesystem scanning.</span>
                     </div>
                     <button class="vectfox-btn vectfox-btn-sm" id="vectfox_plugin_setup_guide_btn" style="white-space:nowrap;">
                         🛠 Setup guide
@@ -3296,7 +3284,8 @@ async function performSearch() {
   }
 
   const topK = parseInt($("#vectfox_search_topk").val()) || 5;
-  const threshold = parseFloat($("#vectfox_search_threshold").val()) || 0.3;
+  const thresholdInput = parseFloat($("#vectfox_search_threshold").val());
+  const threshold = Number.isFinite(thresholdInput) ? thresholdInput : 0.3;
   const enabledOnly = $("#vectfox_search_enabled_only").is(":checked");
 
   // Get collection IDs to search

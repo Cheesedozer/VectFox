@@ -102,7 +102,7 @@ let indexLoadPromise = null;
  * Builds the in-memory index from IndexedDB once per SillyTavern session.
  * @returns {Promise<ReturnType<typeof createWikiIndex>>}
  */
-export async function ensureIndexLoaded() {
+async function ensureIndexLoaded() {
     if (index) {
         return index;
     }

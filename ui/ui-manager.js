@@ -11,7 +11,7 @@
  */
 
 import { saveSettingsDebounced, getCurrentChatId, eventSource, event_types, getRequestHeaders } from '../../../../../script.js';
-import { extension_settings, openThirdPartyExtensionMenu, getContext } from '../../../../extensions.js';
+import { extension_settings, getContext } from '../../../../extensions.js';
 import { writeSecret, SECRET_KEYS, secret_state, readSecretState } from '../../../../secrets.js';
 import {
     getOpenRouterApiKey,
@@ -19,21 +19,18 @@ import {
     getQdrantApiKey,
     fetchQdrantApiKeyPresence,
 } from '../core/api-keys.js';
-import { getWebLlmProvider as getSharedWebLlmProvider } from '../providers/webllm.js';
 import StringUtils from '../utils/string-utils.js';
-import { openVisualizer } from './chunk-visualizer.js';
 import { openDatabaseBrowser } from './database-browser.js';
 import { openContentVectorizer } from './content-vectorizer.js';
-import { openSearchDebugModal, openQueryTestModal, getLastSearchDebug } from './search-debug.js';
+import { openQueryTestModal } from './search-debug.js';
 import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { progressTracker } from './progress-tracker.js';
 import { resetBackendHealth } from '../backends/backend-manager.js';
 import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard, refreshIndicator as refreshHealthIndicator } from './health-dashboard.js';
-import { doesChatHaveVectors, getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
+import { getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
 import { getCollectionMeta } from '../core/collection-metadata.js';
 import { parseRegistryKey } from '../core/collection-ids.js';
-import { getModelField } from '../core/providers.js';
-import { getChunkingStrategies } from '../core/content-types.js';
+import { getModelField, getEmbeddingRequestParams } from '../core/providers.js';
 import { CJK_TOKENIZER_MODES, setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded } from '../core/bm25-scorer.js';
 import { LANGUAGE_MODES } from '../core/language-modes.js';
 import { log } from '../core/log.js';
@@ -629,7 +626,7 @@ export function renderSettings(containerId, settings, callbacks) {
                             <!-- Auto-Reformat (LLM) -->
                             <p class="vectfox-section-label" style="font-weight:600; margin-top:16px; margin-bottom:8px;">Auto-Reformat (LLM)</p>
                             <small class="VectFox_hint" style="display:block; margin-bottom:8px;">
-                                Optional, per-item LLM pass offered in <b>Vectorize Content</b> for Document/URL/Wiki sources. Reads the source, splits it into clean per-entity/per-topic entries, and uses those as the final chunks — you review and accept every entry before anything is stored. Leave Provider/Model blank to inherit from <b>Summarize Before Store</b> settings.
+                                Optional, per-item LLM pass offered in <b>Vectorize Content</b> for Document/URL/Wiki/YouTube sources. Reads the source, splits it into clean per-entity/per-topic entries, and uses those as the final chunks — you review and accept every entry before anything is stored. Leave Provider/Model blank to inherit from <b>Summarize Before Store</b> settings.
                             </small>
 
                             <div class="vectfox-form-group">
@@ -703,7 +700,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Custom Extraction Prompt (advanced)</small>
                             </label>
                             <textarea id="VectFox_reformat_custom_prompt" class="vectfox-input" rows="3"
-                                placeholder="Leave blank to use the built-in prompt. Must instruct the model to output a JSON array with entry_type/name/aliases/affiliation/traits/keywords/body fields plus relationships as [{target, type}] objects. Note: traits are always code-sanitized regardless of prompt (items over 160 chars or duplicating the body are dropped)."
+                                placeholder="Leave blank to use the built-in prompt. Must ask for a JSON array of objects with entry_type, name, aliases, affiliation, relationships ([{target, type}]), keywords, hidden (true/false) and body. Put {{text}} where the source goes and {{notes}} where per-batch notes go (both are added automatically if missing)."
                                 style="margin-top:4px;"></textarea>
 
                             <!-- Query (ChunkBase-only) -->
@@ -979,18 +976,6 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <span>Debug Agent Mode</span>
                             </label>
                             <small class="VectFox_hint">Log [VectFox-Agentic] details: mode marker, narrative context preview (~50 words per turn), LLM round-trip ms, planner output JSON, Qdrant fanout ms, total agent overhead ms, per-query hit counts. Only fires when Agent Mode is enabled (AgentMode tab).</small>
-
-                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank" style="margin-top: 12px;">
-                                <input type="checkbox" id="VectFox_eventbase_compare_rerank" />
-                                <span>Compare native vs JS re-rank (debug)</span>
-                            </label>
-                            <small class="VectFox_hint">Requires native re-rank ON and Debug Logging ON. Runs the JS pipeline in parallel for each (collection, queryText) and logs top-K overlap + Spearman ρ + timings. Doubles per-collection cost — debug only.</small>
-
-                            <label class="checkbox_label" for="VectFox_eventbase_compare_rerank_verbose" style="margin-top: 12px;">
-                                <input type="checkbox" id="VectFox_eventbase_compare_rerank_verbose" />
-                                <span>Verbose compare logs (per-event breakdown)</span>
-                            </label>
-                            <small class="VectFox_hint">Adds per-event score-component breakdowns for events present in both top-K lists. Verbose — enable only when investigating a specific divergence.</small>
 
                         </div>
                     </div>
@@ -1661,149 +1646,6 @@ function initializeCollapsibleCards() {
         });
     }
 
-// Use shared WebLLM provider singleton from providers/webllm.js
-// This ensures the same engine instance is shared with core-vector-api.js
-const getWebLlmProvider = getSharedWebLlmProvider;
-
-/**
- * Checks if WebLLM is supported (browser + extension)
- * Shows user-friendly toast notifications with actionable guidance
- * @returns {boolean} True if WebLLM is available
- */
-function isWebLlmSupported() {
-    // Check 1: Browser supports WebGPU API
-    if (!('gpu' in navigator)) {
-        const warningKey = 'VectFox_webllm_browser_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'Your browser does not support the WebGPU API. Please use Chrome 113+, Edge 113+, or another WebGPU-compatible browser.',
-                'WebLLM - Browser Not Supported',
-                { preventDuplicates: true, timeOut: 0, extendedTimeOut: 0 }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    // Check 2: WebLLM extension is installed
-    if (!Object.hasOwn(SillyTavern, 'llm')) {
-        const warningKey = 'VectFox_webllm_extension_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'WebLLM extension is not installed. Click here to install it.',
-                'WebLLM - Extension Required',
-                {
-                    timeOut: 0,
-                    extendedTimeOut: 0,
-                    preventDuplicates: true,
-                    onclick: () => openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM'),
-                }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    // Check 3: WebLLM extension supports embeddings
-    if (typeof SillyTavern.llm.generateEmbedding !== 'function') {
-        const warningKey = 'VectFox_webllm_update_warning_shown';
-        if (!sessionStorage.getItem(warningKey)) {
-            toastr.error(
-                'Your WebLLM extension is outdated and does not support embeddings. Please update the extension.',
-                'WebLLM - Update Required',
-                { preventDuplicates: true, timeOut: 0, extendedTimeOut: 0 }
-            );
-            sessionStorage.setItem(warningKey, '1');
-        }
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * Executes a function with WebLLM error handling
- * @param {Function} func - Function to execute
- * @returns {Promise<any>} Result of function or undefined on error
- */
-async function executeWithWebLlmErrorHandling(func) {
-    try {
-        return await func();
-    } catch (error) {
-        log.error('VectFox: WebLLM operation failed', error);
-        if (!(error instanceof Error)) {
-            return;
-        }
-        switch (error.cause) {
-            case 'webllm-not-available':
-                toastr.error(
-                    'WebLLM extension is not installed. Click here to install it.',
-                    'WebLLM Error',
-                    {
-                        timeOut: 0,
-                        extendedTimeOut: 0,
-                        preventDuplicates: true,
-                        onclick: () => openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM'),
-                    }
-                );
-                break;
-            case 'webllm-not-updated':
-                toastr.error(
-                    'Your WebLLM extension needs updating. It does not support embeddings.',
-                    'WebLLM Update Required',
-                    { timeOut: 0, extendedTimeOut: 0, preventDuplicates: true }
-                );
-                break;
-            default:
-                toastr.error(
-                    `WebLLM error: ${error.message}`,
-                    'WebLLM Error',
-                    { preventDuplicates: true }
-                );
-        }
-    }
-}
-
-/**
- * Loads available WebLLM models into the dropdown
- * @param {object} settings - VectFox settings object
- */
-export async function loadWebLlmModels(settings) {
-    return executeWithWebLlmErrorHandling(async () => {
-        const provider = getWebLlmProvider();
-        const models = provider.getModels();
-        const $select = $('#VectFox_webllm_model');
-
-        $select.empty();
-
-        if (!models || models.length === 0) {
-            $select.append($('<option>', { value: '', text: 'No embedding models available' }));
-            return;
-        }
-
-        for (const model of models) {
-            $select.append($('<option>', {
-                value: model.id,
-                text: model.toString ? model.toString() : model.id,
-            }));
-        }
-
-        // Auto-select saved model or first available
-        if (settings.webllm_model && models.some(m => m.id === settings.webllm_model)) {
-            $select.val(settings.webllm_model);
-        } else if (models.length > 0) {
-            settings.webllm_model = models[0].id;
-            $select.val(settings.webllm_model);
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        }
-    });
-}
-
-/**
- * Updates the WebLLM status display based on availability
- * @returns {boolean} True if WebLLM is available
- */
 /**
  * Refreshes the auto-sync checkbox state from current chat's collection
  * Call this when chat changes to keep UI in sync
@@ -1948,48 +1790,6 @@ export async function refreshAutoSyncCheckbox(settings) {
     }
 }
 
-export function updateWebLlmStatus() {
-    const $status = $('#VectFox_webllm_status');
-    const $installBtn = $('#VectFox_webllm_install');
-    const $loadBtn = $('#VectFox_webllm_load');
-    const $modelSelect = $('#VectFox_webllm_model');
-
-    // Check browser support
-    if (!('gpu' in navigator)) {
-        $status.html('<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning-color, #f39c12);"></i> Your browser does not support WebGPU. Use Chrome 113+ or Edge 113+.');
-        $installBtn.hide();
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // Check extension installed
-    if (!Object.hasOwn(SillyTavern, 'llm')) {
-        $status.html('<i class="fa-solid fa-exclamation-circle" style="color: var(--error-color, #e74c3c);"></i> WebLLM extension not installed. Click "Install Extension" below.');
-        $installBtn.show();
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // Check extension supports embeddings
-    if (typeof SillyTavern.llm.generateEmbedding !== 'function') {
-        $status.html('<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning-color, #f39c12);"></i> WebLLM extension is outdated. Please update it to support embeddings.');
-        $installBtn.show().find('i').removeClass('fa-puzzle-piece').addClass('fa-rotate');
-        $installBtn.find('span, text').text(' Update Extension');
-        $loadBtn.prop('disabled', true);
-        $modelSelect.prop('disabled', true);
-        return false;
-    }
-
-    // All good!
-    $status.html('<i class="fa-solid fa-check-circle" style="color: var(--success-color, #2ecc71);"></i> WebLLM extension is installed and ready.');
-    $installBtn.hide();
-    $loadBtn.prop('disabled', false);
-    $modelSelect.prop('disabled', false);
-    return true;
-}
-
 /**
  * Toggles provider-specific settings visibility
  * @param {string} selectedProvider - Currently selected provider
@@ -2006,14 +1806,6 @@ function toggleProviderSettings(selectedProvider, settings) {
             $(this).show();
         }
     });
-
-    // Handle WebLLM-specific initialization
-    if (selectedProvider === 'webllm') {
-        const isSupported = updateWebLlmStatus();
-        if (isSupported) {
-            loadWebLlmModels(settings);
-        }
-    }
 }
 
 /**
@@ -2466,7 +2258,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:vllm-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders.
     const updateSummarizeVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2524,7 +2316,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:openrouter-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders immediately.
     const updateSummarizeORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2594,7 +2386,7 @@ function bindSettingsEvents(settings, callbacks) {
     // architecture pivot, the "override" semantics are gone — there's now
     // ONE OpenRouter key everywhere.
     const updateAgenticORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2637,7 +2429,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `chat_completion_source: 'custom'`; embedding-side reads
     // SECRET_KEYS.VLLM (ST's Text Completion vLLM slot) separately.
     const updateAgenticVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2723,7 +2515,7 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
-    // ─── Auto-Reformat (Document/URL/Wiki LLM restructuring) ───────────────
+    // ─── Auto-Reformat (Document/URL/Wiki/YouTube LLM restructuring) ───────────────
     // Mirrors the AgentMode inherit-from-summarizer pattern above. No dedicated
     // API-key fields — reuses the same shared OpenRouter/vLLM key slots.
     const updateReformatProviderUI = (provider) => {
@@ -3672,15 +3464,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // Provider-specific settings
 
-    // ElectronHub model
-    $('#VectFox_electronhub_model')
-        .val(settings.electronhub_model)
-        .on('change', function() {
-            settings.electronhub_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
     // Ollama alternative endpoint
     $('#VectFox_ollama_use_alt_endpoint')
         .prop('checked', settings.ollama_use_alt_endpoint)
@@ -3729,54 +3512,6 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
-    // WebLLM model
-    $('#VectFox_webllm_model')
-        .val(settings.webllm_model)
-        .on('change', function() {
-            settings.webllm_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // WebLLM Load Model button
-    $('#VectFox_webllm_load').on('click', async function() {
-        const modelId = settings.webllm_model;
-
-        if (!modelId) {
-            toastr.warning('Please select a WebLLM model first', 'No Model Selected');
-            return;
-        }
-
-        if (!isWebLlmSupported()) {
-            return; // isWebLlmSupported already shows appropriate error
-        }
-
-        const $button = $(this);
-        const originalHtml = $button.html();
-        $button.prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin"></i> Loading...');
-
-        await executeWithWebLlmErrorHandling(async () => {
-            const provider = getWebLlmProvider();
-            await provider.loadModel(modelId);
-            toastr.success(`WebLLM model "${modelId}" loaded successfully`, 'Model Loaded');
-        });
-
-        $button.prop('disabled', false).html(originalHtml);
-    });
-
-    // WebLLM Install Extension button
-    $('#VectFox_webllm_install').on('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (Object.hasOwn(SillyTavern, 'llm')) {
-            toastr.info('WebLLM extension is already installed. Try refreshing the page.', 'Already Installed');
-            return;
-        }
-
-        openThirdPartyExtensionMenu('https://github.com/SillyTavern/Extension-WebLLM');
-    });
-
     // Ollama model
     $('#VectFox_ollama_model')
         .val(settings.ollama_model)
@@ -3790,15 +3525,6 @@ function bindSettingsEvents(settings, callbacks) {
         .prop('checked', settings.ollama_keep)
         .on('input', function() {
             settings.ollama_keep = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // BananaBread reranking
-    $('#VectFox_bananabread_rerank')
-        .prop('checked', settings.bananabread_rerank)
-        .on('input', function() {
-            settings.bananabread_rerank = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });
@@ -3893,25 +3619,6 @@ function bindSettingsEvents(settings, callbacks) {
         .prop('checked', !!settings.eventbase_native_rerank)
         .on('change', function() {
             settings.eventbase_native_rerank = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Compare-mode toggle (debug-only observability for native rerank).
-    // Drives debug_domain.rerank — read by log.domainEnabled('rerank') in eventbase-retrieval.js.
-    $('#VectFox_eventbase_compare_rerank')
-        .prop('checked', _ensureDebugDomain().rerank === true)
-        .on('change', function() {
-            _ensureDebugDomain().rerank = $(this).prop('checked');
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Compare-mode verbose toggle.
-    $('#VectFox_eventbase_compare_rerank_verbose')
-        .prop('checked', !!settings.eventbase_compare_rerank_verbose)
-        .on('change', function() {
-            settings.eventbase_compare_rerank_verbose = $(this).prop('checked');
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });
@@ -4068,42 +3775,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // ── End EventBase settings ───────────────────────────────────────────────
 
-    // BananaBread API key input removed 2026-05-26: the BananaBread provider
-    // is commented out in providers.js (unselectable from the Embedding
-    // dropdown) AND the #VectFox_bananabread_apikey HTML element doesn't
-    // exist anywhere in the template — this handler was bound to a selector
-    // that matched nothing. Doubly-dead code. The deeper BananaBread paths
-    // (rerank, embeddings, diagnostics, backend switch) remain in the
-    // codebase as unresolved work; see Doc/dev_helper.md "Unresolved code"
-    // section for the rationale.
-
-    // OpenAI model
-    $('#VectFox_openai_model')
-        .val(settings.openai_model)
-        .on('change', function() {
-            settings.openai_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // Cohere model
-    $('#VectFox_cohere_model')
-        .val(settings.cohere_model)
-        .on('change', function() {
-            settings.cohere_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
-    // TogetherAI model
-    $('#VectFox_togetherai_model')
-        .val(settings.togetherai_model)
-        .on('change', function() {
-            settings.togetherai_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
-
     // vLLM model
     $('#VectFox_vllm_model')
         .val(settings.vllm_model)
@@ -4118,7 +3789,7 @@ function bindSettingsEvents(settings, callbacks) {
     // pattern as the Summarize and AgentMode inputs above. One shared key,
     // both ST slots. See core/api-keys.js header for the full rationale.
     const updateVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -4159,15 +3830,6 @@ function bindSettingsEvents(settings, callbacks) {
             $(document).trigger('vectfox:vllm-key-changed');
         }
     });
-
-    // Google model
-    $('#VectFox_google_model')
-        .val(settings.google_model)
-        .on('change', function() {
-            settings.google_model = String($(this).val());
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-        });
 
     // OpenRouter model
     $('#VectFox_openrouter_model')
@@ -4277,7 +3939,7 @@ function bindSettingsEvents(settings, callbacks) {
     // the shared slot used by ST's own Connection Profile and by VectFox's
     // Summarize + AgentMode inputs. See core/api-keys.js for the rationale.
     const updateOpenRouterKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -4403,182 +4065,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // Initialize provider-specific settings visibility
     toggleProviderSettings(settings.source, settings);
-
-    // =========================================================================
-    // COTTON-TALES EMOTION CLASSIFIER INTEGRATION
-    // =========================================================================
-    initializeCottonTalesIntegration(settings);
-}
-
-/**
- * Initialize Cotton-Tales emotion classifier integration
- * Shows the section only if Cotton-Tales is installed
- */
-async function initializeCottonTalesIntegration(settings) {
-    // Check if Cotton-Tales is installed
-    const cottonTalesInstalled = !!extension_settings?.cotton_tales;
-
-    if (cottonTalesInstalled) {
-        $('#VectFox_cottontales_section').show();
-        log.lifecycle('VectFox: Cotton-Tales detected, showing emotion classification options');
-    } else {
-        $('#VectFox_cottontales_section').hide();
-        return;
-    }
-
-    // Import emotion classifier module
-    let emotionClassifier;
-    try {
-        emotionClassifier = await import('../core/emotion-classifier.js');
-    } catch (error) {
-        log.error('VectFox: Failed to load emotion classifier module:', error);
-        return;
-    }
-
-    // Helper to update UI based on method selection
-    function updateMethodUI(method) {
-        $('#VectFox_classifier_settings').toggle(method === 'classifier');
-        $('#VectFox_similarity_settings').toggle(method === 'similarity');
-
-        // Update the display of current embedding source for similarity mode
-        if (method === 'similarity') {
-            $('#VectFox_similarity_source_display').text(settings.source || 'transformers');
-        }
-    }
-
-    // Determine initial method from settings
-    function getCurrentMethod() {
-        if (settings.emotion_classifier_enabled && !settings.emotion_use_similarity) {
-            return 'classifier';
-        } else if (settings.emotion_use_similarity) {
-            return 'similarity';
-        }
-        return 'disabled';
-    }
-
-    // Classification method dropdown
-    $('#VectFox_emotion_method')
-        .val(getCurrentMethod())
-        .on('change', function() {
-            const method = $(this).val();
-
-            // Update settings based on method
-            if (method === 'disabled') {
-                settings.emotion_classifier_enabled = false;
-                settings.emotion_use_similarity = false;
-                emotionClassifier.updateClassifierSetting('enabled', false);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', false);
-            } else if (method === 'classifier') {
-                settings.emotion_classifier_enabled = true;
-                settings.emotion_use_similarity = false;
-                emotionClassifier.updateClassifierSetting('enabled', true);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', false);
-            } else if (method === 'similarity') {
-                settings.emotion_classifier_enabled = true; // Still enabled, but uses similarity
-                settings.emotion_use_similarity = true;
-                emotionClassifier.updateClassifierSetting('enabled', true);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', true);
-            }
-
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-            updateMethodUI(method);
-        });
-
-    // Initialize UI for current method
-    updateMethodUI(getCurrentMethod());
-
-    // Classifier model selection
-    $('#VectFox_emotion_classifier_model')
-        .val(settings.emotion_classifier_model || 'SamLowe/roberta-base-go_emotions')
-        .on('change', function() {
-            const value = $(this).val();
-
-            if (value === 'custom') {
-                $('#VectFox_custom_classifier_model').show();
-            } else {
-                $('#VectFox_custom_classifier_model').hide();
-                settings.emotion_classifier_model = value;
-                Object.assign(extension_settings.vectfox, settings);
-                saveSettingsDebounced();
-                emotionClassifier.updateClassifierSetting('model', value);
-            }
-        });
-
-    // Show custom model input if currently set to custom
-    if (settings.emotion_classifier_model &&
-        !['SamLowe/roberta-base-go_emotions', 'j-hartmann/emotion-english-distilroberta-base', 'bhadresh-savani/distilbert-base-uncased-emotion'].includes(settings.emotion_classifier_model)) {
-        $('#VectFox_emotion_classifier_model').val('custom');
-        $('#VectFox_custom_classifier_model').show();
-    }
-
-    // Custom model input
-    $('#VectFox_emotion_classifier_custom')
-        .val(settings.emotion_classifier_custom || '')
-        .on('input', function() {
-            settings.emotion_classifier_custom = $(this).val();
-            settings.emotion_classifier_model = $(this).val();
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-            emotionClassifier.updateClassifierSetting('model', $(this).val());
-        });
-
-    // Test classifier button
-    $('#VectFox_test_classifier').on('click', async function() {
-        const $btn = $(this);
-        const $result = $('#VectFox_classifier_test_result');
-
-        $btn.addClass('disabled').find('i').removeClass('fa-flask').addClass('fa-spinner fa-spin');
-        $result.hide();
-
-        try {
-            const model = settings.emotion_classifier_model || 'SamLowe/roberta-base-go_emotions';
-            const testResult = await emotionClassifier.testClassifierModel(model);
-
-            $result.show();
-
-            if (testResult.error) {
-                $result.css('background', 'rgba(239,68,68,0.2)').html(`
-                    <div style="color: #ef4444;">
-                        <i class="fa-solid fa-times-circle"></i>
-                        <b>Error:</b> ${testResult.error}
-                    </div>
-                `);
-            } else if (testResult.isEmotionClassifier) {
-                const confidenceColor = testResult.confidence === 'high' ? '#22c55e' : '#eab308';
-                $result.css('background', 'rgba(34,197,94,0.2)').html(`
-                    <div style="color: #22c55e;">
-                        <i class="fa-solid fa-check-circle"></i>
-                        <b>Looks like an emotion classifier!</b>
-                    </div>
-                    <div style="margin-top: 4px; font-size: 0.9em;">
-                        <b>Confidence:</b> <span style="color: ${confidenceColor}">${testResult.confidence}</span><br>
-                        <b>Sample labels:</b> ${testResult.sampleLabels.join(', ')}
-                    </div>
-                `);
-            } else {
-                $result.css('background', 'rgba(234,179,8,0.2)').html(`
-                    <div style="color: #eab308;">
-                        <i class="fa-solid fa-exclamation-triangle"></i>
-                        <b>May not be an emotion classifier</b>
-                    </div>
-                    <div style="margin-top: 4px; font-size: 0.9em;">
-                        Labels don't look like emotions: ${testResult.sampleLabels.join(', ')}<br>
-                        Consider using a different model.
-                    </div>
-                `);
-            }
-        } catch (error) {
-            $result.show().css('background', 'rgba(239,68,68,0.2)').html(`
-                <div style="color: #ef4444;">
-                    <i class="fa-solid fa-times-circle"></i>
-                    <b>Test failed:</b> ${error.message}
-                </div>
-            `);
-        } finally {
-            $btn.removeClass('disabled').find('i').removeClass('fa-spinner fa-spin').addClass('fa-flask');
-        }
-    });
 }
 
 // Store current diagnostic results for copy/filter functionality
@@ -4873,14 +4359,9 @@ function copyDiagnosticsReport(results) {
 
     // Build provider URL info
     let providerUrl = 'n/a';
-    if (source === 'ollama') {
-        providerUrl = settings.ollama_use_alt_endpoint && settings.ollama_alt_endpoint_url
-            ? settings.ollama_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.OLLAMA] || 'http://localhost:11434');
-    } else if (source === 'vllm') {
-        providerUrl = settings.vllm_use_alt_endpoint && settings.vllm_alt_endpoint_url
-            ? settings.vllm_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.VLLM] || 'http://localhost:8000');
+    if (source === 'ollama' || source === 'vllm') {
+        // The URL the backends actually send (see getEmbeddingRequestParams).
+        providerUrl = getEmbeddingRequestParams(settings).apiUrl || 'not set';
     }
 
     let report = `╔══════════════════════════════════════════════════════════════╗
@@ -4994,7 +4475,7 @@ export function openDiagnosticsModal() {
  * Handles fixing all fixable issues
  * @param {Array} checks - Array of diagnostic checks
  */
-function handleFixAll(checks) {
+async function handleFixAll(checks) {
     const fixableChecks = checks.filter(c => c.fixable && (c.status === 'fail' || c.status === 'warning'));
 
     if (fixableChecks.length === 0) {
@@ -5007,9 +4488,9 @@ function handleFixAll(checks) {
         'pass': '<i class="fa-solid fa-circle-check" style="color: var(--vectfox-success);"></i>'
     };
 
-    fixableChecks.forEach(check => {
+    for (const check of fixableChecks) {
         try {
-            handleDiagnosticFix(check.fixAction, true); // silent mode
+            await handleDiagnosticFix(check.fixAction, true); // silent mode
             fixedCount++;
 
             // Update UI for this item
@@ -5021,7 +4502,7 @@ function handleFixAll(checks) {
         } catch (e) {
             log.warn(`Failed to fix: ${check.fixAction}`, e);
         }
-    });
+    }
 
     // Hide Fix All button after use
     $('#VectFox_diag_fix_all').fadeOut(200);
@@ -5034,7 +4515,7 @@ function handleFixAll(checks) {
  * @param {string} action - The fix action to perform
  * @param {boolean} silent - If true, suppress toast notifications and don't close modal
  */
-function handleDiagnosticFix(action, silent = false) {
+async function handleDiagnosticFix(action, silent = false) {
     const settings = extension_settings.vectfox;
 
     switch (action) {
@@ -5069,22 +4550,31 @@ function handleDiagnosticFix(action, silent = false) {
             break;
 
         case 'fix_counts':
-            if (settings.insert < 1) {
-                $('#VectFox_insert').val(3).trigger('change');
-            }
-            if ((settings.top_k ?? settings.insert) < 1) {
+            // insert/query have no inputs of their own; write the settings directly.
+            if (!(settings.insert >= 1)) settings.insert = 3;
+            if (!(settings.query >= 1)) settings.query = 2;
+            if (settings.top_k !== undefined && !(settings.top_k >= 1)) {
                 $('#VectFox_topk').val(3).trigger('change');
             }
-            if (settings.query < 1) {
-                $('#VectFox_query').val(2).trigger('change');
-            }
+            saveSettingsDebounced();
             if (!silent) toastr.success('Insert/Query counts fixed');
             break;
 
-        case 'fix_chunk_size':
-            $('#VectFox_chunk_size').val(500).trigger('input');
-            if (!silent) toastr.success('Chunk size reset to 500');
+        case 'configure_qdrant':
+            $('#VectFox_qdrant_settings')[0]?.scrollIntoView({ behavior: 'smooth' });
+            if (!silent) toastr.info('Check your Qdrant connection settings');
             break;
+
+        case 'cleanOrphanedMetadata':
+        case 'removeDuplicateHashes': {
+            // These repair data the check found; the check object carries it.
+            const check = currentDiagnosticResults?.checks?.find(c => c.fixAction === action);
+            if (!check) break;
+            const { executeFixAction } = await import('../diagnostics/index.js');
+            const result = await executeFixAction(check, settings);
+            if (!silent) (result?.success ? toastr.success : toastr.error)(result?.message || 'Fix failed');
+            break;
+        }
 
         case 'fix_qdrant_dimension':
             // This needs a dialog - don't auto-fix, show options

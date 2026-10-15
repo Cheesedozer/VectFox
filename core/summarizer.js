@@ -20,7 +20,6 @@ import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { getDefaultSummarizePrompt } from './prompts-i18n.js';
 import { getModelConfigErrorMessage } from './model-http-errors.js';
 import { callChatCompletion, extractReply, errorBodyText } from './llm-transport.js';
-import { log } from './log.js';
 
 /**
  * Fatal summarization error that should abort vectorization instead of silently
@@ -65,7 +64,7 @@ export function validateLLMConfig(settings = {}) {
     }
 
     if (provider === 'openrouter') {
-        const key = _getOpenRouterApiKey(settings);
+        const key = _getOpenRouterApiKey();
         if (!key) {
             return { ok: false, reason: 'OpenRouter API key is not set.' };
         }
@@ -91,7 +90,7 @@ export function getSummarizationConfigFingerprint(settings = {}) {
     const provider = settings?.summarize_provider || 'openrouter';
 
     if (provider === 'openrouter') {
-        const key = _getOpenRouterApiKey(settings);
+        const key = _getOpenRouterApiKey();
         // Avoid logging key material: only include deterministic length + boundary chars.
         const keySig = key ? `${key.length}:${key.slice(0, 2)}:${key.slice(-2)}` : 'missing';
         return `openrouter|${keySig}`;
@@ -102,7 +101,7 @@ export function getSummarizationConfigFingerprint(settings = {}) {
         // Key now lives in SECRET_KEYS.CUSTOM (masked client-side). Fingerprint
         // uses the masked-value length + boundary chars — still deterministic for
         // detecting key-rotation, never logs the secret.
-        const key = getCustomApiKey(settings);
+        const key = getCustomApiKey();
         const keySig = key ? `${key.length}:${key.slice(0, 2)}:${key.slice(-2)}` : 'missing';
         return `vllm|${url}|${keySig}`;
     }
@@ -138,8 +137,6 @@ export async function summarizeText(text, settings) {
     if (!text || typeof text !== 'string') return text;
 
     const provider = settings?.summarize_provider || 'openrouter';
-    // don't remove
-    //log.verbose(`[VectFox Summarizer] summarizeText called — provider=${provider}, textLen=${text.length}`);
     const model = (settings?.summarize_model || '').trim();
     if (!model) {
         throw new SummarizationFatalError(
@@ -199,7 +196,7 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
     // proxy, which reads the real key server-side via readSecret(SECRET_KEYS.OPENROUTER)
     // and forwards to OpenRouter. Same pattern the embedding flow already uses
     // via /api/vector/insert.
-    const apiKey = _getOpenRouterApiKey(settings);
+    const apiKey = _getOpenRouterApiKey();
     if (!apiKey) {
         throw new SummarizationFatalError(
             'OpenRouter API key not found. Add it in Summarize Before Store settings.',
@@ -252,8 +249,6 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
         if (modelConfigError) throw new SummarizationFatalError(modelConfigError, 'openrouter', 'invalid_model_config');
         throw new Error('OpenRouter returned empty summary');
     }
-    // don't remove 
-    //log.verbose(`[VectFox Summarizer] OpenRouter: ${originalLength} chars → ${summary.length} chars`);
     return summary;
 }
 
@@ -298,7 +293,7 @@ async function _callVLLM(prompt, model, settings, maxTokens = DEFAULT_MAX_TOKENS
 
     // Presence-only check on the masked key (same caveat as _callOpenRouter:
     // _readSecretValue returns the masked form). Real key lives server-side.
-    const apiKey = getCustomApiKey(settings);
+    const apiKey = getCustomApiKey();
     if (!apiKey) {
         throw new SummarizationFatalError(
             'vLLM / Custom OpenAI-compatible API key not configured. Enter it in Summarize Before Store settings.',

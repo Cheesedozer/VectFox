@@ -27,93 +27,10 @@
 
 import { getRequestHeaders } from '../../../../../script.js';
 import { VectorBackend } from './backend-interface.js';
-import { getModelFromSettings } from '../core/providers.js';
+import { getModelFromSettings, getEmbeddingRequestParams } from '../core/providers.js';
 import { throwIfModelConfigError } from '../core/model-http-errors.js';
-import { VECTOR_LIST_LIMIT } from '../core/constants.js';
 import { INTERNAL_COLLECTION_IDS } from '../core/collection-ids.js';
-import { extension_settings } from '../../../../extensions.js';
-import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
-import { oai_settings } from '../../../../openai.js';
-import { secret_state } from '../../../../secrets.js';
 import { log } from '../core/log.js';
-
-
-/**
- * Build provider-specific parameters for API requests.
- * @param {object} settings - VectFox settings
- * @param {boolean} isQuery - Whether this is a query operation
- * @returns {object} Provider-specific parameters
- */
-function getProviderSpecificParams(settings, isQuery = false) {
-    const params = {};
-    const source = settings.source;
-
-    switch (source) {
-        case 'extras':
-            params.extrasUrl = extension_settings.apiUrl;
-            params.extrasKey = extension_settings.apiKey;
-            break;
-
-        case 'cohere':
-            params.input_type = isQuery ? 'search_query' : 'search_document';
-            break;
-
-        case 'ollama':
-            params.apiUrl = settings.use_alt_endpoint
-                ? settings.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-            params.keep = !!settings.ollama_keep;
-            break;
-
-        case 'llamacpp':
-            params.apiUrl = settings.use_alt_endpoint
-                ? settings.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
-            log.verbose(`VectFox DEBUG llamacpp: use_alt_endpoint=${settings.use_alt_endpoint}, alt_endpoint_url="${settings.alt_endpoint_url}", ST_url="${textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP]}", final apiUrl="${params.apiUrl}"`);
-            break;
-
-        case 'vllm':
-            params.apiUrl = settings.use_alt_endpoint
-                ? settings.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-            // No apiKey passed: ST's vLLM embedding handler
-            // (src/vectors/vllm-vectors.js) reads SECRET_KEYS.VLLM server-side
-            // via setAdditionalHeadersByType — anything we set on params.apiKey
-            // is silently ignored. User configures the embedding key via ST's
-            // Text Completion → vLLM UI; chat key (separate slot) lives in
-            // SECRET_KEYS.CUSTOM after the 2026-05-26 migration.
-            break;
-
-        case 'bananabread':
-            params.apiUrl = settings.use_alt_endpoint
-                ? settings.alt_endpoint_url
-                : 'http://localhost:8008';
-            if (secret_state['bananabread_api_key']) {
-                const secrets = secret_state['bananabread_api_key'];
-                const activeSecret = Array.isArray(secrets) ? (secrets.find(s => s.active) || secrets[0]) : null;
-                if (activeSecret) {
-                    params.apiKey = activeSecret.value;
-                }
-            }
-            break;
-
-        case 'palm':
-            params.api = 'makersuite';
-            break;
-
-        case 'vertexai':
-            params.api = 'vertexai';
-            params.vertexai_auth_mode = oai_settings.vertexai_auth_mode;
-            params.vertexai_region = oai_settings.vertexai_region;
-            params.vertexai_express_project_id = oai_settings.vertexai_express_project_id;
-            break;
-
-        default:
-            break;
-    }
-
-    return params;
-}
 
 // ----------------------------------------------------------------------------
 // Per-collection coalesce + queue for plugin safety
@@ -225,17 +142,12 @@ export class StandardBackend extends VectorBackend {
      * Uses native ST API
      */
     async getSavedHashes(collectionId, settings) {
-        const providerParams = getProviderSpecificParams(settings, false);
-        const model = getModelFromSettings(settings);
-
         const response = await fetch('/api/vector/list', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 collectionId: collectionId,
-                source: settings.source || 'transformers',
-                model: model,
-                ...providerParams,
+                ...getEmbeddingRequestParams(settings),
             }),
         });
 
@@ -368,8 +280,8 @@ export class StandardBackend extends VectorBackend {
     async _insertVectorItemsImpl(collectionId, items, settings, abortSignal = null) {
         if (items.length === 0) return;
 
-        const providerParams = getProviderSpecificParams(settings, false);
-        const model = getModelFromSettings(settings);
+        const providerParams = getEmbeddingRequestParams(settings);
+        const model = providerParams.model;
 
         // Log chunk statistics for debugging OOM issues
         const textLengths = items.map(item => (item.text || '').length);
@@ -432,8 +344,6 @@ export class StandardBackend extends VectorBackend {
                     }
                     return mappedItem;
                 }),
-                source: settings.source || 'transformers',
-                model: model,
                 ...providerParams,
             } : {
                 collectionId: collectionId,
@@ -442,13 +352,6 @@ export class StandardBackend extends VectorBackend {
                     text: item.text || '',
                     index: item.index ?? 0,
                 })),
-                source: settings.source || 'transformers',
-                model: model,
-                // Pass embeddings if pre-computed (for webllm, koboldcpp, bananabread)
-                embeddings: items[0]?.vector ? Object.fromEntries(items.map(i => [
-                    i.text || '',
-                    i.vector
-                ])) : undefined,
                 ...providerParams,
             };
 
@@ -571,16 +474,13 @@ export class StandardBackend extends VectorBackend {
         }
 
         // Fallback: native ST API
-        const providerParams = getProviderSpecificParams(settings, false);
         const response = await fetch('/api/vector/delete', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 collectionId: bareCollectionId,
                 hashes: hashes,
-                source,
-                model,
-                ...providerParams,
+                ...getEmbeddingRequestParams(settings),
             }),
         });
 
@@ -672,15 +572,12 @@ export class StandardBackend extends VectorBackend {
         // Fallback: native ST API (used when plugin is not available)
         // Note: does NOT include model subfolder — only works for collections
         // vectorized via the native API.
-        const providerParams = getProviderSpecificParams(settings, true);
         const requestBody = {
             collectionId: bareCollectionId,
             searchText,
             topK,
             threshold,
-            source,
-            model,
-            ...providerParams,
+            ...getEmbeddingRequestParams(settings),
         };
 
         if (queryVector) {
@@ -725,17 +622,12 @@ export class StandardBackend extends VectorBackend {
      * Uses native ST API
      */
     async queryMultipleCollections(collectionIds, searchText, topK, threshold, settings, queryVector = null) {
-        const providerParams = getProviderSpecificParams(settings, true);
-        const model = getModelFromSettings(settings);
-
         const requestBody = {
             collectionIds: collectionIds,
             searchText: searchText,
             topK: topK,
             threshold: threshold,
-            source: settings.source || 'transformers',
-            model: model,
-            ...providerParams,
+            ...getEmbeddingRequestParams(settings),
         };
 
         if (queryVector) {

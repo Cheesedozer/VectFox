@@ -216,6 +216,62 @@ describe('wikiToText', () => {
         expect(text).not.toContain('==');
     });
 
+    it('keeps section headings as markdown headings', () => {
+        const text = wikiToText('Intro.\n\n== Abilities ==\nShe bends metal.\n=== Metalbending ===\nDetails.\n# numbered item');
+        expect(text).toMatch(/^## Abilities$/m);
+        expect(text).toMatch(/^### Metalbending$/m);
+        expect(text).toMatch(/^- numbered item$/m); // list markup still becomes a dash
+    });
+
+    it('turns a line-start infobox into "Key: value" lines, skipping images and nested templates', () => {
+        const wiki = [
+            '{{Infobox character',
+            '| name = Bulwark',
+            '| image = Bulwark.png',
+            '| affiliation = [[Ironclad Agency]]',
+            '| aliases = * The Wall {{ref|1}}',
+            '* Eleanor',
+            '| age = 34<br>(as of 2024)',
+            '}}',
+            "'''Bulwark''' is a hero.",
+        ].join('\n');
+        const text = wikiToText(wiki);
+        expect(text).toContain('Name: Bulwark');
+        expect(text).toContain('Affiliation: Ironclad Agency');
+        expect(text).toContain('Aliases: The Wall; Eleanor');
+        expect(text).toContain('Age: 34; (as of 2024)');
+        expect(text).not.toContain('Bulwark.png');
+        expect(text).toContain('Bulwark is a hero.');
+    });
+
+    it('leaves inline templates such as citations to the converter', () => {
+        const text = wikiToText('A fact.{{cite web|url=x|title=y|work=z}} More.');
+        expect(text).not.toContain('Url:');
+        expect(text).not.toContain('{{');
+    });
+
+    it('turns a wikitable into one line per row, labelled by the header row', () => {
+        const wiki = [
+            '{| class="wikitable"',
+            '|+ Agency ranking',
+            '! Rank !! Name',
+            '|-',
+            '| 1 || [[Solaris|Sol]]',
+            '|-',
+            '| style="color:red" | 2 || Bulwark',
+            '|}',
+        ].join('\n');
+        const text = wikiToText(wiki);
+        expect(text).toContain('Agency ranking');
+        expect(text).toContain('Rank: 1; Name: Sol');
+        expect(text).toContain('Rank: 2; Name: Bulwark');
+    });
+
+    it('drops footnote references', () => {
+        const text = wikiToText('Toph was blind.<ref name="a">{{Cite episode|1|218}}</ref> She saw with her feet.<ref name="a" />');
+        expect(text).toBe('Toph was blind. She saw with her feet.');
+    });
+
     it('removes Category: lines', () => {
         const text = wikiToText('Real content\nCategory:Characters\nMore content');
         expect(text).toContain('Real content');

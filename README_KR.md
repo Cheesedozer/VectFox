@@ -414,7 +414,7 @@ CJK를 위한 더 나은 단일 문자 필터링, 고신호 1자 RPG/일상생�
 3. **"Install Extension"** 클릭
 4. 이 URL 붙여넣기:
    ```
-   https://github.com/KritBlade/VectFox
+   https://github.com/Cheesedozer/VectFox
    ```
 5. **Install** 클릭
 
@@ -443,7 +443,7 @@ Standard 백엔드를 사용하면서 플러그인을 설치하지 않아도 이
 ```bash
 Windows에서는 명령 프롬프트, Linux/Mac에서는 터미널, docker에 있다면 콘솔에 들어가세요
 cd SillyTavern/plugins
-git clone -b Similharity-Plugin https://github.com/KritBlade/VectFox.git similharity
+git clone -b Similharity-Plugin https://github.com/Cheesedozer/VectFox.git similharity
 cd similharity
 npm install
 ```

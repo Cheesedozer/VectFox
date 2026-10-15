@@ -11,21 +11,17 @@
  */
 
 import {
-    CONTENT_TYPES,
-    CHUNKING_STRATEGIES,
     getContentType,
     getAllContentTypes,
     getChunkingStrategies,
     getChunkingStrategy,
-    strategyNeedsSize,
-    strategyNeedsOverlap,
     getContentTypeDefaults,
     hasFeature,
-    SCOPE_OPTIONS,
     CHARACTER_FIELDS,
 } from '../core/content-types.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
-import { saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
+import { Readability } from '../../../../../lib.js';
 import { getChatUUID, vectorizeAll } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
 import { getOpenRouterApiKey } from '../core/api-keys.js';
@@ -236,7 +232,7 @@ function createModal() {
                         </div>
                     </div>
 
-                    <!-- Step 2.5: Auto-Reformat (Optional, Document/URL/Wiki only) -->
+                    <!-- Step 2.5: Auto-Reformat (Optional, Document/URL/Wiki/YouTube) -->
                     <div class="vectfox-cv-section vectfox-cv-reformat-section vectfox-cv-subsequent" id="vectfox_cv_reformat_section" style="display:none;">
                         <div class="vectfox-cv-section-header">
                             <span class="vectfox-cv-step-number"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
@@ -277,18 +273,6 @@ function createModal() {
                                     <div class="vectfox-cv-slider-hints">
                                         <span>Precise</span>
                                         <span>Contextual</span>
-                                    </div>
-                                </div>
-                                <div class="vectfox-cv-slider-row" id="vectfox_cv_overlap_row">
-                                    <label>
-                                        Chunk Overlap
-                                        <span class="vectfox-cv-value" id="vectfox_cv_overlap_val">50</span> chars
-                                    </label>
-                                    <input type="range" id="vectfox_cv_overlap"
-                                           min="0" max="200" step="10" value="50">
-                                    <div class="vectfox-cv-slider-hints">
-                                        <span>Off</span>
-                                        <span>High</span>
                                     </div>
                                 </div>
                                 <!-- Batch size - only shown for message_batch strategy -->
@@ -381,7 +365,7 @@ function updateUIForContentType() {
     // Update source section
     updateSourceSection(type);
 
-    // Auto-Reformat section (Document/URL/Wiki only) — must run before
+    // Auto-Reformat section (Document/URL/Wiki/YouTube) — must run before
     // updateChunkingSection() so the latter can see currentSettings.reformat
     // state for the current content type when deciding whether to show the
     // strategy dropdown or the "handled by Auto-Reformat" message.
@@ -890,10 +874,10 @@ function renderYouTubeSource(type) {
  * Updates chunking strategy section
  */
 // ============================================================================
-// AUTO-REFORMAT (Document/URL/Wiki only)
+// AUTO-REFORMAT (Document/URL/Wiki/YouTube)
 // ============================================================================
 
-const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki'];
+const REFORMAT_SUPPORTED_TYPES = ['document', 'url', 'wiki', 'youtube'];
 
 function isReformatSupportedType() {
     return REFORMAT_SUPPORTED_TYPES.includes(currentContentType);
@@ -1072,10 +1056,12 @@ async function runAutoReformat() {
         container.html('<div class="vectfox-cv-loading"><i class="fa-solid fa-spinner fa-spin"></i> Running Auto-Reformat...</div>');
 
         const { reformatDocument } = await import('../core/reformat-extractor.js');
+        const sourceName = source.name || source.filename || source.title || currentContentType;
         const result = await reformatDocument({
             text,
             contentType: currentContentType,
             settings: mergedSettings,
+            sourceName,
             onProgress: (done, total, phase) => {
                 const label = phase === 'link'
                     ? `Running Auto-Reformat — linking pass (${done}/${total})...`
@@ -1095,7 +1081,6 @@ async function runAutoReformat() {
         renderReformatSection();
 
         const { openReformatReview } = await import('./reformat-review.js');
-        const sourceName = source.name || source.filename || source.title || currentContentType;
         openReformatReview({
             chunks: result.chunks,
             warnings: result.warnings,
@@ -1126,7 +1111,7 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
     try {
         const { expandOversizedChunk } = await import('../core/reformat-extractor.js');
         const { saveReformatCache, getReformatCache } = await import('../core/reformat-store.js');
-        const { buildRelationalClause, REFORMAT_SCHEMA_VERSION } = await import('../core/reformat-schema.js');
+        const { buildStoredText, REFORMAT_SCHEMA_VERSION } = await import('../core/reformat-schema.js');
 
         const maxBodyChars = mergedSettings.reformat_max_body_chars || 2000;
         const previous = getReformatCache(sourceHash);
@@ -1136,11 +1121,10 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
             const expanded = await expandOversizedChunk(record, maxBodyChars);
             for (const piece of expanded) {
                 shapedChunks.push({
-                    // affiliation/relationships are otherwise inert metadata (never read by
-                    // embedding, search, or the block injected into the roleplay model's
-                    // context) — fold them into the stored/embedded text so they actually
-                    // reach retrieval. See buildRelationalClause's docstring.
-                    text: piece.body + buildRelationalClause(piece.affiliation, piece.relationships),
+                    // The stored text carries the name, the hidden-truth tag and the
+                    // relationships as sentences, because only `text` reaches embedding,
+                    // search and the injected context. See buildStoredText.
+                    text: buildStoredText(piece, { part: piece.subChunkIndex ?? 0, total: piece.subChunkTotal ?? 1 }),
                     metadata: {
                         chunkIndex: shapedChunks.length,
                         totalChunks: 0, // patched below once the final count is known
@@ -1149,9 +1133,9 @@ async function _finalizeReformatAccept({ acceptedRecords, sourceHash, text, sour
                         name: piece.name,
                         aliases: piece.aliases,
                         affiliation: piece.affiliation,
-                        traits: piece.traits,
                         relationships: piece.relationships,
                         keywords: piece.keywords,
+                        hidden: Boolean(piece.hidden),
                         subChunkIndex: piece.subChunkIndex,
                         subChunkTotal: piece.subChunkTotal,
                     },
@@ -1245,13 +1229,10 @@ function updateChunkingSection(type) {
     // Get strategy-specific defaults if available
     const strategyDefaults = currentStrategy || {};
     const chunkSize = currentSettings.chunkSize || strategyDefaults.defaultSize || defaults.chunkSize;
-    const chunkOverlap = currentSettings.chunkOverlap || strategyDefaults.defaultOverlap || defaults.chunkOverlap;
 
     // Update size controls values
     $('#vectfox_cv_chunk_size').val(chunkSize);
     $('#vectfox_cv_chunk_size_val').text(chunkSize);
-    $('#vectfox_cv_overlap').val(chunkOverlap);
-    $('#vectfox_cv_overlap_val').text(chunkOverlap === 0 ? 'Off' : chunkOverlap);
 
     const batchSize = currentSettings.batchSize || defaults.batchSize || 4;
 
@@ -1290,25 +1271,17 @@ function updateChunkingSection(type) {
 
 /**
  * Show/hide size controls based on strategy requirements
- * Unit-based strategies (per_message, per_entry, etc.) don't need size/overlap
- * Text-based strategies (recursive, paragraph, sliding) need them
+ * Unit-based strategies (per_message, per_entry, etc.) don't need a size control
  */
 function updateSizeControlsVisibility() {
     const strategyId = $('#vectfox_cv_strategy').val();
     const strategy = getChunkingStrategy(strategyId);
 
     const needsSize = strategy?.needsSize ?? false;
-    const needsOverlap = strategy?.needsOverlap ?? false;
-
     const needsMessageBatchControl = strategyId === 'message_batch';
 
-    // Show/hide size controls based on strategy requirements
-    const hasAnyControls = needsSize || needsOverlap;
-    $('#vectfox_cv_size_controls').toggle(hasAnyControls || needsMessageBatchControl);
-
-    // Show/hide individual controls
+    $('#vectfox_cv_size_controls').toggle(needsSize || needsMessageBatchControl);
     $('#vectfox_cv_chunk_size_row').toggle(needsSize);
-    $('#vectfox_cv_overlap_row').toggle(needsOverlap);
     $('#vectfox_cv_batch_size_row').toggle(needsMessageBatchControl);
 
     // Update description when strategy changes
@@ -1611,12 +1584,6 @@ function bindEvents() {
         const val = $(this).val();
         $('#vectfox_cv_chunk_size_val').text(val);
         currentSettings.chunkSize = parseInt(val);
-    });
-
-    $('#vectfox_cv_overlap').on('input', function() {
-        const val = parseInt($(this).val());
-        $('#vectfox_cv_overlap_val').text(val === 0 ? 'Off' : val);
-        currentSettings.chunkOverlap = val;
     });
 
     $('#vectfox_cv_batch_size').on('input', function() {
@@ -2196,19 +2163,27 @@ async function fetchUrl() {
     preview.hide();
 
     try {
-        // Use ST's readability endpoint if available
-        const response = await fetch('/api/serpapi/visit', {
+        // The server fetches the page (the browser can't, because of CORS)
+        // and returns raw HTML; Readability extracts the article text.
+        const response = await fetch('/api/search/visit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url, html: true }),
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            throw new Error(response.status === 400
+                ? 'The server refused this URL (it must be a public http(s) address without a port)'
+                : `HTTP ${response.status}`);
         }
 
-        const data = await response.json();
-        const content = data.content || data.text || '';
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const article = new Readability(doc).parse();
+        const content = (article?.textContent || doc.body?.innerText || '')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
 
         if (!content || content.length < 50) {
             throw new Error('No meaningful content found on page');
@@ -2218,7 +2193,7 @@ async function fetchUrl() {
             type: 'url',
             url: url,
             content: content,
-            title: data.title || url,
+            title: article?.title || doc.title || url,
         };
 
         status.html('');
@@ -2309,7 +2284,7 @@ async function isWikiPluginAvailable(wikiType) {
 
         const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getRequestHeaders(),
         });
 
         return response.ok;
@@ -2453,7 +2428,7 @@ async function scrapeViaPlugin(wikiType, url, filter) {
 
     const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getRequestHeaders(),
         body: JSON.stringify(requestBody),
     });
 
@@ -3025,7 +3000,7 @@ async function fetchYouTubeTranscript() {
     try {
         const response = await fetch('/api/search/transcript', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getRequestHeaders(),
             body: JSON.stringify({ id: videoId, lang: lang || undefined }),
         });
 
@@ -3394,7 +3369,6 @@ async function previewChunks() {
         const chunks = await chunkText(contentText, {
             strategy: currentSettings.strategy || type.defaultStrategy,
             chunkSize: currentSettings.chunkSize || type.defaults.chunkSize,
-            chunkOverlap: currentSettings.chunkOverlap || type.defaults.chunkOverlap,
             batchSize: currentSettings.batchSize || 4,
         });
 
@@ -3561,7 +3535,7 @@ async function startContinueVectorization() {
     console.log('[VectFox] LLM config check (vectorize-content):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
@@ -3691,7 +3665,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             await prepareForFreshExtraction(uuid);
         };
 
-        let messages, chatUUID, collectionIdOverride = null; // only used by archive route
+        let messages, chatUUID, collectionIdOverride = null, archiveIndexOffset = 0; // only used by archive route
 
         if (source?.type === 'file') {
             // Archive upload route — .jsonl / .json / .txt
@@ -3699,13 +3673,13 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
                 toastr.warning('Archive contains no usable messages', 'EventBase');
                 return;
             }
-            const allMessages = source.messages.filter(m => m.mes && m.mes.trim().length > 0);
-            messages = allMessages;
-            if (startFromMessage > 1) {
-                const sliceIdx = Math.min(startFromMessage - 1, allMessages.length);
-                console.log(`[EventBase] Archive start-from message ${startFromMessage} — skipping first ${sliceIdx} messages, ${allMessages.length - sliceIdx} remaining`);
-                messages = allMessages.slice(sliceIdx);
+            const { getIngestibleMessages } = await import('../core/eventbase-store.js');
+            const allMessages = getIngestibleMessages(source.messages);
+            archiveIndexOffset = startFromMessage > 1 ? Math.min(startFromMessage - 1, allMessages.length) : 0;
+            if (archiveIndexOffset > 0) {
+                console.log(`[EventBase] Archive start-from message ${startFromMessage} — skipping first ${archiveIndexOffset} messages, ${allMessages.length - archiveIndexOffset} remaining`);
             }
+            messages = allMessages.slice(archiveIndexOffset);
             chatUUID = source.archiveUUID;
             collectionIdOverride = buildArchiveEventCollectionId({
                 filenameCharName: source.filenameCharName,
@@ -3723,6 +3697,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
                 abortSignal: activeVectorizeAbortController.signal,
                 parallelWindows,
                 collectionIdOverride,
+                indexOffset: archiveIndexOffset,
                 // When the caller cleared the caches (Reset & Vectorize popup), also
                 // bypass the tip-based fallback in the workflow — otherwise the workflow
                 // re-derives the tip from Qdrant contents and silently fast-forwards past
@@ -3811,13 +3786,12 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             const legacyChunks = await chunkText(context.chat.filter(m => m.mes && m.mes.trim().length > 0), {
                 strategy: legacyStrategy,
                 chunkSize: currentSettings.chunkSize || 1000,
-                chunkOverlap: currentSettings.chunkOverlap || 200,
                 batchSize: legacyBatchSize,
             });
             const legacyTotalChunks = Array.isArray(legacyChunks) ? legacyChunks.length : 0;
             const parallelWindows = parseInt($('#vectfox_cv_parallel_windows').val()) || 1;
 
-            await vectorizeAll(settings, legacyBatchSize, activeVectorizeAbortController.signal, {
+            await vectorizeAll(settings, activeVectorizeAbortController.signal, {
                 startFromMessage,
                 parallelWindows,
                 progressPlan: {
@@ -3935,7 +3909,7 @@ async function startVectorization() {
     console.log('[VectFox] LLM config check (start-vectorization):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);

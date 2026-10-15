@@ -24,14 +24,14 @@ import { debounce_timeout } from '../../../constants.js';
 
 // VectFox modules - Core
 import { synchronizeChat, rearrangeChat, vectorizeAll } from './core/chat-vectorization.js';
-import { purgeAllVectorIndexes, purgeVectorIndex } from './core/core-vector-api.js';
 import { migrateOldEnabledKeys } from './core/collection-metadata.js';
-import { clearCollectionRegistry, discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
+import { discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
 import { migrateLegacyApiKeys } from './core/api-keys.js';
+import { migrateRemovedProviderSettings } from './core/providers.js';
 import AsyncUtils from './utils/async-utils.js';
 
 // VectFox modules - UI
-import { renderSettings, openDiagnosticsModal, loadWebLlmModels, updateWebLlmStatus, refreshAutoSyncCheckbox } from './ui/ui-manager.js';
+import { renderSettings, openDiagnosticsModal, refreshAutoSyncCheckbox } from './ui/ui-manager.js';
 import { progressTracker } from './ui/progress-tracker.js';
 import { initializeVisualizer } from './ui/chunk-visualizer.js';
 import { initializeDatabaseBrowser } from './ui/database-browser.js';
@@ -77,9 +77,6 @@ const defaultSettings = {
     // VEC-6: Batch insert optimization
     insert_batch_size: 50, // Chunks per insert batch (50-100 recommended)
     document_glossary_injection: true, // Document content type only: prepend "Full Name (ACRONYM)" definitions to chunks that reference a bare acronym without it. See core/glossary-extractor.js.
-    togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
-    openai_model: 'text-embedding-ada-002',
-    electronhub_model: 'text-embedding-3-small',
     openrouter_model: 'openai/text-embedding-3-large',
     // OpenRouter key: stored in SECRET_KEYS.OPENROUTER (ST's shared slot, not in
     // defaults). Reader: core/api-keys.js::getOpenRouterApiKey. The legacy
@@ -87,7 +84,6 @@ const defaultSettings = {
     // re-appearing in settings.json — every UI handler does
     // Object.assign(extension_settings.vectfox, settings) which would re-add
     // any default-declared empty field after migrateLegacyApiKeys() deleted it.
-    cohere_model: 'embed-english-v3.0',
     ollama_model: 'mxbai-embed-large',
     ollama_keep: false,
     vllm_model: '',
@@ -98,22 +94,9 @@ const defaultSettings = {
     // post-2026-05-26. Migration drains any legacy `vllm_api_key` plaintext
     // into both slots on first load. Reader: core/api-keys.js::getCustomApiKey
     // (presence/masked-value indicator only; real key lives server-side).
-    webllm_model: '',
-    google_model: 'text-embedding-005',
-    bananabread_rerank: false,
-    // bananabread_api_key removed from defaults 2026-05-26 — the BananaBread
-    // provider is unselectable (commented out in providers.js) and the API
-    // key input handler had no matching HTML element. The deeper bananabread
-    // code paths still reference settings.bananabread_api_key defensively
-    // via `if (settings.bananabread_api_key) ...` guards; they handle the
-    // missing field gracefully. Migration drains-and-deletes any leftover
-    // plaintext from settings.json on first load. See Doc/dev_helper.md
-    // "Unresolved code" section for the full BananaBread state.
 
     // Chat vectorization
     enabled_chats: true,
-    chunking_strategy: 'per_message', // per_message, conversation_turns, message_batch, adaptive
-    batch_size: 4, // Messages per batch for message_batch strategy
     depth: 2,
     position: extension_prompt_types.IN_PROMPT,
     protect: 5,
@@ -237,7 +220,6 @@ const defaultSettings = {
     eventbase_retrieval_filters_enabled: true,
     eventbase_autosync_popup: true,               // Show popup toast when auto-sync extraction runs
     autosync_show_progress_modal: false,          // Show progress modal popup during auto-sync (default: silent)
-    chat_lock_index: {},                          // Reverse index: chatId -> [collectionId, ...] for O(1) tab lookups
     // ─── Logging (core/log.js) ──────────────────────────────────────────
     // Verbosity dropdown — single noise floor for the whole pipeline.
     // 'off' (default) | 'lifecycle' | 'verbose' | 'trace'. Errors/warnings
@@ -251,17 +233,15 @@ const defaultSettings = {
         standard: false,    // similharity plugin internals
         injection: false,   // Chunk Path: what got injected, where, why
         agent: false,       // agent-mode planner / per-query hits
-        rerank: false,      // native vs JS re-rank comparison
     },
-    // Legacy debug flags below are KEPT as settings keys (some non-log code
-    // still reads eventbase_compare_rerank etc.), but the pure log-gate flags
-    // (eventbase_debug_logging, debug_vectorizing_log, *_debug, ...) are no
+    // The pure log-gate flags below (eventbase_debug_logging,
+    // debug_vectorizing_log, *_debug, ...) are no
     // longer consulted for logging — core/log.js ignores them. No migration
     // shim (user decision 2026-05-30).
     eventbase_debug_logging: false,
     eventbase_raw_llm_debug: false,              // Raw LLM reply + parser candidate logs (very noisy, per-window)
     vector_group_embedding_call: true,           // Path-agnostic insert toggle. true = legacy batched POST (1 POST per batch, cheaper, default — proven safe in production wire conditions when paired with hedge). false = parallel-split (1 POST per item, failure-contained, but N× the connection surface area which can amplify upstream routing stalls). Affects every call to insertVectorItems (EventBase ingestion AND content/document vectorization).
-    vector_hedge_after_ms: 15000,                // 0 = hedge disabled. Default 15000 (15s) fires a duplicate request when an embedding POST hasn't returned by the threshold; race-first-wins. Helps multi-upstream gateways (OpenRouter, SiliconFlow via vllm slot) recover from connection-level routing stalls in seconds instead of 120s. Skipped for local providers (ollama/transformers/llamacpp/koboldcpp). See plans/embedding-resilience-hedge-and-diagnostics.md §6.
+    vector_hedge_after_ms: 15000,                // 0 = hedge disabled. Default 15000 (15s) fires a duplicate request when an embedding POST hasn't returned by the threshold; race-first-wins. Helps multi-upstream gateways (OpenRouter, SiliconFlow via vllm slot) recover from connection-level routing stalls in seconds instead of 120s. Skipped for local providers (ollama/transformers). See plans/embedding-resilience-hedge-and-diagnostics.md §6.
     eventbase_disable_pipeline: false,           // false = pipelined extract↔insert (default, ~35% faster). true = serial (each batch finishes embedding before the next starts extracting; safer on slower vector DB backends). Read-site (eventbase-workflow.js) treats anything except explicit true as pipelined.
     eventbase_debug_qdrant_backend: false,
     debug_vectorizing_log: false,                // Verbose vectorization progress logs in console
@@ -291,14 +271,6 @@ const defaultSettings = {
     // gracefully to the JS re-rank pipeline when the route returns an error.
     // See plans/qdrant-native-eventbase-rerank-formula.md.
     eventbase_native_rerank: true,
-    // Compare mode: when native rerank is on, also run the JS pipeline in
-    // parallel and log per-(collection,queryText) rank correlation + overlap.
-    // Doubles per-collection cost when on — debug only. Requires
-    // eventbase_debug_logging to surface logs.
-    eventbase_compare_rerank: false,
-    // Verbose compare-mode logging: also print per-event score breakdowns for
-    // events present in both top-K lists.
-    eventbase_compare_rerank_verbose: false,
 
     // ─── AgentMode (Agentic Retrieval) ──────────────────────────────────
     // Optional LLM planner step that consumes pre-search candidates plus
@@ -359,10 +331,7 @@ const defaultSettings = {
 let settings = { ...defaultSettings };
 
 // Module worker for automatic syncing
-const moduleWorker = new ModuleWorkerWrapper(() => synchronizeChat(settings, getBatchSize(), _lastChatTriggerEvent));
-
-// Batch size based on provider
-const getBatchSize = () => ['transformers', 'ollama'].includes(settings.source) ? 1 : 5;
+const moduleWorker = new ModuleWorkerWrapper(() => synchronizeChat(settings, _lastChatTriggerEvent));
 
 // Most recent SillyTavern event that triggered the debounced chat-event handler.
 // Read by synchronizeChat to suppress the auto-sync popup on MESSAGE_SENT (so the
@@ -391,7 +360,7 @@ async function onVectorizeAllClick() {
     const controller = new AbortController();
     progressTracker.setCancelHandler(() => controller.abort('user-stop'));
     try {
-        await vectorizeAll(settings, getBatchSize(), controller.signal);
+        await vectorizeAll(settings, controller.signal);
     } finally {
         progressTracker.clearCancelHandler();
     }
@@ -412,13 +381,14 @@ async function onPurgeClick() {
     }
 
     try {
-        const { getRequestHeaders } = await import('../../../../script.js');
+        const { getRequestHeaders, saveSettings } = await import('../../../../script.js');
 
-        // 1. Delete entire vectors folder
-        await fetch('/api/plugins/similharity/purge-all', {
+        // 1. Delete the plugin's vectors folder
+        const res = await fetch('/api/plugins/similharity/purge-all', {
             method: 'POST',
             headers: getRequestHeaders(),
         });
+        if (!res.ok) throw new Error(`plugin returned HTTP ${res.status}`);
 
         // 2. Clear extension_settings.vectfox
         for (const key in extension_settings.vectfox) {
@@ -427,11 +397,12 @@ async function onPurgeClick() {
             }
         }
 
-        // 3. Save settings
-        const { saveSettingsDebounced } = await import('../../../../script.js');
-        saveSettingsDebounced();
-
+        // 3. Save, then reload. The module-level `settings` copy and every UI
+        // handler still hold the old values; without a reload the next settings
+        // change would Object.assign them straight back.
+        await saveSettings();
         toastr.success('All vector data purged', 'Purge Complete');
+        setTimeout(() => location.reload(), 1000);
 
     } catch (error) {
         console.error('VectFox: Purge failed:', error);
@@ -534,6 +505,22 @@ jQuery(async () => {
         delete _ebs[legacy];
         _ebMutated = true;
     }
+
+    // Removed embedding providers (2026-10): every provider except the ones in
+    // core/providers.js EMBEDDING_PROVIDERS is gone. Reset a saved `source`
+    // that names a removed provider, carry the legacy shared alt-endpoint pair
+    // over to the per-provider keys, and drop settings only removed providers
+    // read. Shares the synchronous save below. See migrateRemovedProviderSettings.
+    if (migrateRemovedProviderSettings(_ebs).changed) {
+        _ebMutated = true;
+    }
+    // chat_lock_index was a reverse chatId -> [collectionId] map that nothing
+    // ever read. Its writers are gone; drop the copy saved in settings.json.
+    if (Object.prototype.hasOwnProperty.call(_ebs, 'chat_lock_index')) {
+        delete _ebs.chat_lock_index;
+        _ebMutated = true;
+    }
+
     if (_ebMutated) {
         // Persist deletions synchronously (NOT debounced). Migrations are
         // one-shot at init and the user may reload before a debounced save
@@ -664,17 +651,21 @@ jQuery(async () => {
         }).catch(() => {});
     }
 
-    // D5: Cross-repo version check — warn loud if similharity is behind.
-    const SIMILHARITY_EXPECTED_VERSION = '3.3.1';
+    // Warn when the Similharity plugin is older than this VectFox needs.
+    // Newer plugin versions are fine.
+    const SIMILHARITY_MIN_VERSION = '3.3.1';
     (async () => {
         try {
             const resp = await fetch('/api/plugins/similharity/version');
             if (resp.ok) {
                 const { pluginVersion } = await resp.json();
-                if (pluginVersion !== SIMILHARITY_EXPECTED_VERSION) {
-                    console.warn(`[VectFox] VERSION MISMATCH: expected similharity v${SIMILHARITY_EXPECTED_VERSION}, got v${pluginVersion}. Pull matching versions.`);
+                const parts = v => String(v || '').split('.').map(n => parseInt(n, 10) || 0);
+                const [have, need] = [parts(pluginVersion), parts(SIMILHARITY_MIN_VERSION)];
+                const diff = [0, 1, 2].map(i => (have[i] ?? 0) - (need[i] ?? 0)).find(d => d !== 0) ?? 0;
+                if (diff < 0) {
+                    console.warn(`[VectFox] Similharity plugin v${pluginVersion} is older than the required v${SIMILHARITY_MIN_VERSION}. Update it: cd plugins/similharity && git pull`);
                     toastr.warning(
-                        `similharity version mismatch (expected ${SIMILHARITY_EXPECTED_VERSION}, got ${pluginVersion}) — see console`,
+                        `The Similharity plugin is v${pluginVersion}; VectFox needs v${SIMILHARITY_MIN_VERSION} or newer. Update it with "git pull" in plugins/similharity and restart.`,
                         'VectFox',
                         { timeOut: 10000 }
                     );
@@ -694,15 +685,6 @@ jQuery(async () => {
     eventSource.on(event_types.MESSAGE_SENT, trigger('MESSAGE_SENT'));
     eventSource.on(event_types.MESSAGE_RECEIVED, trigger('MESSAGE_RECEIVED'));
     eventSource.on(event_types.MESSAGE_SWIPED, trigger('MESSAGE_SWIPED'));
-
-    // When WebLLM extension is loaded, refresh the model list
-    eventSource.on(event_types.EXTENSION_SETTINGS_LOADED, async (manifest) => {
-        if (settings.source === 'webllm' && manifest?.display_name === 'WebLLM') {
-            console.log('VectFox: WebLLM extension loaded, refreshing models...');
-            updateWebLlmStatus();
-            await loadWebLlmModels(settings);
-        }
-    });
 
     // When chat changes, refresh UI state to match settings
     eventSource.on(event_types.CHAT_CHANGED, () => {

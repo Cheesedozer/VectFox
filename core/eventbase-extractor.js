@@ -15,11 +15,9 @@ import { getOpenRouterApiKey, getCustomApiKey } from './api-keys.js';
 import { callChatCompletion, extractReply, errorBodyText } from './llm-transport.js';
 import { getModelConfigErrorMessage } from './model-http-errors.js';
 import {
-    EVENT_TYPES,
     EventBaseExtractionError,
     EventBaseFatalError,
     validateEvent,
-    buildEmbedText,
     buildExtractionPrompt,
     EVENTBASE_SCHEMA_VERSION,
 } from './eventbase-schema.js';
@@ -104,7 +102,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
     let text = (raw || '').trim();
     const rangeStr = msgRange ? ` ${msgRange}` : '';
 
-    log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: raw length=${text.length}, preview:`, text.slice(0, 150));
+    log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: raw length=${text.length}, preview:`, text.slice(0, 150));
 
     // Strip code fences
     if (text.startsWith('```')) {
@@ -213,7 +211,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
 
     // Pick the first candidate that looks like event objects.
     if (log.domainEnabled('raw_llm')) {
-        log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: ${candidates.length} candidate array(s) found:`,
+        log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: ${candidates.length} candidate array(s) found:`,
             candidates.map((c, i) => {
                 const first = c[0];
                 const type = Array.isArray(first) ? 'array' : typeof first;
@@ -252,7 +250,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
 
     if (log.domainEnabled('raw_llm')) {
         const chosenIdx = candidates.indexOf(chosen);
-        log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: chose candidate[${chosenIdx}] len=${chosen.length}`);
+        log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: chose candidate[${chosenIdx}] len=${chosen.length}`);
     }
 
     if (chosen.length > 0 && (typeof chosen[0] !== 'object' || Array.isArray(chosen[0]))) {
@@ -295,7 +293,8 @@ function _inferLanguageHint(text) {
     if (!text) return null;
     const hangul = (text.match(/[\uAC00-\uD7AF]/g) || []).length;
     const hiragana = (text.match(/[\u3040-\u309F\u30A0-\u30FF]/g) || []).length;
-    const cjk = (text.match(/[\u3000-\u9FFF\uF900-\uFAFF]/g) || []).length + hangul + hiragana;
+    // \u3000-\u9FFF already includes kana; Hangul lies outside it.
+    const cjk = (text.match(/[\u3000-\u9FFF\uF900-\uFAFF]/g) || []).length + hangul;
     const latin = (text.match(/[a-zA-Z]/g) || []).length;
     const total = cjk + latin;
     if (total === 0 || cjk / total < 0.15) return null; // too little CJK to guess
@@ -313,7 +312,7 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
     // Short version: getOpenRouterApiKey() returns ST's MASKED value, so we route
     // through /api/backends/chat-completions/generate which reads the real key
     // server-side via readSecret(SECRET_KEYS.OPENROUTER).
-    const apiKey = _getOpenRouterApiKey(settings);
+    const apiKey = _getOpenRouterApiKey();
     if (!apiKey) {
         throw new EventBaseFatalError(
             'EventBase: OpenRouter API key not found. Add it in EventBase settings (or Summarize Before Store settings uses the same key).',
@@ -394,7 +393,7 @@ async function _callVLLM(prompt, settings, windowIndex) {
         );
     }
 
-    const apiKey = getCustomApiKey(settings);
+    const apiKey = getCustomApiKey();
     if (!apiKey) {
         throw new EventBaseFatalError(
             'EventBase: vLLM / Custom OpenAI-compatible API key not configured. Enter it in Core → LLM Summarization settings.',
@@ -471,15 +470,17 @@ export async function extractEvents({ messages, windowStart, windowEnd, settings
     // (which display "from Message #<windowEnd>") are searchable directly from the log.
     const msgRange = `msgs=${windowStart}-${windowEnd}`;
 
-    // Build excerpt text from messages
-    const excerptLines = messages.map(m => {
-        const speaker = m.name || (m.is_user ? 'User' : 'Assistant');
+    // Build excerpt text from messages (blank messages contribute nothing)
+    const excerptLines = [];
+    for (const m of messages) {
         const text = cleanText(String(m.mes || '')).trim();
-        return `${speaker}: ${text}`;
-    });
+        if (!text) continue;
+        const speaker = m.name || (m.is_user ? 'User' : 'Assistant');
+        excerptLines.push(`${speaker}: ${text}`);
+    }
     const excerptText = excerptLines.join('\n\n');
 
-    if (!excerptText.trim()) {
+    if (!excerptText) {
         log.verbose('[EventBase] Skipping empty window');
         return [];
     }
@@ -511,7 +512,7 @@ export async function extractEvents({ messages, windowStart, windowEnd, settings
         rawReply = await _callOpenRouter(prompt, settings, windowIndex);
     }
 
-    log.domain('raw_llm', 'trace', `[EventBase] Raw LLM reply (window=${windowIndex} ${msgRange}):`, rawReply.slice(0, 500));
+    log.domain('raw_llm', `[EventBase] Raw LLM reply (window=${windowIndex} ${msgRange}):`, rawReply.slice(0, 500));
 
     // Parse JSON
     let rawArray;

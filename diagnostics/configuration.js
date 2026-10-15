@@ -9,7 +9,6 @@
  * ============================================================================
  */
 
-import { getSavedHashes } from '../core/core-vector-api.js';
 import { VALID_EMOTIONS, VALID_GENERATION_TYPES, validateConditionRule } from '../core/conditional-activation.js';
 import { isCollectionEnabled } from '../core/collection-metadata.js';
 import { getCollectionRegistry } from '../core/collection-loader.js';
@@ -69,45 +68,6 @@ export function checkChatEnabled(settings) {
         name: 'RAG Query Status',
         status: 'pass',
         message: parts.join(' | ')
-    };
-}
-
-/**
- * Check: Chunk size (for adaptive strategy)
- */
-export function checkChunkSize(settings) {
-    const size = settings.chunk_size || 500;
-
-    if (size < 50) {
-        return {
-            name: 'Chunk Size',
-            status: 'fail',
-            message: `Chunk size too small (${size} chars). Minimum: 50`,
-            fixable: true,
-            fixAction: 'fix_chunk_size'
-        };
-    }
-
-    if (size < 100) {
-        return {
-            name: 'Chunk Size',
-            status: 'warning',
-            message: `Chunk size is very small (${size} chars). Recommended: 200-800`
-        };
-    }
-
-    if (size > 2000) {
-        return {
-            name: 'Chunk Size',
-            status: 'warning',
-            message: `Chunk size is very large (${size} chars). May cause context issues`
-        };
-    }
-
-    return {
-        name: 'Chunk Size',
-        status: 'pass',
-        message: `${size} characters`
     };
 }
 

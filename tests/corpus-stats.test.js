@@ -192,10 +192,7 @@ describe('statistics computation', () => {
         expect(stats.documentFrequencies.get('nested')).toBe(1);
     });
 
-    it('counts empty chunks in totalDocs but not in the length total — deflating avgDocLength', () => {
-        // BUG-SHAPED: `skipped++` bumps past the text accumulation but the
-        // divisor stays items.length, so empty chunks drag avgDocLength down
-        // and inflate N for the IDF formula.
+    it('excludes empty chunks from both totalDocs and avgDocLength', () => {
         globalThis.fetch.mockResolvedValue(listResponse([
             { text: 'one two three four' }, // 4 tokens
             { text: '' },
@@ -203,8 +200,20 @@ describe('statistics computation', () => {
             {},
         ]));
         return getCorpusStats(freshId(), settings()).then(stats => {
-            expect(stats.totalDocs).toBe(4);
-            expect(stats.avgDocLength).toBe(1); // 4 / 4, not 4 / 1
+            expect(stats.totalDocs).toBe(1);
+            expect(stats.avgDocLength).toBe(4);
+        });
+    });
+
+    it('counts repeated tokens in avgDocLength but once in document frequency', () => {
+        globalThis.fetch.mockResolvedValue(listResponse([
+            { text: 'alpha alpha alpha beta' },
+            { text: 'beta gamma' },
+        ]));
+        return getCorpusStats(freshId(), settings()).then(stats => {
+            expect(stats.avgDocLength).toBe(3); // (4 + 2) / 2
+            expect(stats.documentFrequencies.get('beta')).toBe(2);
+            expect(stats.documentFrequencies.get('alpha')).toBe(1);
         });
     });
 

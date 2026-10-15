@@ -19,7 +19,7 @@ import { queryCollection } from './core-vector-api.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
 import { EventBaseFatalError, EventBaseExtractionError } from './eventbase-schema.js';
 import { extractEvents } from './eventbase-extractor.js';
-import { insertEvents, isWindowAlreadyExtracted, markWindowExtracted, clearExtractionCachesForChat, buildEventBaseCollectionId, isLastWindowExtracted, setVectorizationTip, ensureVectorizationTip, shouldUseTipFallback } from './eventbase-store.js';
+import { insertEvents, isWindowAlreadyExtracted, markWindowExtracted, clearExtractionCachesForChat, buildEventBaseCollectionId, isLastWindowExtracted, setVectorizationTip, ensureVectorizationTip, shouldUseTipFallback, getIngestibleMessages } from './eventbase-store.js';
 import { getSavedHashes } from './core-vector-api.js';
 import { retrieveEvents } from './eventbase-retrieval.js';
 import { retrieveEventsWithAgent } from './agentic-retrieval.js';
@@ -50,14 +50,15 @@ const EVENTBASE_PROMPT_TAG = `${EXTENSION_PROMPT_TAG}_eventbase`;
  * overrides and read the settings keys directly.
  *
  * @param {object} params
- * @param {object[]} params.messages    - Chat messages to process (array of ST message objects)
+ * @param {object[]} params.messages    - Ingestible chat messages (see getIngestibleMessages), possibly a Start-From slice
+ * @param {number}  [params.indexOffset] - Position of messages[0] in the full ingestible list (Start-From slices)
  * @param {string}  [params.chatUUID]   - Override chat UUID
  * @param {object}   params.settings    - VectFox settings
  * @param {AbortSignal|null} [params.abortSignal]
  * @param {{ strategy?: string, batchSize?: number, totalChunks?: number }|null} [params.progressPlan]
  * @returns {Promise<{ eventsExtracted: number, windowsProcessed: number, windowsSkipped: number }>}
  */
-export async function runEventBaseIngestion({ messages, chatUUID, settings, abortSignal = null, progressPlan = null, collectionIdOverride = null, parallelWindows = 3, isAutoSync = false, suppressAutoSyncPopup = false, skipTipFallback = false }) {
+export async function runEventBaseIngestion({ messages, chatUUID, settings, abortSignal = null, progressPlan = null, collectionIdOverride = null, parallelWindows = 3, isAutoSync = false, suppressAutoSyncPopup = false, skipTipFallback = false, indexOffset = 0 }) {
     const uuid = chatUUID || getChatUUID();
 
     // Respect the global collection pause toggle before doing any extraction,
@@ -166,12 +167,16 @@ export async function runEventBaseIngestion({ messages, chatUUID, settings, abor
     // popupShown=false here means popup was suppressed (e.g. MESSAGE_SENT) — extraction still runs.
     if (isAutoSync) log.lifecycle(`[VectFox AutoSync] running — messages=${messages.length}, popupShown=${popupAllowed}`);
 
+    // start/end are positions in the full ingestible-message list
+    // (getIngestibleMessages). When the caller passed a Start-From slice,
+    // indexOffset is where that slice begins, so stored indices stay
+    // comparable with the chat length used for recency.
     let windows = [];
-    for (let start = 0; start < messages.length; start += step) {
-        const end = Math.min(start + windowSize - 1, messages.length - 1);
-        const msgs = messages.slice(start, end + 1);
+    for (let pos = 0; pos < messages.length; pos += step) {
+        const endPos = Math.min(pos + windowSize - 1, messages.length - 1);
+        const msgs = messages.slice(pos, endPos + 1);
         if (msgs.length < windowSize) break; // tail is incomplete — wait for more messages
-        windows.push({ start, end, msgs });
+        windows.push({ start: pos + indexOffset, end: endPos + indexOffset, msgs });
     }
 
     // AutoSync start-marker gate. The marker says "everything before this
@@ -957,7 +962,7 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
 
     // --- Query archive event collections in parallel ---
     // Archive events are stored with the same schema as live EventBase events so we
-    // query them via queryCollection directly and attach _hash (same as queryEvents does).
+    // query them via queryCollection directly and attach _hash.
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2;
     const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
     const archiveEventPromises = archiveCollections.map(async ({ registryKey: archKey, collectionId: archColId }) => {
@@ -996,7 +1001,8 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     const { events, debug } = await retrieveFn({
         searchText: effectiveSearchText,
         keywordQuery,
-        chatLength: getContext().chat?.length || chat?.length || 0,
+        // Same index space as the stored source_window_end values.
+        chatLength: getIngestibleMessages(getContext().chat || chat).length,
         settings,
         // Canonical routing (Doc/collection_helper.md): pass registry-key form
         // ("backend:id") so queryCollection's resolveBackendForCollection picks the right
@@ -1067,13 +1073,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     setExtensionPrompt(EVENTBASE_PROMPT_TAG, injectionText, settings.position, settings.depth, false);
 
     if (log.domainEnabled('injection')) {
-        log.domain('injection', 'trace', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
-        log.domain('injection', 'trace', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
+        log.domain('injection', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
+        log.domain('injection', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
         // Verify the slot is actually populated
         const slotContent = extension_prompts[EVENTBASE_PROMPT_TAG];
-        log.domain('injection', 'trace', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
-        log.domain('injection', 'trace', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
-        log.domain('injection', 'trace', '[EventBase] Injection preview:', injectionText.slice(0, 300));
+        log.domain('injection', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
+        log.domain('injection', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
+        log.domain('injection', '[EventBase] Injection preview:', injectionText.slice(0, 300));
     }
 
 }
@@ -1147,7 +1153,7 @@ function _djb2(str) {
  * @param {string}   chatUUID  - Current chat UUID
  * @returns {boolean}
  */
-export function isChatFullyVectorized(messages, settings, chatUUID) {
+function isChatFullyVectorized(messages, settings, chatUUID) {
     const windowSize = Math.max(2, settings.eventbase_window_size || 6);
     const windowOverlap = Math.max(0, Math.min(windowSize - 1, settings.eventbase_window_overlap ?? 0));
     const step = windowSize - windowOverlap;
@@ -1200,9 +1206,7 @@ export async function getChatAutoSyncStatus(settings) {
     if (!match) return { state: 'no-collection' };
 
     const ctx = getContext();
-    const messages = Array.isArray(ctx?.chat)
-        ? ctx.chat.filter(m => m.mes && m.mes.trim().length > 0)
-        : [];
+    const messages = getIngestibleMessages(ctx?.chat);
     const chatMessageCount = messages.length;
 
     // Read the auto-sync marker (per-chat message-index threshold). When this

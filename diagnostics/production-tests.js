@@ -10,9 +10,8 @@
  */
 
 import { getRequestHeaders } from '../../../../../script.js';
-import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 import { getSavedHashes, purgeVectorIndex } from '../core/core-vector-api.js';
-import { getModelField, getModelFromSettings, getProviderConfig } from '../core/providers.js';
+import { getEmbeddingRequestParams } from '../core/providers.js';
 import { unregisterCollection } from '../core/collection-loader.js';
 import { reciprocalRankFusion, weightedCombination } from '../core/hybrid-search.js';
 import { extractTextKeywords, extractLorebookKeywords } from '../core/keyword-boost.js';
@@ -114,74 +113,6 @@ export async function sweepLeftoverTestCollections(settings) {
 }
 
 /**
- * Helper: Get provider-specific body parameters for native ST vector API
- */
-function getProviderBody(settings) {
-    const body = {};
-    const source = settings.source;
-    const modelField = getModelField(source);
-
-    if (modelField && settings[modelField]) {
-        body.model = settings[modelField];
-    }
-
-    // Google APIs need special handling
-    if (source === 'palm') {
-        body.api = 'makersuite';
-        body.model = settings.google_model;
-    } else if (source === 'vertexai') {
-        body.api = 'vertexai';
-        body.model = settings.google_model;
-    }
-
-    return body;
-}
-
-/**
- * Helper: Get provider-specific body parameters for Similharity plugin requests
- * This ensures BananaBread and other providers that need special params get them
- * @param {object} settings - VectFox settings
- * @returns {object} Additional body parameters for the request
- */
-function getPluginProviderParams(settings) {
-    const params = {};
-    const source = settings.source;
-
-    // BananaBread requires apiUrl and apiKey in request body
-    if (source === 'bananabread') {
-        params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : 'http://localhost:8008';
-        // API key is stored in extension settings (not ST's secret store)
-        if (settings.bananabread_api_key) {
-            params.apiKey = settings.bananabread_api_key;
-        }
-    }
-
-    // Ollama needs apiUrl and keep param
-    if (source === 'ollama') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-        params.keep = !!settings.ollama_keep;
-    }
-
-    // llamacpp needs apiUrl
-    if (source === 'llamacpp') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
-    }
-
-    // vllm needs apiUrl
-    if (source === 'vllm') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-    }
-
-    return params;
-}
-
-/**
  * Probe the Similharity plugin's /health endpoint to decide whether plugin-only
  * production tests should run. When the plugin is absent, ST returns its
  * catch-all 404 HTML — without this guard, those tests would falsely accuse the
@@ -222,10 +153,7 @@ export async function testEmbeddingGeneration(settings) {
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 text: testText,
-                source: settings.source || 'transformers',
-                model: getModelFromSettings(settings, null),
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
+                ...getEmbeddingRequestParams(settings),
             })
         });
 
@@ -269,7 +197,7 @@ export async function testEmbeddingGeneration(settings) {
 
 /**
  * Test: Can we store and retrieve a vector?
- * Uses Similharity plugin to test actual configured provider (incl. bananabread).
+ * Uses Similharity plugin to test the actual configured provider.
  * Creates a temporary test collection that is cleaned up after the test.
  */
 export async function testVectorStorage(settings) {
@@ -299,10 +227,7 @@ export async function testVectorStorage(settings) {
                     text: testText,
                     index: 0
                 }],
-                source: settings.source || 'transformers',
-                model: getModelFromSettings(settings, null),
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
+                ...getEmbeddingRequestParams(settings),
             })
         });
 
@@ -650,10 +575,7 @@ export async function testPluginEmbeddingGeneration(settings) {
                     index: 0
                     // NOTE: No vector provided - plugin must generate it
                 }],
-                source: settings.source || 'transformers',
-                model: getModelFromSettings(settings, null),
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
+                ...getEmbeddingRequestParams(settings),
             }),
         });
 
@@ -676,10 +598,7 @@ export async function testPluginEmbeddingGeneration(settings) {
                 collectionId: testCollectionId,
                 searchText: testText,
                 topK: 1,
-                source: settings.source || 'transformers',
-                model: getModelFromSettings(settings, null),
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
+                ...getEmbeddingRequestParams(settings),
             }),
         });
 

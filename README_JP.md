@@ -410,7 +410,7 @@ CJK の 1 文字フィルタリングを改善し、信号の強い 1 文字の 
 3. **"Install Extension"** をクリックします
 4. この URL を貼り付けます：
    ```
-   https://github.com/KritBlade/VectFox
+   https://github.com/Cheesedozer/VectFox
    ```
 5. **Install** をクリックします
 
@@ -439,7 +439,7 @@ Standard バックエンドでプラグインをインストールしなくて�
 ```bash
 Windows ではコマンドプロンプト、Linux/Mac ではターミナルを開いてください。docker 上で使っている場合は Console に入ってください
 cd SillyTavern/plugins
-git clone -b Similharity-Plugin https://github.com/KritBlade/VectFox.git similharity
+git clone -b Similharity-Plugin https://github.com/Cheesedozer/VectFox.git similharity
 cd similharity
 npm install
 ```

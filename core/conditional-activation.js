@@ -71,15 +71,6 @@ export function getExpressionsExtensionStatus() {
     return status;
 }
 
-/**
- * Re-checks expressions extension availability
- * Call this if user enables/disables the extension
- */
-export async function recheckExpressionsExtension() {
-    await initExpressionsExtension();
-    return getExpressionsExtensionStatus();
-}
-
 // ============================================================================
 // EMOTION KEYWORDS & PATTERNS
 // ============================================================================
@@ -98,7 +89,7 @@ export async function recheckExpressionsExtension() {
  * NOTE: Future expansion planned for ML-based emotion detection.
  * See collection-metadata.js for roadmap notes.
  */
-export const EMOTION_KEYWORDS = {
+const EMOTION_KEYWORDS = {
     // Positive emotions
     joy: ['joy', 'happy', 'smile', 'laugh', 'glad', 'cheerful', 'delighted', 'pleased', 'joyful', 'happiness', '/\\b(grin|beam|radiat)\\w*/i'],
     amusement: ['amusement', 'amused', 'funny', 'humorous', 'entertaining', 'playful', '/\\b(giggl|chuckl|snicker)\\w*/i'],
@@ -170,7 +161,7 @@ function parseEmotionPattern(pattern) {
  * @param {string} text - Text to check
  * @returns {boolean} Whether any pattern matches
  */
-export function matchesEmotionPatterns(emotionName, text) {
+function matchesEmotionPatterns(emotionName, text) {
     const patterns = EMOTION_KEYWORDS[emotionName.toLowerCase()];
     if (!patterns || patterns.length === 0) {
         return false;
@@ -963,47 +954,6 @@ export function buildSearchContext(chat, contextWindow = 10, activeChunks = [], 
     };
 }
 
-/**
- * Creates a chunk-specific context by extending base context
- * @param {object} baseContext Base search context
- * @param {object} chunk Chunk being evaluated
- * @returns {object} Context with chunk-specific fields
- */
-export function buildChunkContext(baseContext, chunk) {
-    return {
-        ...baseContext,
-        currentChunkScore: chunk.score || chunk.similarity || 0,
-        currentChunkMessageIndex: chunk.metadata?.messageIndex || chunk.index || 0,
-        currentChunkHash: chunk.hash
-    };
-}
-
-/**
- * Gets chunks grouped by their condition status
- * @param {Array} chunks Array of chunks
- * @param {object} context Search context
- * @returns {object} Chunks grouped by status
- */
-export function groupChunksByConditionStatus(chunks, context) {
-    const groups = {
-        noConditions: [],
-        conditionsMet: [],
-        conditionsNotMet: []
-    };
-
-    chunks.forEach(chunk => {
-        if (!chunk.conditions || !chunk.conditions.enabled) {
-            groups.noConditions.push(chunk);
-        } else if (evaluateConditions(chunk, context)) {
-            groups.conditionsMet.push(chunk);
-        } else {
-            groups.conditionsNotMet.push(chunk);
-        }
-    });
-
-    return groups;
-}
-
 // ============================================================================
 // VALIDATION FUNCTIONS
 // ============================================================================
@@ -1166,105 +1116,3 @@ export function validateConditionRule(rule) {
         errors
     };
 }
-
-/**
- * Validates all conditions for a chunk
- * @param {object} conditions Chunk conditions object
- * @returns {object} Validation result { valid: boolean, errors: string[] }
- */
-export function validateConditions(conditions) {
-    const errors = [];
-
-    if (!conditions) {
-        return { valid: true, errors: [] };
-    }
-
-    if (conditions.enabled) {
-        const rules = conditions.rules || [];
-
-        if (rules.length === 0) {
-            errors.push('At least one condition rule is required when conditions are enabled');
-        }
-
-        rules.forEach((rule, idx) => {
-            const validation = validateConditionRule(rule);
-            if (!validation.valid) {
-                errors.push(`Rule ${idx + 1}: ${validation.errors.join(', ')}`);
-            }
-        });
-    }
-
-    return {
-        valid: errors.length === 0,
-        errors
-    };
-}
-
-// ============================================================================
-// STATISTICS FUNCTIONS
-// ============================================================================
-
-/**
- * Gets statistics about condition usage in a chunk collection
- * @param {Array} chunks Array of chunks
- * @returns {object} Statistics
- */
-export function getConditionStats(chunks) {
-    const stats = {
-        total: chunks.length,
-        withConditions: 0,
-        conditionsEnabled: 0,
-        byType: {},
-        byMode: { AND: 0, OR: 0 }
-    };
-
-    chunks.forEach(chunk => {
-        if (chunk.conditions && chunk.conditions.rules && chunk.conditions.rules.length > 0) {
-            stats.withConditions++;
-
-            if (chunk.conditions.enabled) {
-                stats.conditionsEnabled++;
-
-                const mode = chunk.conditions.logic || chunk.conditions.mode || 'AND';
-                stats.byMode[mode] = (stats.byMode[mode] || 0) + 1;
-
-                chunk.conditions.rules.forEach(rule => {
-                    stats.byType[rule.type] = (stats.byType[rule.type] || 0) + 1;
-                });
-            }
-        }
-    });
-
-    return stats;
-}
-
-// ============================================================================
-// DEFAULT EXPORT
-// ============================================================================
-
-export default {
-    // Core evaluation
-    evaluateConditionRule,
-    evaluateConditions,
-    filterChunksByConditions,
-    buildSearchContext,
-    buildChunkContext,
-    groupChunksByConditionStatus,
-
-    // Validation
-    validateConditionRule,
-    validateConditions,
-
-    // Statistics
-    getConditionStats,
-
-    // Emotion detection
-    getExpressionsExtensionStatus,
-    recheckExpressionsExtension,
-    matchesEmotionPatterns,
-
-    // Constants
-    EMOTION_KEYWORDS,
-    VALID_EMOTIONS,
-    VALID_GENERATION_TYPES
-};

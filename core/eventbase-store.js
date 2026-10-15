@@ -10,10 +10,6 @@
 
 import {
     insertVectorItems,
-    queryCollection,
-    deleteVectorItems,
-    getAdditionalArgs,
-    getSavedHashes,
 } from './core-vector-api.js';
 import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
@@ -57,7 +53,7 @@ export function setVectorizationTip(chatUUID, tip) {
 }
 
 /** Clear the cached tip (e.g. when the user clears EventBase for this chat). */
-export function clearVectorizationTip(chatUUID) {
+function clearVectorizationTip(chatUUID) {
     if (chatUUID) _vectorizationTipByUuid.delete(chatUUID);
 }
 
@@ -137,15 +133,10 @@ export async function insertEvents(events, settings, abortSignal = null, collect
         }
     }
 
-    // Generate embeddings (reuses same provider/model as legacy path)
-    const additionalArgs = await getAdditionalArgs(embedTexts, settings);
-    const clientEmbeddings = additionalArgs.embeddings || null;
-
     // Build insertable items
     const items = events.map((event, idx) => {
         const embedText = embedTexts[idx];
         const hash = _eventHash(event.event_id);
-        const vector = clientEmbeddings?.[embedText] || null;
 
         // The summary string lives inside `text` (first line, after the [event_type] prefix).
         // Storing it again as a separate field is pure duplication, so we strip it from both
@@ -156,7 +147,7 @@ export async function insertEvents(events, settings, abortSignal = null, collect
             hash,
             text: embedText,
             index: event.source_window_end ?? (event.source_window_start != null ? event.source_window_start + 1 : idx + 1), // source_window_end for consistency with message_order injection field
-            vector,             // null → server-side embedding
+            vector: null,       // null → server-side embedding
             // Top-level fields read by qdrant.js's payload builder.
             // qdrant.js spreads item.metadata first then explicitly overwrites these
             // fields from the top-level item. Without them defined here, they are
@@ -210,72 +201,6 @@ export async function insertEvents(events, settings, abortSignal = null, collect
     registerCollection(registryKey);
 
     log.lifecycle(`[EventBase] Insert complete for collection "${collectionId}"`);
-}
-
-// ---------------------------------------------------------------------------
-// Query (for retrieval)
-// ---------------------------------------------------------------------------
-
-/**
- * Query the EventBase collection for events semantically similar to searchText.
- * Returns raw metadata array sorted by score (descending).
- *
- * @param {string} searchText
- * @param {number} topK
- * @param {object} settings
- * @param {string} [chatUUID]
- * @returns {Promise<object[]>}  Array of event metadata objects with `.score`
- */
-export async function queryEvents(searchText, topK, settings, chatUUID) {
-    const uuid = chatUUID || getChatUUID();
-    const collectionId = await _resolveEventBaseCollectionIdForRead(settings, uuid);
-    if (!collectionId) return [];
-
-    const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
-    const { hashes, metadata } = await queryCollection(collectionId, searchText, topK, ebSettings);
-    if (!hashes?.length) return [];
-
-    // Attach hash to each metadata item for dedup / downstream use
-    return metadata.map((meta, i) => ({
-        ...meta,
-        _hash: hashes[i],
-    }));
-}
-
-// ---------------------------------------------------------------------------
-// List (for Event Browser)
-// ---------------------------------------------------------------------------
-
-/**
- * List all stored events for the current chat.
- * @param {object} settings
- * @param {number} [limit]
- * @param {string} [chatUUID]
- * @returns {Promise<object[]>}
- */
-export async function listEvents(settings, limit = 100, chatUUID) {
-    // Reuse queryEvents with a broad query (empty string → backend returns recent/all items)
-    // We overfetch and return up to `limit` items.
-    return queryEvents('', Math.min(limit, 200), settings, chatUUID);
-}
-
-// ---------------------------------------------------------------------------
-// Delete
-// ---------------------------------------------------------------------------
-
-/**
- * Delete a stored event by its numeric hash.
- * @param {number} hash
- * @param {object} settings
- * @param {string} [chatUUID]
- * @returns {Promise<void>}
- */
-export async function deleteEventByHash(hash, settings, chatUUID) {
-    const uuid = chatUUID || getChatUUID();
-    const collectionId = await _resolveEventBaseCollectionIdForRead(settings, uuid);
-    if (!collectionId) return;
-
-    await deleteVectorItems(collectionId, [hash], settings);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +263,18 @@ export function clearAutoSyncMarker(chatUUID) {
 }
 
 /**
+ * The chat messages EventBase extracts from (blank and image-only messages
+ * are skipped). Window indices (source_window_start/end) are positions in
+ * this list, so anything comparing them with "how long the chat is" must use
+ * this list's length, not chat.length.
+ * @param {object[]} chat
+ * @returns {object[]}
+ */
+export function getIngestibleMessages(chat) {
+    return Array.isArray(chat) ? chat.filter(m => m.mes && m.mes.trim().length > 0) : [];
+}
+
+/**
  * Stamp the auto-sync start marker for a chat. Used to gate which windows
  * the auto-sync workflow will process.
  *
@@ -358,7 +295,7 @@ export async function stampAutoSyncMarker(chatUUID, settings) {
     const store = extension_settings?.vectfox;
     if (!store) return 0;
 
-    const chatLength = getContext()?.chat?.length ?? 0;
+    const chatLength = getIngestibleMessages(getContext()?.chat).length;
 
     // Find the EventBase collection for this chat, if any.
     const backend = getRegistryBackend(settings?.vector_backend);
@@ -399,7 +336,7 @@ export async function stampAutoSyncMarker(chatUUID, settings) {
  * @param {string} chatUUID
  * @returns {number|undefined}
  */
-export function getLastUsedWindowSize(chatUUID) {
+function getLastUsedWindowSize(chatUUID) {
     if (!chatUUID) return undefined;
     return extension_settings?.vectfox?.eventbase_last_used_window_size?.[chatUUID];
 }
@@ -513,7 +450,7 @@ export async function prepareForFreshExtraction(chatUUID) {
  * @param {number[]} sourceHashes
  * @returns {string}
  */
-export function windowFingerprint(sourceHashes) {
+function windowFingerprint(sourceHashes) {
     return [...sourceHashes].map(String).sort().join(',');
 }
 
@@ -685,46 +622,6 @@ export function findEventBaseCollectionIdsForChat(uuid, preferredBackend) {
     return matches.map(({ registryKey, collectionId }) => ({ registryKey, collectionId }));
 }
 
-/**
- * Resolve which EventBase collection ID to read from for the given chat.
- *
- * Looks up the registered collection(s) by UUID and returns the first one
- * that actually has data. When no collection has been registered yet (first
- * ingestion), returns the freshly-computed backend-scoped ID so the write
- * path has somewhere to insert.
- *
- * @param {object} settings
- * @param {string} [chatUUID]
- * @returns {Promise<string|null>}
- */
-async function _resolveEventBaseCollectionIdForRead(settings, chatUUID) {
-    const uuid = chatUUID || getChatUUID();
-    if (!uuid) return null;
-
-    const backend = getRegistryBackend(settings?.vector_backend);
-    const registered = findEventBaseCollectionIdsForChat(uuid, backend);
-
-    for (const { collectionId, registryKey } of registered) {
-        // Only probe collections that match the current backend.
-        // Cross-backend probing causes the similharity plugin's getIndex() to
-        // auto-create empty vectra directories for qdrant-named collections (and
-        // vice versa), producing ghost 0-chunk entries in the DB Browser.
-        const { backend: ownBackend } = parseRegistryKey(registryKey);
-        if (ownBackend && ownBackend !== backend) continue;
-
-        try {
-            const hashes = await getSavedHashes(collectionId, settings);
-            if (hashes?.length > 0) return collectionId;
-        } catch {
-            // Try next candidate.
-        }
-    }
-
-    // No registered collection has data yet — return the would-be ID so
-    // first-time writers have a target. May be null if no chat is active.
-    return buildEventBaseCollectionId(uuid, settings?.vector_backend);
-}
-
 // ---------------------------------------------------------------------------
 // Phase 1.5 — one-time index backfill
 // ---------------------------------------------------------------------------
@@ -823,7 +720,6 @@ export async function ensureEventBaseIndexes(settings) {
 
 /**
  * Deterministic numeric hash for an event_id string.
- * Uses the same djb2 algorithm as bm25-scorer.js / chat-vectorization.js.
  * @param {string} id
  * @returns {number}
  */
