@@ -3295,7 +3295,8 @@ async function performSearch() {
   }
 
   const topK = parseInt($("#vectfox_search_topk").val()) || 5;
-  const threshold = parseFloat($("#vectfox_search_threshold").val()) || 0.3;
+  const thresholdInput = parseFloat($("#vectfox_search_threshold").val());
+  const threshold = Number.isFinite(thresholdInput) ? thresholdInput : 0.3;
   const enabledOnly = $("#vectfox_search_enabled_only").is(":checked");
 
   // Get collection IDs to search

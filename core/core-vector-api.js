@@ -859,11 +859,22 @@ export async function queryMultipleCollections(collectionIds, searchText, topK, 
             const reason = nativeHybridAvailable && preferNative ? 'native' : 'client-side';
             log.verbose(`[VectFox] Hybrid search (${reason}) for multi-collection query`);
         }
+        // hybridSearch has no threshold of its own; apply the caller's to the
+        // vector similarity, as the standard path does in the backend.
+        const applyThreshold = (result) => {
+            if (!(threshold > 0) || !Array.isArray(result?.metadata)) return result;
+            const keep = result.metadata.map(m => (m?.vectorScore ?? m?.score ?? 0) >= threshold);
+            return {
+                ...result,
+                hashes: (result.hashes || []).filter((_, i) => keep[i]),
+                metadata: result.metadata.filter((_, i) => keep[i]),
+            };
+        };
         const processedResults = {};
         for (const collectionId of collectionIds) {
             try {
                 const queryStart = Date.now();
-                processedResults[collectionId] = await hybridSearch(collectionId, searchText, topK, settings);
+                processedResults[collectionId] = applyThreshold(await hybridSearch(collectionId, searchText, topK, settings));
                 const queryLatency = Date.now() - queryStart;
                 recordQuery(settings?.vector_backend || 'standard', queryLatency);
             } catch (error) {
