@@ -2270,7 +2270,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:vllm-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders.
     const updateSummarizeVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2328,7 +2328,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:openrouter-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders immediately.
     const updateSummarizeORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2398,7 +2398,7 @@ function bindSettingsEvents(settings, callbacks) {
     // architecture pivot, the "override" semantics are gone — there's now
     // ONE OpenRouter key everywhere.
     const updateAgenticORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2441,7 +2441,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `chat_completion_source: 'custom'`; embedding-side reads
     // SECRET_KEYS.VLLM (ST's Text Completion vLLM slot) separately.
     const updateAgenticVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -3820,7 +3820,7 @@ function bindSettingsEvents(settings, callbacks) {
     // pattern as the Summarize and AgentMode inputs above. One shared key,
     // both ST slots. See core/api-keys.js header for the full rationale.
     const updateVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -3970,7 +3970,7 @@ function bindSettingsEvents(settings, callbacks) {
     // the shared slot used by ST's own Connection Profile and by VectFox's
     // Summarize + AgentMode inputs. See core/api-keys.js for the rationale.
     const updateOpenRouterKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)

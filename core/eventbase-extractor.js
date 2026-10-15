@@ -312,7 +312,7 @@ async function _callOpenRouter(prompt, settings, windowIndex) {
     // Short version: getOpenRouterApiKey() returns ST's MASKED value, so we route
     // through /api/backends/chat-completions/generate which reads the real key
     // server-side via readSecret(SECRET_KEYS.OPENROUTER).
-    const apiKey = _getOpenRouterApiKey(settings);
+    const apiKey = _getOpenRouterApiKey();
     if (!apiKey) {
         throw new EventBaseFatalError(
             'EventBase: OpenRouter API key not found. Add it in EventBase settings (or Summarize Before Store settings uses the same key).',
@@ -393,7 +393,7 @@ async function _callVLLM(prompt, settings, windowIndex) {
         );
     }
 
-    const apiKey = getCustomApiKey(settings);
+    const apiKey = getCustomApiKey();
     if (!apiKey) {
         throw new EventBaseFatalError(
             'EventBase: vLLM / Custom OpenAI-compatible API key not configured. Enter it in Core → LLM Summarization settings.',

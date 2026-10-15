@@ -301,7 +301,7 @@ export function _resolveAgenticLLMConfig(settings = {}) {
         // "(empty → inherit summarize key)" placeholder is now a
         // no-op visual hint; all three inputs (embedding/summarize/
         // agentic) write the same SECRET_KEYS.OPENROUTER slot.
-        const apiKey = getOpenRouterApiKey(settings);
+        const apiKey = getOpenRouterApiKey();
         if (!apiKey) {
             return { ok: false, reason: 'missing_openrouter_api_key' };
         }
@@ -316,7 +316,7 @@ export function _resolveAgenticLLMConfig(settings = {}) {
         // Key lives in SECRET_KEYS.CUSTOM (masked client-side). getCustomApiKey
         // returns the masked presence indicator; real key is read server-side
         // by ST's chat-completions proxy. Same shared slot as summarize/agent.
-        const apiKey = getCustomApiKey(settings);
+        const apiKey = getCustomApiKey();
         if (!apiKey) {
             return { ok: false, reason: 'missing_vllm_api_key' };
         }

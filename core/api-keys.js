@@ -166,10 +166,9 @@ function _readSecretValue(slot) {
  * real key via `readSecret(SECRET_KEYS.OPENROUTER)` and forwards correctly.
  * See `core/summarizer.js::_callOpenRouter` for the canonical call pattern.
  *
- * @param {object} [settings] - kept for signature compat; not read.
  * @returns {string} masked value (presence indicator) or empty string
  */
-export function getOpenRouterApiKey(settings) {
+export function getOpenRouterApiKey() {
     return _readSecretValue(SECRET_KEYS.OPENROUTER);
 }
 
@@ -182,10 +181,9 @@ export function getOpenRouterApiKey(settings) {
  * `chat_completion_source: 'custom'` where the server reads the real
  * key via `readSecret(SECRET_KEYS.CUSTOM)`.
  *
- * @param {object} [settings] - kept for signature compat; not read.
  * @returns {string} masked value (presence indicator) or empty string
  */
-export function getCustomApiKey(settings) {
+export function getCustomApiKey() {
     return _readSecretValue(SECRET_KEYS.CUSTOM);
 }
 

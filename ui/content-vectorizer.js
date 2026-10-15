@@ -3535,7 +3535,7 @@ async function startContinueVectorization() {
     console.log('[VectFox] LLM config check (vectorize-content):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
@@ -3909,7 +3909,7 @@ async function startVectorization() {
     console.log('[VectFox] LLM config check (start-vectorization):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
