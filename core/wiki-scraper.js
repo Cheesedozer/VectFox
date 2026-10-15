@@ -317,7 +317,8 @@ export function wikiToText(wiki) {
     // Remove HTML tags (leave only text)
     rawContent = rawContent.replace(/<[^>]*>/g, '');
 
-    return rawContent;
+    // The converter emits CRLF line endings
+    return rawContent.replace(/\r\n?/g, '\n');
 }
 
 /**
