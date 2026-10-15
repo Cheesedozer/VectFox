@@ -155,26 +155,28 @@ async function _buildStats(collectionId, settings) {
     // or ask the plugin to return pre-computed token frequencies.
     const tTokenize = _now();
     const documentFrequencies = new Map();
-    let totalLength = 0;
     let totalTokens = 0;
+    let indexedDocs = 0;
     let skipped = 0;
     for (const item of items) {
         const text = item?.text || item?.metadata?.text || '';
         if (!text) { skipped++; continue; }
-        const tokens = tokenize(text);
-        totalLength += tokens.length;
+        // Same tokenization as BM25Scorer.indexDocuments, so avgDocLength is
+        // on the same scale as the per-document lengths it normalizes.
+        const tokens = tokenize(text, { dedupe: false });
         totalTokens += tokens.length;
-        const unique = new Set(tokens);
-        for (const term of unique) {
+        indexedDocs++;
+        for (const term of new Set(tokens)) {
             documentFrequencies.set(term, (documentFrequencies.get(term) || 0) + 1);
         }
     }
     const tTokenizeMs = _ms(tTokenize);
 
+    // Empty chunks are excluded from N as well as from the length total.
     const stats = {
-        totalDocs: items.length,
+        totalDocs: indexedDocs,
         documentFrequencies,
-        avgDocLength: items.length > 0 ? totalLength / items.length : 0,
+        avgDocLength: indexedDocs > 0 ? totalTokens / indexedDocs : 0,
         builtAt: Date.now(),
     };
 

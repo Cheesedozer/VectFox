@@ -540,8 +540,9 @@ export class BM25Scorer {
                 }
             }
 
-            // Content tokens (1x weight)
-            const contentTokens = tokenize(doc.text);
+            // Content tokens (1x weight). Not deduped: BM25 needs the real
+            // term frequency and document length.
+            const contentTokens = tokenize(doc.text, { dedupe: false });
             allTokens.push(...contentTokens);
             contentLength = contentTokens.length;
 
