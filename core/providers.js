@@ -11,6 +11,12 @@
  */
 
 import { SECRET_KEYS } from '../../../../secrets.js';
+import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
+
+/**
+ * Provider used when settings name none, or name one that no longer exists.
+ */
+export const DEFAULT_EMBEDDING_PROVIDER = 'transformers';
 
 /**
  * All supported embedding providers
@@ -120,6 +126,66 @@ export function getModelFromSettings(settings, fallback = '') {
     const modelField = getModelField(settings?.source);
     if (!modelField) return fallback;
     return settings[modelField] || fallback;
+}
+
+/**
+ * Strip a trailing slash and an OpenAI-style `/v1/embeddings` or `/embeddings`
+ * suffix, so a vLLM URL pasted in either form reaches the server as its base.
+ * @param {string|undefined} url
+ * @returns {string|undefined}
+ */
+function normalizeVllmUrl(url) {
+    return url
+        ?.replace(/\/$/, '')
+        .replace(/\/v1\/embeddings$/, '')
+        .replace(/\/embeddings$/, '');
+}
+
+/**
+ * Build the embedding-provider fields that every vector request sends to ST's
+ * /api/vector/* endpoints or the Similharity plugin's /chunks/* endpoints.
+ *
+ * This is the one place that maps VectFox settings to those fields. Spread the
+ * result into the request body: `{ collectionId, ...getEmbeddingRequestParams(settings) }`.
+ *
+ * - `source`: the active provider, defaulting to transformers.
+ * - `model`: the provider's model field (see getModelFromSettings).
+ * - Ollama: `apiUrl` (the per-provider alternative endpoint when
+ *   `ollama_use_alt_endpoint` is on, otherwise ST's Text Completion Ollama URL)
+ *   and `keep`. No API key: ST has no Ollama auth path.
+ * - vLLM: `apiUrl` (the alternative endpoint when `vllm_use_alt_endpoint` is on,
+ *   otherwise ST's Text Completion vLLM URL), normalised by normalizeVllmUrl.
+ *   No API key: ST's vLLM embedding handler reads SECRET_KEYS.VLLM server-side,
+ *   so anything sent here would be ignored.
+ * - transformers / openrouter: nothing extra. OpenRouter's key is read
+ *   server-side from SECRET_KEYS.OPENROUTER.
+ *
+ * @param {object} settings - VectFox settings
+ * @param {object} [serverUrls] - ST's Text Completion server URLs, keyed by
+ *   textgen type. Defaults to ST's live settings; tests pass their own.
+ * @returns {{source: string, model: string, apiUrl?: string, keep?: boolean}}
+ */
+export function getEmbeddingRequestParams(settings, serverUrls = textgenerationwebui_settings?.server_urls ?? {}) {
+    const source = settings?.source || DEFAULT_EMBEDDING_PROVIDER;
+    const params = { source, model: getModelFromSettings(settings) };
+
+    switch (source) {
+        case 'ollama':
+            params.apiUrl = settings.ollama_use_alt_endpoint
+                ? settings.ollama_alt_endpoint_url
+                : serverUrls[textgen_types.OLLAMA];
+            params.keep = !!settings.ollama_keep;
+            break;
+        case 'vllm':
+            params.apiUrl = normalizeVllmUrl(settings.vllm_use_alt_endpoint
+                ? settings.vllm_alt_endpoint_url
+                : serverUrls[textgen_types.VLLM]);
+            break;
+        default:
+            break;
+    }
+
+    return params;
 }
 
 /**

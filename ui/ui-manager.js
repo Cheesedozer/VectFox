@@ -32,7 +32,7 @@ import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard, 
 import { doesChatHaveVectors, getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
 import { getCollectionMeta } from '../core/collection-metadata.js';
 import { parseRegistryKey } from '../core/collection-ids.js';
-import { getModelField } from '../core/providers.js';
+import { getModelField, getEmbeddingRequestParams } from '../core/providers.js';
 import { getChunkingStrategies } from '../core/content-types.js';
 import { CJK_TOKENIZER_MODES, setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded } from '../core/bm25-scorer.js';
 import { LANGUAGE_MODES } from '../core/language-modes.js';
@@ -4873,14 +4873,9 @@ function copyDiagnosticsReport(results) {
 
     // Build provider URL info
     let providerUrl = 'n/a';
-    if (source === 'ollama') {
-        providerUrl = settings.ollama_use_alt_endpoint && settings.ollama_alt_endpoint_url
-            ? settings.ollama_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.OLLAMA] || 'http://localhost:11434');
-    } else if (source === 'vllm') {
-        providerUrl = settings.vllm_use_alt_endpoint && settings.vllm_alt_endpoint_url
-            ? settings.vllm_alt_endpoint_url
-            : (textgenerationwebui_settings?.server_urls?.[textgen_types?.VLLM] || 'http://localhost:8000');
+    if (source === 'ollama' || source === 'vllm') {
+        // The URL the backends actually send (see getEmbeddingRequestParams).
+        providerUrl = getEmbeddingRequestParams(settings).apiUrl || 'not set';
     }
 
     let report = `╔══════════════════════════════════════════════════════════════╗

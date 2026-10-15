@@ -30,10 +30,9 @@
 
 import { getRequestHeaders } from '../../../../../script.js';
 import { VectorBackend } from './backend-interface.js';
-import { getModelFromSettings } from '../core/providers.js';
+import { getModelFromSettings, getEmbeddingRequestParams } from '../core/providers.js';
 import { throwIfModelConfigError } from '../core/model-http-errors.js';
 import { VECTOR_LIST_LIMIT } from '../core/constants.js';
-import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 import { getQdrantApiKey } from '../core/api-keys.js';
 import { log } from '../core/log.js';
 
@@ -67,40 +66,6 @@ function _embedTimeoutHint(settings) {
 // with existing user Qdrant data. Do not rebrand. See plans/vectfox-rename-plan.md §1.5.
 const MULTITENANCY_COLLECTION = 'vectfox_main';
 
-
-function getPluginProviderParams(settings) {
-    const params = {};
-
-    switch (settings.source) {
-        case 'ollama':
-            params.apiUrl = settings.ollama_use_alt_endpoint
-                ? settings.ollama_alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-            params.keep = !!settings.ollama_keep;
-            // No apiKey: ST has no ollama auth path. The setAdditionalHeadersByType
-            // call in ST's ollama-vectors.js is a no-op for ollama. The previous
-            // params.apiKey = getOllamaApiKey(...) line was dead code on both sides.
-            break;
-        case 'vllm':
-            params.apiUrl = (settings.vllm_use_alt_endpoint
-                ? settings.vllm_alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.VLLM])
-                ?.replace(/\/$/, '')
-                .replace(/\/v1\/embeddings$/, '')
-                .replace(/\/embeddings$/, '');
-            // No apiKey passed: ST's vLLM embedding handler reads
-            // SECRET_KEYS.VLLM server-side via setAdditionalHeadersByType.
-            // Same rationale as backends/standard.js — see comment there.
-            break;
-        // case 'llamacpp': params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP]; break;
-        // case 'koboldcpp': params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP]; break;
-        // case 'bananabread': params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : 'http://localhost:8008'; if (settings.bananabread_api_key) params.apiKey = settings.bananabread_api_key; break;
-        default:
-            break;
-    }
-
-    return params;
-}
 
 /**
  * Determines the actual collection name to use based on multitenancy setting
@@ -196,6 +161,8 @@ export class QdrantBackend extends VectorBackend {
         }
 
         const knownBackends = ['standard', 'vectra', 'qdrant'];
+        // Parses legacy registry keys saved by older versions, so this keeps
+        // the names of removed providers too: those keys can still be stored.
         const knownSources = ['transformers', 'openai', 'cohere', 'ollama', 'llamacpp',
             'vllm', 'koboldcpp', 'webllm', 'bananabread', 'openrouter'];
 
@@ -358,11 +325,9 @@ export class QdrantBackend extends VectorBackend {
                             sparseVector: encodeSparseVector(textWithKeywords),
                         };
                     }),
-                    source: settings.source || 'transformers',
-                    model: getModelFromSettings(settings),
                     nativeSparse: true,
                     cjkTokenizerMode: settings.cjk_tokenizer_mode,
-                    ...getPluginProviderParams(settings),
+                    ...getEmbeddingRequestParams(settings),
                 }),
             });
 
@@ -461,10 +426,8 @@ export class QdrantBackend extends VectorBackend {
             searchText: searchText,
             topK: topK,
             threshold: 0.0,
-            source: settings.source || 'transformers',
-            model: getModelFromSettings(settings),
             eventbaseDebug: !!settings.eventbase_debug_qdrant_backend,
-            ...getPluginProviderParams(settings),
+            ...getEmbeddingRequestParams(settings),
         };
 
     //Use queryVector if provided, otherwise searchText
@@ -562,9 +525,7 @@ export class QdrantBackend extends VectorBackend {
                     searchText: searchText,
                     topK: topK,
                     threshold: threshold,
-                    source: settings.source || 'transformers',
-                    model: getModelFromSettings(settings),
-                    ...getPluginProviderParams(settings),
+                    ...getEmbeddingRequestParams(settings),
                 };
 
 
@@ -878,8 +839,6 @@ export class QdrantBackend extends VectorBackend {
             searchText: searchText,
             topK: topK,
             threshold: 0.0,
-            source: settings.source || 'transformers',
-            model: getModelFromSettings(settings),
             hybrid: true,
             hybridOptions: {
                 vectorWeight,
@@ -890,7 +849,7 @@ export class QdrantBackend extends VectorBackend {
                 prefetchLimit: topK * 4,
             },
             sparseQueryVector,
-            ...getPluginProviderParams(settings),
+            ...getEmbeddingRequestParams(settings),
         };
 
         // Merge multitenancy content_type into the filters object so the
@@ -1028,8 +987,6 @@ export class QdrantBackend extends VectorBackend {
             searchText,
             topK,
             threshold: 0.0,
-            source: settings.source || 'transformers',
-            model: getModelFromSettings(settings),
             hybrid: true,
             hybridOptions: {
                 eventbaseDebug: !!settings.eventbase_debug_qdrant_backend,
@@ -1037,7 +994,7 @@ export class QdrantBackend extends VectorBackend {
             },
             sparseQueryVector,
             rerankParams,
-            ...getPluginProviderParams(settings),
+            ...getEmbeddingRequestParams(settings),
         };
 
         const mergedFilters = settings.qdrant_multitenancy

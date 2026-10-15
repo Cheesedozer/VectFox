@@ -11,63 +11,18 @@
 
 import { getRequestHeaders } from '../../../../../script.js';
 import { secret_state } from '../../../../secrets.js';
-import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
 import {
     EMBEDDING_PROVIDERS,
     getValidProviderIds,
     isValidProvider,
     getProviderConfig,
     getModelField,
-    getModelFromSettings,
+    getEmbeddingRequestParams,
     getSecretKey,
     requiresApiKey,
     requiresUrl,
     getUrlProviders
 } from '../core/providers.js';
-
-/**
- * Helper: Get provider-specific body parameters for Similharity plugin requests
- * This ensures BananaBread and other providers that need special params get them
- * @param {object} settings - VectFox settings
- * @returns {object} Additional body parameters for the request
- */
-function getPluginProviderParams(settings) {
-    const params = {};
-    const source = settings.source;
-
-    // BananaBread requires apiUrl and apiKey in request body
-    if (source === 'bananabread') {
-        params.apiUrl = settings.use_alt_endpoint ? settings.alt_endpoint_url : 'http://localhost:8008';
-        // API key is stored in extension settings (not ST's secret store)
-        if (settings.bananabread_api_key) {
-            params.apiKey = settings.bananabread_api_key;
-        }
-    }
-
-    // Ollama needs apiUrl and keep param
-    if (source === 'ollama') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
-        params.keep = !!settings.ollama_keep;
-    }
-
-    // llamacpp needs apiUrl
-    if (source === 'llamacpp') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.LLAMACPP];
-    }
-
-    // vllm needs apiUrl
-    if (source === 'vllm') {
-        params.apiUrl = settings.use_alt_endpoint
-            ? settings.alt_endpoint_url
-            : textgenerationwebui_settings.server_urls[textgen_types.VLLM];
-    }
-
-    return params;
-}
 
 /**
  * Check: ST Vectra backend (standard file-based vector storage)
@@ -115,7 +70,7 @@ export async function checkVectorsExtension() {
  * Check: ST Vector API endpoints
  * Tests all /api/vector/* endpoints comprehensively
  * NOTE: Always uses 'transformers' source for this check because native ST
- * endpoints don't recognize custom sources like bananabread. VectFox uses
+ * endpoints don't recognize every VectFox source. VectFox uses
  * the Similharity plugin endpoints for actual operations, not these.
  */
 export async function checkBackendEndpoints(settings) {
@@ -515,10 +470,7 @@ export async function checkQdrantDimensionMatch(settings) {
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 text: 'test',
-                source: settings.source || 'transformers',
-                model: getModelFromSettings(settings),
-                // Include provider-specific params (apiUrl, apiKey for BananaBread, etc.)
-                ...getPluginProviderParams(settings),
+                ...getEmbeddingRequestParams(settings),
             })
         });
 
@@ -671,26 +623,6 @@ export function checkApiKeys(settings) {
         };
     }
 
-    // BananaBread stores API key in extension settings (not ST's secret store)
-    // because custom keys aren't reliably returned by ST's readSecretState()
-    if (source === 'bananabread') {
-        if (settings.bananabread_api_key) {
-            return {
-                name: 'API Key',
-                status: 'pass',
-                message: 'API key configured'
-            };
-        } else {
-            return {
-                name: 'API Key',
-                status: 'fail',
-                message: 'BananaBread requires an API key',
-                fixable: true,
-                fixAction: 'configure_api_key'
-            };
-        }
-    }
-
     const secretKey = getSecretKey(source);
     const keyPresent = secretKey && secret_state[secretKey];
 
@@ -726,38 +658,18 @@ export function checkApiUrls(settings) {
         };
     }
 
-    if (settings.use_alt_endpoint) {
-        if (!settings.alt_endpoint_url) {
-            return {
-                name: 'API URL',
-                status: 'fail',
-                message: 'Alternative endpoint enabled but no URL configured',
-                fixable: true,
-                fixAction: 'configure_url'
-            };
-        }
-        return {
-            name: 'API URL',
-            status: 'pass',
-            message: `Custom: ${settings.alt_endpoint_url}`
-        };
-    }
+    // Same URL the backends send (see getEmbeddingRequestParams).
+    const usesAltEndpoint = !!settings[`${source}_use_alt_endpoint`];
+    const { apiUrl } = getEmbeddingRequestParams(settings);
 
-    const textgenMapping = {
-        'ollama': textgen_types.OLLAMA,
-        'vllm': textgen_types.VLLM,
-        'llamacpp': textgen_types.LLAMACPP,
-        'koboldcpp': textgen_types.KOBOLDCPP
-    };
-
-    const config = getProviderConfig(source);
-    const url = textgenMapping[source] ? textgenerationwebui_settings.server_urls[textgenMapping[source]] : null;
-
-    if (!url) {
+    if (!apiUrl) {
+        const config = getProviderConfig(source);
         return {
             name: 'API URL',
             status: 'fail',
-            message: `${config?.name || source} requires a server URL`,
+            message: usesAltEndpoint
+                ? 'Alternative endpoint enabled but no URL configured'
+                : `${config?.name || source} requires a server URL`,
             fixable: true,
             fixAction: 'configure_url'
         };
@@ -766,7 +678,7 @@ export function checkApiUrls(settings) {
     return {
         name: 'API URL',
         status: 'pass',
-        message: `${url}`
+        message: usesAltEndpoint ? `Custom: ${apiUrl}` : `${apiUrl}`
     };
 }
 
