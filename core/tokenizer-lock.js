@@ -33,7 +33,7 @@ async function getRequestHeadersImport() {
  * @param {string} actualCollectionId - the resolved Qdrant collection name (after multitenancy resolution)
  * @returns {Promise<object|null>}
  */
-export async function fetchCollectionMetadata(actualCollectionId) {
+async function fetchCollectionMetadata(actualCollectionId) {
     if (metadataCache.has(actualCollectionId)) {
         return metadataCache.get(actualCollectionId);
     }

@@ -962,7 +962,7 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
 
     // --- Query archive event collections in parallel ---
     // Archive events are stored with the same schema as live EventBase events so we
-    // query them via queryCollection directly and attach _hash (same as queryEvents does).
+    // query them via queryCollection directly and attach _hash.
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2;
     const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
     const archiveEventPromises = archiveCollections.map(async ({ registryKey: archKey, collectionId: archColId }) => {
@@ -1153,7 +1153,7 @@ function _djb2(str) {
  * @param {string}   chatUUID  - Current chat UUID
  * @returns {boolean}
  */
-export function isChatFullyVectorized(messages, settings, chatUUID) {
+function isChatFullyVectorized(messages, settings, chatUUID) {
     const windowSize = Math.max(2, settings.eventbase_window_size || 6);
     const windowOverlap = Math.max(0, Math.min(windowSize - 1, settings.eventbase_window_overlap ?? 0));
     const step = windowSize - windowOverlap;

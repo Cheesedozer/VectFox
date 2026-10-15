@@ -11,7 +11,6 @@
 import { describe, it, expect } from 'vitest';
 import {
     chunkText,
-    isUnitStrategy,
 } from '../core/chunking.js';
 import { DEFAULT_CHUNK_SIZE } from '../core/constants.js';
 
@@ -513,14 +512,3 @@ describe('combined strategy', () => {
 // ---------------------------------------------------------------------------
 // Strategy metadata helpers
 // ---------------------------------------------------------------------------
-
-describe('strategy introspection helpers', () => {
-    it('classifies unit strategies (size controls do not apply)', () => {
-        for (const s of ['per_message', 'conversation_turns', 'message_batch', 'per_entry', 'per_field']) {
-            expect(isUnitStrategy(s)).toBe(true);
-        }
-        for (const s of ['adaptive', 'paragraph', 'section', 'sentence', 'combined', 'dialogue', 'bogus']) {
-            expect(isUnitStrategy(s)).toBe(false);
-        }
-    });
-});

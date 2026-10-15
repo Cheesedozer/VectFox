@@ -190,16 +190,6 @@ export function getCustomApiKey(settings) {
 }
 
 /**
- * @deprecated Use {@link getCustomApiKey}. Kept as an alias for the
- * transition period; both readers point at the same `SECRET_KEYS.CUSTOM`
- * slot. Pre-2026-05-26 callers expected plaintext from
- * `settings.vllm_api_key` — that field is migrated and deleted on first
- * load post-upgrade. Remove this alias once all call sites are confirmed
- * migrated.
- */
-export const getVllmApiKey = getCustomApiKey;
-
-/**
  * Resolve the Qdrant API key presence indicator.
  *
  * Post-2026-05-26: the key lives in ST's secret_state under the custom slot

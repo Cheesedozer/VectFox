@@ -780,7 +780,7 @@ test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
         const base = '/scripts/extensions/third-party/VectFox/';
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
-        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setCollectionLock, removeCollectionLock, clearCollectionLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
@@ -862,8 +862,7 @@ test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
 
             // EventBase doesn't auto-lock when collection ID is supplied explicitly.
             // Lock it manually so runEventBaseRetrieval picks it up — see TEST 013.
-            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
-            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase: ${lockResult?.reason}`); return; }
+            setCollectionLock(eventbaseRegistryKey, currentChatId);
 
             const ebLocks = getCollectionLocks(eventbaseRegistryKey);
             if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
@@ -915,7 +914,7 @@ test('TEST 003 — E2E qdrant: both locked, both return results', async () => {
             // its lock via deleteContentCollection.
             if (eventbaseCreated) {
                 try {
-                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    clearCollectionLock(eventbaseRegistryKey);
                     await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'qdrant' }, eventbaseRegistryKey);
                     try {
                         const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
@@ -1359,7 +1358,7 @@ test('TEST 007 — E2E standard: both locked, both return results', async () => 
         const base = '/scripts/extensions/third-party/VectFox/';
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
-        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setCollectionLock, removeCollectionLock, clearCollectionLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
@@ -1438,8 +1437,7 @@ test('TEST 007 — E2E standard: both locked, both return results', async () => 
             await insertEvents(testEvents, { ...vf, vector_backend: 'standard' }, null, eventbaseCollectionId);
             eventbaseCreated = true;
 
-            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
-            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase: ${lockResult?.reason}`); return; }
+            setCollectionLock(eventbaseRegistryKey, currentChatId);
 
             const ebLocks = getCollectionLocks(eventbaseRegistryKey);
             if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
@@ -1491,7 +1489,7 @@ test('TEST 007 — E2E standard: both locked, both return results', async () => 
             // ── Cleanup — mirror TEST 003 finally block but for standard backend ──
             if (eventbaseCreated) {
                 try {
-                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    clearCollectionLock(eventbaseRegistryKey);
                     await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'standard' }, eventbaseRegistryKey);
                     try {
                         const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
@@ -1892,7 +1890,7 @@ test('TEST 009 — DB Browser standard, no plugin: graceful degradation', async 
 //
 // What we touch (boundary rules — same as TEST 009):
 //   ✗ DO NOT mutate extension_settings.vectfox
-//   ✓ DO mutate collection lock state via canonical `setLock(...)` API
+//   ✓ DO mutate collection lock state via setCollectionLock / removeCollectionLock
 //     (per Doc/collection_helper.md) — these are user-level lock changes on
 //     our test collections, restored to baseline / removed entirely in finally.
 //   ✓ DO use registry-key form for all lock + activation calls
@@ -1906,7 +1904,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
         const TEST = 'TEST 010 [LeakCheck]';
         const base = '/scripts/extensions/third-party/VectFox/';
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
-        const { shouldCollectionActivate, deleteCollectionMeta, setLock } = await import(base + 'core/collection-metadata.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setCollectionLock, removeCollectionLock, clearCollectionLock } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
@@ -2005,12 +2003,8 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
             console.log(`${TEST} Phase 1 baseline ✓ — both A and B searchable when both locked`);
 
             // ═══════ PHASE 2 — unlock B, re-query, B must NOT appear ═══════
-            console.log(`${TEST} Phase 2: removing chat lock from B via canonical setLock(...)...`);
-            const unlockResult = setLock(registryKeyB, { kind: 'chat', op: 'remove', target: currentChatId }, { settings: vf });
-            if (!unlockResult?.success) {
-                console.error(`${TEST} [FAIL] setLock failed to remove B's chat lock: ${unlockResult?.reason}`);
-                return;
-            }
+            console.log(`${TEST} Phase 2: removing chat lock from B via removeCollectionLock(...)...`);
+            removeCollectionLock(registryKeyB, currentChatId);
 
             // Confirm activation filter now agrees B is out of scope
             const stillActiveA = await shouldCollectionActivate(registryKeyA, context);
@@ -2018,7 +2012,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
             console.log(`${TEST} After unlock — activeA=${stillActiveA}, activeB=${stillActiveB}`);
             if (!stillActiveA) { console.error(`${TEST} [FAIL] A should still be active after unlocking B`); return; }
             if (stillActiveB) {
-                console.error(`${TEST} [FAIL] B still active after setLock op='remove' — lock removal not honored by shouldCollectionActivate. Bug in lock state, not in query path.`);
+                console.error(`${TEST} [FAIL] B still active after removeCollectionLock — lock removal not honored by shouldCollectionActivate. Bug in lock state, not in query path.`);
                 return;
             }
 
@@ -2043,7 +2037,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
 
             console.log(`${TEST} [PASS] Lock-controlled isolation works: unlocking B removed its content from query results, A unaffected`);
         } finally {
-            // Cleanup both — use the canonical setLock op='clear' first to drop any
+            // Cleanup both — clearCollectionLock first to drop any
             // remaining locks, then delete vectors + meta + registry entries.
             for (const { cid, rk, label } of [
                 { cid: collectionIdA, rk: registryKeyA, label: 'A' },
@@ -2051,7 +2045,7 @@ test('TEST 010 — Cross-collection isolation: lock controls lorebook visibility
             ]) {
                 if (!cid) continue;
                 try {
-                    setLock(rk, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    clearCollectionLock(rk);
                     await deleteContentCollection(cid);
                     // TEST-ONLY: also nuke any vectra-side-effect folder. The plugin's
                     // qdrant insert path creates an empty vectra folder as a side effect
@@ -2220,7 +2214,7 @@ test('TEST 011 — Cross-persona activation isolation', async () => {
             }
             console.log(`${TEST} [PASS] Cross-persona isolation works: foreign-handle collection blocked from activation despite matching triggers`);
         } finally {
-            // Restore creatorHandle so canonical cleanup (setLock auth gate, etc.)
+            // Restore creatorHandle so canonical cleanup
             // doesn't choke. Even if cleanup proceeds without auth, leaving the
             // foreign handle in place would leak state to subsequent test runs.
             try {
@@ -2483,7 +2477,7 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
         const base = '/scripts/extensions/third-party/VectFox/';
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { insertEvents } = await import(base + 'core/eventbase-store.js');
-        const { shouldCollectionActivate, deleteCollectionMeta, setLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
+        const { shouldCollectionActivate, deleteCollectionMeta, setCollectionLock, removeCollectionLock, clearCollectionLock, getCollectionLocks } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection, deleteCollection } = await import(base + 'core/collection-loader.js');
         const { runLorebookWIDryRun } = await import(base + 'core/world-info-integration.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
@@ -2501,9 +2495,7 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
         // Derive the current persona's handle the same way collection-ids.js
         // does. We need this in the synthetic EventBase collection ID so that
         // registerCollection's creatorHandle-stamp condition (`_<handle>_` in
-        // the ID) matches — without it, setLock denies the chat-lock add
-        // because the persona's name1 doesn't match the stamped creator
-        // (since nothing got stamped to begin with).
+        // the ID) matches the persona's name1.
         const personaHandle = (ctx?.name1 || 'user')
             .normalize('NFC')
             .toLowerCase()
@@ -2578,8 +2570,7 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
             // (insertEvents skips the auto-lock path because the collection ID is
             // supplied explicitly). Lock it manually so runEventBaseRetrieval
             // picks it up as a live locked collection.
-            const lockResult = setLock(eventbaseRegistryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
-            if (!lockResult?.success) { console.error(`${TEST} [FAIL] Failed to lock EventBase to current chat: ${lockResult?.reason}`); return; }
+            setCollectionLock(eventbaseRegistryKey, currentChatId);
 
             const ebLocks = getCollectionLocks(eventbaseRegistryKey);
             if (!ebLocks.some(l => l === currentChatId)) { console.error(`${TEST} [FAIL] EventBase lock didn't register — locks=${JSON.stringify(ebLocks)}`); return; }
@@ -2632,7 +2623,7 @@ test('TEST 013 — Synthetic E2E qdrant: lorebook + EventBase round-trip', async
             // its lock via deleteContentCollection.
             if (eventbaseCreated) {
                 try {
-                    setLock(eventbaseRegistryKey, { kind: 'chat', op: 'clear' }, { settings: vf });
+                    clearCollectionLock(eventbaseRegistryKey);
                     await deleteCollection(eventbaseCollectionId, { ...vf, vector_backend: 'qdrant' }, eventbaseRegistryKey);
                     try {
                         const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });
@@ -3904,7 +3895,7 @@ test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter t
         const { vectorizeContent, deleteContentCollection } = await import(base + 'core/content-vectorization.js');
         const { rearrangeChat } = await import(base + 'core/chat-vectorization.js');
         const { updateChunkMetadata, queryCollection, insertVectorItems } = await import(base + 'core/core-vector-api.js');
-        const { getChunkMetadata, saveChunkMetadata, deleteChunkMetadata, deleteCollectionMeta, shouldCollectionActivate, setLock, setCollectionEnabled } = await import(base + 'core/collection-metadata.js');
+        const { getChunkMetadata, saveChunkMetadata, deleteChunkMetadata, deleteCollectionMeta, shouldCollectionActivate, setCollectionLock, removeCollectionLock, clearCollectionLock, setCollectionEnabled } = await import(base + 'core/collection-metadata.js');
         const { unregisterCollection } = await import(base + 'core/collection-loader.js');
         const { getBackend } = await import(base + 'backends/backend-manager.js');
         const { extension_settings } = await import('/scripts/extensions.js');
@@ -3948,8 +3939,8 @@ test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter t
             // Make sure the collection is enabled AND active for this chat so rearrangeChat queries it.
             try { setCollectionEnabled(registryKey, true); } catch {}
             if (!(await shouldCollectionActivate(registryKey, context))) {
-                const lr = setLock(registryKey, { kind: 'chat', op: 'add', target: currentChatId }, { settings: vf });
-                if (!lr?.success || !(await shouldCollectionActivate(registryKey, context))) {
+                setCollectionLock(registryKey, currentChatId);
+                if (!(await shouldCollectionActivate(registryKey, context))) {
                     console.error(`${TEST} [FAIL] Document collection not active for chat — cannot exercise rearrangeChat`); return;
                 }
             }
@@ -4054,7 +4045,7 @@ test('TEST 022 — Standard+plugin: context/xmlTag wrapping + condition filter t
         } finally {
             try {
                 if (collectionId) {
-                    try { setLock(registryKey, { kind: 'chat', op: 'clear' }, { settings: vf }); } catch {}
+                    try { clearCollectionLock(registryKey); } catch {}
                     await deleteContentCollection(collectionId);
                     try {
                         const stdBackend = await getBackend({ ...vf, vector_backend: 'standard' });

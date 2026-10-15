@@ -478,10 +478,3 @@ function splitLargeParagraph(text, maxSize) {
     if (currentChunk) chunks.push(currentChunk);
     return chunks;
 }
-
-/**
- * Check if a strategy is unit-based (doesn't use size controls)
- */
-export function isUnitStrategy(strategyId) {
-    return ['per_message', 'conversation_turns', 'message_batch', 'per_entry', 'per_field'].includes(strategyId);
-}

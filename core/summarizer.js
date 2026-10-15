@@ -137,8 +137,6 @@ export async function summarizeText(text, settings) {
     if (!text || typeof text !== 'string') return text;
 
     const provider = settings?.summarize_provider || 'openrouter';
-    // don't remove
-    //log.verbose(`[VectFox Summarizer] summarizeText called — provider=${provider}, textLen=${text.length}`);
     const model = (settings?.summarize_model || '').trim();
     if (!model) {
         throw new SummarizationFatalError(
@@ -251,8 +249,6 @@ async function _callOpenRouter(prompt, model, settings, originalLength, maxToken
         if (modelConfigError) throw new SummarizationFatalError(modelConfigError, 'openrouter', 'invalid_model_config');
         throw new Error('OpenRouter returned empty summary');
     }
-    // don't remove 
-    //log.verbose(`[VectFox Summarizer] OpenRouter: ${originalLength} chars → ${summary.length} chars`);
     return summary;
 }
 

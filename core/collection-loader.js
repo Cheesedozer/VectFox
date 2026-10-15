@@ -56,7 +56,7 @@ let pluginAvailable = null;
  * @param {string} collectionId - Plain collection ID (no backend:source: prefix)
  * @returns {string|null} Reason string when filtered, null when ID is OK
  */
-export function getCollectionFilterReason(collectionId) {
+function getCollectionFilterReason(collectionId) {
     if (!collectionId || typeof collectionId !== 'string') return null;
 
     // (1) Internal VECTFOX system collections (health checks, test indexes).
@@ -356,7 +356,7 @@ export function clearCollectionRegistry() {
 /**
  * Cleans up registry by removing null entries and duplicates
  */
-export function cleanupCollectionRegistry() {
+function cleanupCollectionRegistry() {
     const registry = getCollectionRegistry();
     const cleaned = [...new Set(registry.filter(id => id != null && id !== ''))];
     extension_settings.vectfox.vectfox_collection_registry = cleaned;

@@ -79,7 +79,6 @@ const MAX_KEYWORD_WEIGHT = 3.0;
  * Balanced scan cap when summarization is enabled.
  * Derived from a typical English summarized chunk (~1328 chars) + 20% buffer.
  */
-//const SUMMARY_BALANCED_HEADER_SIZE = 1600;
 // for some reason, bigger value speed up retrival
 const SUMMARY_BALANCED_HEADER_SIZE = 5000;
 
