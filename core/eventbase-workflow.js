@@ -1073,13 +1073,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     setExtensionPrompt(EVENTBASE_PROMPT_TAG, injectionText, settings.position, settings.depth, false);
 
     if (log.domainEnabled('injection')) {
-        log.domain('injection', 'trace', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
-        log.domain('injection', 'trace', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
+        log.domain('injection', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
+        log.domain('injection', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
         // Verify the slot is actually populated
         const slotContent = extension_prompts[EVENTBASE_PROMPT_TAG];
-        log.domain('injection', 'trace', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
-        log.domain('injection', 'trace', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
-        log.domain('injection', 'trace', '[EventBase] Injection preview:', injectionText.slice(0, 300));
+        log.domain('injection', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
+        log.domain('injection', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
+        log.domain('injection', '[EventBase] Injection preview:', injectionText.slice(0, 300));
     }
 
 }

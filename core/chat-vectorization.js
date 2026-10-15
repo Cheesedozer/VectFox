@@ -959,26 +959,26 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
     const injectionDebug = log.domainEnabled('injection');
     // Control print: Log chunks QUEUED for injection (not yet injected)
     if (injectionDebug) {
-        log.domain('injection', 'trace', `[VECTFOX Injection Control] Preparing to inject ${chunksToInject.length} chunks`);
-        log.domain('injection', 'trace', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        log.domain('injection', `[VECTFOX Injection Control] Preparing to inject ${chunksToInject.length} chunks`);
+        log.domain('injection', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         let emptyTextCount = 0;
         chunksToInject.forEach((chunk, idx) => {
             const textLength = chunk.text?.length || 0;
             const hasValidText = textLength > 0 && chunk.text !== '(text not found)' && chunk.text !== '(text not available)';
             if (!hasValidText) emptyTextCount++;
 
-            log.domain('injection', 'trace', `  [${idx + 1}/${chunksToInject.length}] CHUNK QUEUED FOR INJECTION ${!hasValidText ? '⚠️ EMPTY/INVALID TEXT' : ''}`);
-            log.domain('injection', 'trace', `      Hash: ${chunk.hash}`);
-            log.domain('injection', 'trace', `      Score: ${chunk.score?.toFixed(4)}`);
-            log.domain('injection', 'trace', `      Collection: ${chunk.collectionId}`);
-            log.domain('injection', 'trace', `      Text length: ${textLength} chars ${!hasValidText ? '⚠️' : '✓'}`);
-            log.domain('injection', 'trace', `      Text preview: "${chunk.text?.substring(0, 120)}${textLength > 120 ? '...' : ''}"`);
-            log.domain('injection', 'trace', '      ─────────────────────────────────────────────────────────────────');
+            log.domain('injection', `  [${idx + 1}/${chunksToInject.length}] CHUNK QUEUED FOR INJECTION ${!hasValidText ? '⚠️ EMPTY/INVALID TEXT' : ''}`);
+            log.domain('injection', `      Hash: ${chunk.hash}`);
+            log.domain('injection', `      Score: ${chunk.score?.toFixed(4)}`);
+            log.domain('injection', `      Collection: ${chunk.collectionId}`);
+            log.domain('injection', `      Text length: ${textLength} chars ${!hasValidText ? '⚠️' : '✓'}`);
+            log.domain('injection', `      Text preview: "${chunk.text?.substring(0, 120)}${textLength > 120 ? '...' : ''}"`);
+            log.domain('injection', '      ─────────────────────────────────────────────────────────────────');
         });
         if (emptyTextCount > 0) {
             log.warn(`[VECTFOX Injection Control] ⚠️ WARNING: ${emptyTextCount}/${chunksToInject.length} chunks have empty or placeholder text!`);
         }
-        log.domain('injection', 'trace', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        log.domain('injection', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
 
     // Group chunks by resolved injection position+depth
@@ -1000,8 +1000,8 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const insertedText = buildNestedInjectionText(group.chunks, settings);
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Single position injection: position="${group.position}", depth=${group.depth}, chunks=${group.chunks.length}, textLength=${insertedText.length}`);
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection text preview: "${insertedText.substring(0, 200)}${insertedText.length > 200 ? '...' : ''}"`); 
+            log.domain('injection', `[VECTFOX Injection Control] Single position injection: position="${group.position}", depth=${group.depth}, chunks=${group.chunks.length}, textLength=${insertedText.length}`);
+            log.domain('injection', `[VECTFOX Injection Control] Injection text preview: "${insertedText.substring(0, 200)}${insertedText.length > 200 ? '...' : ''}"`); 
         }
 
         setExtensionPrompt(EXTENSION_PROMPT_TAG, insertedText, group.position, group.depth, false);
@@ -1011,8 +1011,8 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const injectionVerified = verifiedPrompt && verifiedPrompt.value === insertedText;
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection verification: ${injectionVerified ? '✓ PASSED' : '✗ FAILED'}`);
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] extension_prompts[${EXTENSION_PROMPT_TAG}]:`, {
+            log.domain('injection', `[VECTFOX Injection Control] Injection verification: ${injectionVerified ? '✓ PASSED' : '✗ FAILED'}`);
+            log.domain('injection', `[VECTFOX Injection Control] extension_prompts[${EXTENSION_PROMPT_TAG}]:`, {
                 exists: !!verifiedPrompt,
                 valueLength: verifiedPrompt?.value?.length,
                 position: verifiedPrompt?.position,
@@ -1041,7 +1041,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
     }
 
     // Multiple injection positions - create separate extension prompts for each
-    if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Multiple position injection: ${positionGroups.size} different positions`);
+    if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Multiple position injection: ${positionGroups.size} different positions`);
 
     // Clear the main tag first (will be unused when multi-position)
     setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, false);
@@ -1056,9 +1056,9 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const groupText = buildNestedInjectionText(group.chunks, groupSettings);
 
         if (injectionDebug) {
-            log.domain('injection', 'trace', `[VECTFOX Injection Control] Position group ${groupIndex + 1}/${positionGroups.size}: key="${key}", chunks=${group.chunks.length}, textLength=${groupText.length}`);
+            log.domain('injection', `[VECTFOX Injection Control] Position group ${groupIndex + 1}/${positionGroups.size}: key="${key}", chunks=${group.chunks.length}, textLength=${groupText.length}`);
             group.chunks.forEach((chunk, idx) => {
-                log.domain('injection', 'trace', `    [${idx + 1}/${group.chunks.length}] Hash: ${chunk.hash}, Score: ${chunk.score?.toFixed(4)}`);
+                log.domain('injection', `    [${idx + 1}/${group.chunks.length}] Hash: ${chunk.hash}, Score: ${chunk.score?.toFixed(4)}`);
             });
         }
 
@@ -1071,7 +1071,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         const verifiedPrompt = extension_prompts[tag];
         const verified = verifiedPrompt && verifiedPrompt.value === groupText;
 
-        if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Position group ${groupIndex + 1} verification: ${verified ? '✓ PASSED' : '✗ FAILED'}`);
+        if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Position group ${groupIndex + 1} verification: ${verified ? '✓ PASSED' : '✗ FAILED'}`);
 
         if (!verified) {
             log.warn(`VectFox: ⚠️ Injection verification failed for position ${key}`, {
@@ -1096,7 +1096,7 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
         groupIndex++;
     }
 
-    if (injectionDebug) log.domain('injection', 'trace', `[VECTFOX Injection Control] Injection complete: ${allVerified ? '✓ All verified' : '✗ Some failed'}, ${allTexts.length} groups`);
+    if (injectionDebug) log.domain('injection', `[VECTFOX Injection Control] Injection complete: ${allVerified ? '✓ All verified' : '✗ Some failed'}, ${allTexts.length} groups`);
 
     return {
         verified: allVerified,

@@ -102,7 +102,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
     let text = (raw || '').trim();
     const rangeStr = msgRange ? ` ${msgRange}` : '';
 
-    log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: raw length=${text.length}, preview:`, text.slice(0, 150));
+    log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: raw length=${text.length}, preview:`, text.slice(0, 150));
 
     // Strip code fences
     if (text.startsWith('```')) {
@@ -211,7 +211,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
 
     // Pick the first candidate that looks like event objects.
     if (log.domainEnabled('raw_llm')) {
-        log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: ${candidates.length} candidate array(s) found:`,
+        log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: ${candidates.length} candidate array(s) found:`,
             candidates.map((c, i) => {
                 const first = c[0];
                 const type = Array.isArray(first) ? 'array' : typeof first;
@@ -250,7 +250,7 @@ function _parseJsonArray(raw, windowIndex = -1, msgRange = '') {
 
     if (log.domainEnabled('raw_llm')) {
         const chosenIdx = candidates.indexOf(chosen);
-        log.domain('raw_llm', 'trace', `[EventBase] Parser window=${windowIndex}${rangeStr}: chose candidate[${chosenIdx}] len=${chosen.length}`);
+        log.domain('raw_llm', `[EventBase] Parser window=${windowIndex}${rangeStr}: chose candidate[${chosenIdx}] len=${chosen.length}`);
     }
 
     if (chosen.length > 0 && (typeof chosen[0] !== 'object' || Array.isArray(chosen[0]))) {
@@ -510,7 +510,7 @@ export async function extractEvents({ messages, windowStart, windowEnd, settings
         rawReply = await _callOpenRouter(prompt, settings, windowIndex);
     }
 
-    log.domain('raw_llm', 'trace', `[EventBase] Raw LLM reply (window=${windowIndex} ${msgRange}):`, rawReply.slice(0, 500));
+    log.domain('raw_llm', `[EventBase] Raw LLM reply (window=${windowIndex} ${msgRange}):`, rawReply.slice(0, 500));
 
     // Parse JSON
     let rawArray;

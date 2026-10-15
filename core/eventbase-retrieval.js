@@ -266,9 +266,9 @@ function _logRerankComparison(colId, queryText, native, js, nativeMs, jsMs, sett
     }
 
     const previewQuery = String(queryText || '').replace(/\s+/g, ' ').slice(0, 80);
-    log.domain('rerank', 'trace', `[EventBase compare] col=${colId} q="${previewQuery}" — overlap@${Math.min(nativeTop.length, jsTop.length)}=${overlap.length}, spearmanRho=${rho.toFixed(3)}, native=${nativeMs}ms, js=${jsMs}ms`);
+    log.domain('rerank', `[EventBase compare] col=${colId} q="${previewQuery}" — overlap@${Math.min(nativeTop.length, jsTop.length)}=${overlap.length}, spearmanRho=${rho.toFixed(3)}, native=${nativeMs}ms, js=${jsMs}ms`);
     if (onlyNative.length || onlyJs.length) {
-        log.domain('rerank', 'trace', `[EventBase compare]   onlyNative=[${onlyNative.slice(0, 5).join(', ')}${onlyNative.length > 5 ? `, +${onlyNative.length - 5}` : ''}], onlyJs=[${onlyJs.slice(0, 5).join(', ')}${onlyJs.length > 5 ? `, +${onlyJs.length - 5}` : ''}]`);
+        log.domain('rerank', `[EventBase compare]   onlyNative=[${onlyNative.slice(0, 5).join(', ')}${onlyNative.length > 5 ? `, +${onlyNative.length - 5}` : ''}], onlyJs=[${onlyJs.slice(0, 5).join(', ')}${onlyJs.length > 5 ? `, +${onlyJs.length - 5}` : ''}]`);
     }
 
     if (settings.eventbase_compare_rerank_verbose) {
@@ -277,7 +277,7 @@ function _logRerankComparison(colId, queryText, native, js, nativeMs, jsMs, sett
         for (const k of overlap.slice(0, 5)) {
             const n = nativeByKey.get(k);
             const j = jsByKey.get(k);
-            log.domain('rerank', 'trace', `[EventBase compare verbose]   key=${k} nativeScore=${n?.score?.toFixed(4)} jsFinal=${j?._jsFinal?.toFixed(4)} (imp=${n?.importance}, persist=${n?.should_persist}, swe=${n?.source_window_end})`);
+            log.domain('rerank', `[EventBase compare verbose]   key=${k} nativeScore=${n?.score?.toFixed(4)} jsFinal=${j?._jsFinal?.toFixed(4)} (imp=${n?.importance}, persist=${n?.should_persist}, swe=${n?.source_window_end})`);
         }
     }
 
