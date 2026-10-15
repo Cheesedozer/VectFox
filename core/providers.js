@@ -12,6 +12,7 @@
 
 import { SECRET_KEYS } from '../../../../secrets.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../../textgen-settings.js';
+import { log } from './log.js';
 
 /**
  * Provider used when settings name none, or name one that no longer exists.
@@ -186,6 +187,75 @@ export function getEmbeddingRequestParams(settings, serverUrls = textgenerationw
     }
 
     return params;
+}
+
+/**
+ * Settings keys that only removed providers read. Nothing reads them any more,
+ * so the load-time migration deletes them from saved settings.
+ */
+const REMOVED_PROVIDER_SETTING_KEYS = [
+    'openai_model',
+    'cohere_model',
+    'togetherai_model',
+    'electronhub_model',
+    'google_model',
+    'webllm_model',
+    'koboldcpp_model',
+    'bananabread_model',
+    'bananabread_rerank',
+];
+
+/**
+ * One-time, idempotent clean-up of saved settings after the removal of every
+ * embedding provider except the ones in EMBEDDING_PROVIDERS. Mutates `store`
+ * (normally `extension_settings.vectfox`) in place:
+ *
+ * 1. If `store.source` names a provider that no longer exists, reset it to
+ *    DEFAULT_EMBEDDING_PROVIDER, so no code path sees a removed provider.
+ * 2. Move the legacy shared `use_alt_endpoint` / `alt_endpoint_url` pair onto
+ *    the active provider's own keys (`ollama_*` or `vllm_*`) when those are not
+ *    already set, then delete the legacy pair. The Standard backend used to
+ *    read the legacy pair, so this keeps such a user's endpoint.
+ * 3. Delete settings keys that only removed providers read.
+ *
+ * @param {object} store - Saved VectFox settings
+ * @returns {{changed: boolean, resetSource: string|null, removedKeys: string[]}}
+ *   `resetSource` is the invalid provider that was replaced, if any.
+ */
+export function migrateRemovedProviderSettings(store) {
+    const result = { changed: false, resetSource: null, removedKeys: [] };
+    if (!store || typeof store !== 'object') return result;
+
+    if (store.source !== undefined && !isValidProvider(store.source)) {
+        result.resetSource = String(store.source);
+        store.source = DEFAULT_EMBEDDING_PROVIDER;
+        result.changed = true;
+        log.warn(`[VectFox migrate] Embedding provider '${result.resetSource}' no longer exists; reset to '${DEFAULT_EMBEDDING_PROVIDER}'. Pick a provider in VectFox settings if this is not what you want.`);
+    }
+
+    if (store.use_alt_endpoint && store.alt_endpoint_url && (store.source === 'ollama' || store.source === 'vllm')) {
+        const flagKey = `${store.source}_use_alt_endpoint`;
+        const urlKey = `${store.source}_alt_endpoint_url`;
+        if (!store[flagKey] && !store[urlKey]) {
+            store[flagKey] = true;
+            store[urlKey] = store.alt_endpoint_url;
+            result.changed = true;
+            log.lifecycle(`[VectFox migrate] Moved legacy alternative endpoint to ${urlKey}`);
+        }
+    }
+
+    for (const key of ['use_alt_endpoint', 'alt_endpoint_url', ...REMOVED_PROVIDER_SETTING_KEYS]) {
+        if (Object.prototype.hasOwnProperty.call(store, key)) {
+            delete store[key];
+            result.removedKeys.push(key);
+        }
+    }
+    if (result.removedKeys.length > 0) {
+        result.changed = true;
+        log.lifecycle(`[VectFox migrate] Removed settings of deleted providers: ${result.removedKeys.join(', ')}`);
+    }
+
+    return result;
 }
 
 /**

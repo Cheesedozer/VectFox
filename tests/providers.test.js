@@ -1,6 +1,7 @@
 /**
  * Unit tests for core/providers.js: the shared embedding request-params
- * builder used by both backends and the diagnostics.
+ * builder used by both backends and the diagnostics, and the load-time
+ * migration that removes settings of deleted providers.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -27,8 +28,18 @@ vi.mock('../../../../textgen-settings.js', () => ({
 }));
 
 import {
+    EMBEDDING_PROVIDERS,
+    DEFAULT_EMBEDDING_PROVIDER,
     getEmbeddingRequestParams,
+    migrateRemovedProviderSettings,
 } from '../core/providers.js';
+
+describe('EMBEDDING_PROVIDERS', () => {
+    it('lists exactly the four live providers', () => {
+        expect(Object.keys(EMBEDDING_PROVIDERS).sort()).toEqual(['ollama', 'openrouter', 'transformers', 'vllm']);
+        expect(DEFAULT_EMBEDDING_PROVIDER).toBe('transformers');
+    });
+});
 
 describe('getEmbeddingRequestParams', () => {
     it('defaults to transformers with no model and no extra fields', () => {
@@ -102,5 +113,73 @@ describe('getEmbeddingRequestParams', () => {
 
     it('reads ST\'s live server URLs when none are passed', () => {
         expect(getEmbeddingRequestParams({ source: 'ollama' }).apiUrl).toBe('http://st-ollama:11434');
+    });
+});
+
+describe('migrateRemovedProviderSettings', () => {
+    it('resets a removed provider to the default and logs a warning', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const store = { source: 'koboldcpp' };
+        const result = migrateRemovedProviderSettings(store);
+        expect(store.source).toBe('transformers');
+        expect(result).toMatchObject({ changed: true, resetSource: 'koboldcpp' });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("'koboldcpp' no longer exists"));
+        warn.mockRestore();
+    });
+
+    it('leaves a live provider and clean settings untouched', () => {
+        const store = { source: 'openrouter', openrouter_model: 'm' };
+        const result = migrateRemovedProviderSettings(store);
+        expect(store).toEqual({ source: 'openrouter', openrouter_model: 'm' });
+        expect(result).toEqual({ changed: false, resetSource: null, removedKeys: [] });
+    });
+
+    it('does not invent a source when none is saved', () => {
+        const store = {};
+        expect(migrateRemovedProviderSettings(store).changed).toBe(false);
+        expect(store).toEqual({});
+    });
+
+    it('deletes settings that only removed providers read', () => {
+        const store = {
+            source: 'transformers',
+            webllm_model: '',
+            google_model: 'text-embedding-005',
+            bananabread_rerank: false,
+            openai_model: 'x',
+        };
+        const result = migrateRemovedProviderSettings(store);
+        expect(store).toEqual({ source: 'transformers' });
+        expect(result.changed).toBe(true);
+        expect(result.removedKeys.sort()).toEqual(['bananabread_rerank', 'google_model', 'openai_model', 'webllm_model']);
+    });
+
+    it('moves the legacy shared alternative endpoint onto the active provider\'s keys', () => {
+        const store = { source: 'ollama', use_alt_endpoint: true, alt_endpoint_url: 'http://gpu-box:11434' };
+        migrateRemovedProviderSettings(store);
+        expect(store).toEqual({
+            source: 'ollama',
+            ollama_use_alt_endpoint: true,
+            ollama_alt_endpoint_url: 'http://gpu-box:11434',
+        });
+    });
+
+    it('never overwrites a per-provider endpoint the user already set', () => {
+        const store = {
+            source: 'vllm',
+            vllm_alt_endpoint_url: 'http://mine:8000',
+            use_alt_endpoint: true,
+            alt_endpoint_url: 'http://legacy:8000',
+        };
+        migrateRemovedProviderSettings(store);
+        expect(store).toEqual({ source: 'vllm', vllm_alt_endpoint_url: 'http://mine:8000' });
+    });
+
+    it('is idempotent', () => {
+        const store = { source: 'webllm', webllm_model: 'x' };
+        migrateRemovedProviderSettings(store);
+        const snapshot = { ...store };
+        expect(migrateRemovedProviderSettings(store).changed).toBe(false);
+        expect(store).toEqual(snapshot);
     });
 });

@@ -28,6 +28,7 @@ import { purgeAllVectorIndexes, purgeVectorIndex } from './core/core-vector-api.
 import { migrateOldEnabledKeys } from './core/collection-metadata.js';
 import { clearCollectionRegistry, discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
 import { migrateLegacyApiKeys } from './core/api-keys.js';
+import { migrateRemovedProviderSettings } from './core/providers.js';
 import AsyncUtils from './utils/async-utils.js';
 
 // VectFox modules - UI
@@ -534,6 +535,16 @@ jQuery(async () => {
         delete _ebs[legacy];
         _ebMutated = true;
     }
+
+    // Removed embedding providers (2026-10): every provider except the ones in
+    // core/providers.js EMBEDDING_PROVIDERS is gone. Reset a saved `source`
+    // that names a removed provider, carry the legacy shared alt-endpoint pair
+    // over to the per-provider keys, and drop settings only removed providers
+    // read. Shares the synchronous save below. See migrateRemovedProviderSettings.
+    if (migrateRemovedProviderSettings(_ebs).changed) {
+        _ebMutated = true;
+    }
+
     if (_ebMutated) {
         // Persist deletions synchronously (NOT debounced). Migrations are
         // one-shot at init and the user may reload before a debounced save
