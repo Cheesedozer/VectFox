@@ -11,16 +11,12 @@
  */
 
 import {
-    CONTENT_TYPES,
-    CHUNKING_STRATEGIES,
     getContentType,
     getAllContentTypes,
     getChunkingStrategies,
     getChunkingStrategy,
-    strategyNeedsSize,
     getContentTypeDefaults,
     hasFeature,
-    SCOPE_OPTIONS,
     CHARACTER_FIELDS,
 } from '../core/content-types.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
@@ -3539,7 +3535,7 @@ async function startContinueVectorization() {
     console.log('[VectFox] LLM config check (vectorize-content):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);
@@ -3795,7 +3791,7 @@ async function _runEventBaseBackfill({ resetCaches = false } = {}) {
             const legacyTotalChunks = Array.isArray(legacyChunks) ? legacyChunks.length : 0;
             const parallelWindows = parseInt($('#vectfox_cv_parallel_windows').val()) || 1;
 
-            await vectorizeAll(settings, legacyBatchSize, activeVectorizeAbortController.signal, {
+            await vectorizeAll(settings, activeVectorizeAbortController.signal, {
                 startFromMessage,
                 parallelWindows,
                 progressPlan: {
@@ -3913,7 +3909,7 @@ async function startVectorization() {
     console.log('[VectFox] LLM config check (start-vectorization):', {
         provider: mergedSettings.summarize_provider,
         model: mergedSettings.summarize_model,
-        hasOpenRouterKey: !!getOpenRouterApiKey(mergedSettings),
+        hasOpenRouterKey: !!getOpenRouterApiKey(),
         hasVllmUrl: !!mergedSettings.summarize_vllm_url,
     });
     const llmCheck = validateLLMConfig(mergedSettings);

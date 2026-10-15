@@ -29,7 +29,6 @@ import { getRequestHeaders } from '../../../../../script.js';
 import { VectorBackend } from './backend-interface.js';
 import { getModelFromSettings, getEmbeddingRequestParams } from '../core/providers.js';
 import { throwIfModelConfigError } from '../core/model-http-errors.js';
-import { VECTOR_LIST_LIMIT } from '../core/constants.js';
 import { INTERNAL_COLLECTION_IDS } from '../core/collection-ids.js';
 import { log } from '../core/log.js';
 

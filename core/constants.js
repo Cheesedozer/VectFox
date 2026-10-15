@@ -30,15 +30,6 @@ export const HASH_CACHE_SIZE = 10000;
 /** Maximum items to fetch when listing vectors (for hash comparison) */
 export const VECTOR_LIST_LIMIT = 10000;
 
-/** Rate limiter: max calls per window */
-export const RATE_LIMIT_CALLS = 50;
-
-/** Rate limiter: window duration in ms (1 minute) */
-export const RATE_LIMIT_WINDOW_MS = 60000;
-
-/** API request timeout in ms (30 seconds) */
-export const API_TIMEOUT_MS = 30000;
-
 /**
  * Per-turn retrieval timeout in ms (15 seconds). Bounds the read/search path
  * during generation (rearrangeChat -> EventBase retrieval + chunk retrieval) so

@@ -24,9 +24,8 @@ import { debounce_timeout } from '../../../constants.js';
 
 // VectFox modules - Core
 import { synchronizeChat, rearrangeChat, vectorizeAll } from './core/chat-vectorization.js';
-import { purgeAllVectorIndexes, purgeVectorIndex } from './core/core-vector-api.js';
 import { migrateOldEnabledKeys } from './core/collection-metadata.js';
-import { clearCollectionRegistry, discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
+import { discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
 import { migrateLegacyApiKeys } from './core/api-keys.js';
 import { migrateRemovedProviderSettings } from './core/providers.js';
 import AsyncUtils from './utils/async-utils.js';
@@ -98,8 +97,6 @@ const defaultSettings = {
 
     // Chat vectorization
     enabled_chats: true,
-    chunking_strategy: 'per_message', // per_message, conversation_turns, message_batch, adaptive
-    batch_size: 4, // Messages per batch for message_batch strategy
     depth: 2,
     position: extension_prompt_types.IN_PROMPT,
     protect: 5,
@@ -223,7 +220,6 @@ const defaultSettings = {
     eventbase_retrieval_filters_enabled: true,
     eventbase_autosync_popup: true,               // Show popup toast when auto-sync extraction runs
     autosync_show_progress_modal: false,          // Show progress modal popup during auto-sync (default: silent)
-    chat_lock_index: {},                          // Reverse index: chatId -> [collectionId, ...] for O(1) tab lookups
     // ─── Logging (core/log.js) ──────────────────────────────────────────
     // Verbosity dropdown — single noise floor for the whole pipeline.
     // 'off' (default) | 'lifecycle' | 'verbose' | 'trace'. Errors/warnings
@@ -345,10 +341,7 @@ const defaultSettings = {
 let settings = { ...defaultSettings };
 
 // Module worker for automatic syncing
-const moduleWorker = new ModuleWorkerWrapper(() => synchronizeChat(settings, getBatchSize(), _lastChatTriggerEvent));
-
-// Batch size based on provider
-const getBatchSize = () => ['transformers', 'ollama'].includes(settings.source) ? 1 : 5;
+const moduleWorker = new ModuleWorkerWrapper(() => synchronizeChat(settings, _lastChatTriggerEvent));
 
 // Most recent SillyTavern event that triggered the debounced chat-event handler.
 // Read by synchronizeChat to suppress the auto-sync popup on MESSAGE_SENT (so the
@@ -377,7 +370,7 @@ async function onVectorizeAllClick() {
     const controller = new AbortController();
     progressTracker.setCancelHandler(() => controller.abort('user-stop'));
     try {
-        await vectorizeAll(settings, getBatchSize(), controller.signal);
+        await vectorizeAll(settings, controller.signal);
     } finally {
         progressTracker.clearCancelHandler();
     }
@@ -527,6 +520,12 @@ jQuery(async () => {
     // over to the per-provider keys, and drop settings only removed providers
     // read. Shares the synchronous save below. See migrateRemovedProviderSettings.
     if (migrateRemovedProviderSettings(_ebs).changed) {
+        _ebMutated = true;
+    }
+    // chat_lock_index was a reverse chatId -> [collectionId] map that nothing
+    // ever read. Its writers are gone; drop the copy saved in settings.json.
+    if (Object.prototype.hasOwnProperty.call(_ebs, 'chat_lock_index')) {
+        delete _ebs.chat_lock_index;
         _ebMutated = true;
     }
 

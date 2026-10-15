@@ -20,19 +20,17 @@ import {
     fetchQdrantApiKeyPresence,
 } from '../core/api-keys.js';
 import StringUtils from '../utils/string-utils.js';
-import { openVisualizer } from './chunk-visualizer.js';
 import { openDatabaseBrowser } from './database-browser.js';
 import { openContentVectorizer } from './content-vectorizer.js';
-import { openSearchDebugModal, openQueryTestModal, getLastSearchDebug } from './search-debug.js';
+import { openQueryTestModal } from './search-debug.js';
 import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { progressTracker } from './progress-tracker.js';
 import { resetBackendHealth } from '../backends/backend-manager.js';
 import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard, refreshIndicator as refreshHealthIndicator } from './health-dashboard.js';
-import { doesChatHaveVectors, getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
+import { getCollectionRegistry, getCollectionListing, checkPluginAvailable } from '../core/collection-loader.js';
 import { getCollectionMeta } from '../core/collection-metadata.js';
 import { parseRegistryKey } from '../core/collection-ids.js';
 import { getModelField, getEmbeddingRequestParams } from '../core/providers.js';
-import { getChunkingStrategies } from '../core/content-types.js';
 import { CJK_TOKENIZER_MODES, setCjkTokenizerMode, ensureJiebaTokenizerLoaded, ensureJiebaTwLoaded } from '../core/bm25-scorer.js';
 import { LANGUAGE_MODES } from '../core/language-modes.js';
 import { log } from '../core/log.js';
@@ -2272,7 +2270,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:vllm-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders.
     const updateSummarizeVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2330,7 +2328,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `vectfox:openrouter-key-changed` custom event, so saving the key in any
     // of the three inputs updates all three placeholders immediately.
     const updateSummarizeORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2400,7 +2398,7 @@ function bindSettingsEvents(settings, callbacks) {
     // architecture pivot, the "override" semantics are gone — there's now
     // ONE OpenRouter key everywhere.
     const updateAgenticORKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -2443,7 +2441,7 @@ function bindSettingsEvents(settings, callbacks) {
     // `chat_completion_source: 'custom'`; embedding-side reads
     // SECRET_KEYS.VLLM (ST's Text Completion vLLM slot) separately.
     const updateAgenticVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -3822,7 +3820,7 @@ function bindSettingsEvents(settings, callbacks) {
     // pattern as the Summarize and AgentMode inputs above. One shared key,
     // both ST slots. See core/api-keys.js header for the full rationale.
     const updateVllmKeyDisplay = () => {
-        const savedKey = getCustomApiKey(settings);
+        const savedKey = getCustomApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -3972,7 +3970,7 @@ function bindSettingsEvents(settings, callbacks) {
     // the shared slot used by ST's own Connection Profile and by VectFox's
     // Summarize + AgentMode inputs. See core/api-keys.js for the rationale.
     const updateOpenRouterKeyDisplay = () => {
-        const savedKey = getOpenRouterApiKey(settings);
+        const savedKey = getOpenRouterApiKey();
         if (savedKey) {
             const masked = savedKey.length > 4
                 ? '*'.repeat(Math.min(savedKey.length - 4, 8)) + savedKey.slice(-4)
@@ -4098,182 +4096,6 @@ function bindSettingsEvents(settings, callbacks) {
 
     // Initialize provider-specific settings visibility
     toggleProviderSettings(settings.source, settings);
-
-    // =========================================================================
-    // COTTON-TALES EMOTION CLASSIFIER INTEGRATION
-    // =========================================================================
-    initializeCottonTalesIntegration(settings);
-}
-
-/**
- * Initialize Cotton-Tales emotion classifier integration
- * Shows the section only if Cotton-Tales is installed
- */
-async function initializeCottonTalesIntegration(settings) {
-    // Check if Cotton-Tales is installed
-    const cottonTalesInstalled = !!extension_settings?.cotton_tales;
-
-    if (cottonTalesInstalled) {
-        $('#VectFox_cottontales_section').show();
-        log.lifecycle('VectFox: Cotton-Tales detected, showing emotion classification options');
-    } else {
-        $('#VectFox_cottontales_section').hide();
-        return;
-    }
-
-    // Import emotion classifier module
-    let emotionClassifier;
-    try {
-        emotionClassifier = await import('../core/emotion-classifier.js');
-    } catch (error) {
-        log.error('VectFox: Failed to load emotion classifier module:', error);
-        return;
-    }
-
-    // Helper to update UI based on method selection
-    function updateMethodUI(method) {
-        $('#VectFox_classifier_settings').toggle(method === 'classifier');
-        $('#VectFox_similarity_settings').toggle(method === 'similarity');
-
-        // Update the display of current embedding source for similarity mode
-        if (method === 'similarity') {
-            $('#VectFox_similarity_source_display').text(settings.source || 'transformers');
-        }
-    }
-
-    // Determine initial method from settings
-    function getCurrentMethod() {
-        if (settings.emotion_classifier_enabled && !settings.emotion_use_similarity) {
-            return 'classifier';
-        } else if (settings.emotion_use_similarity) {
-            return 'similarity';
-        }
-        return 'disabled';
-    }
-
-    // Classification method dropdown
-    $('#VectFox_emotion_method')
-        .val(getCurrentMethod())
-        .on('change', function() {
-            const method = $(this).val();
-
-            // Update settings based on method
-            if (method === 'disabled') {
-                settings.emotion_classifier_enabled = false;
-                settings.emotion_use_similarity = false;
-                emotionClassifier.updateClassifierSetting('enabled', false);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', false);
-            } else if (method === 'classifier') {
-                settings.emotion_classifier_enabled = true;
-                settings.emotion_use_similarity = false;
-                emotionClassifier.updateClassifierSetting('enabled', true);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', false);
-            } else if (method === 'similarity') {
-                settings.emotion_classifier_enabled = true; // Still enabled, but uses similarity
-                settings.emotion_use_similarity = true;
-                emotionClassifier.updateClassifierSetting('enabled', true);
-                emotionClassifier.updateClassifierSetting('useEmbeddingSimilarity', true);
-            }
-
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-            updateMethodUI(method);
-        });
-
-    // Initialize UI for current method
-    updateMethodUI(getCurrentMethod());
-
-    // Classifier model selection
-    $('#VectFox_emotion_classifier_model')
-        .val(settings.emotion_classifier_model || 'SamLowe/roberta-base-go_emotions')
-        .on('change', function() {
-            const value = $(this).val();
-
-            if (value === 'custom') {
-                $('#VectFox_custom_classifier_model').show();
-            } else {
-                $('#VectFox_custom_classifier_model').hide();
-                settings.emotion_classifier_model = value;
-                Object.assign(extension_settings.vectfox, settings);
-                saveSettingsDebounced();
-                emotionClassifier.updateClassifierSetting('model', value);
-            }
-        });
-
-    // Show custom model input if currently set to custom
-    if (settings.emotion_classifier_model &&
-        !['SamLowe/roberta-base-go_emotions', 'j-hartmann/emotion-english-distilroberta-base', 'bhadresh-savani/distilbert-base-uncased-emotion'].includes(settings.emotion_classifier_model)) {
-        $('#VectFox_emotion_classifier_model').val('custom');
-        $('#VectFox_custom_classifier_model').show();
-    }
-
-    // Custom model input
-    $('#VectFox_emotion_classifier_custom')
-        .val(settings.emotion_classifier_custom || '')
-        .on('input', function() {
-            settings.emotion_classifier_custom = $(this).val();
-            settings.emotion_classifier_model = $(this).val();
-            Object.assign(extension_settings.vectfox, settings);
-            saveSettingsDebounced();
-            emotionClassifier.updateClassifierSetting('model', $(this).val());
-        });
-
-    // Test classifier button
-    $('#VectFox_test_classifier').on('click', async function() {
-        const $btn = $(this);
-        const $result = $('#VectFox_classifier_test_result');
-
-        $btn.addClass('disabled').find('i').removeClass('fa-flask').addClass('fa-spinner fa-spin');
-        $result.hide();
-
-        try {
-            const model = settings.emotion_classifier_model || 'SamLowe/roberta-base-go_emotions';
-            const testResult = await emotionClassifier.testClassifierModel(model);
-
-            $result.show();
-
-            if (testResult.error) {
-                $result.css('background', 'rgba(239,68,68,0.2)').html(`
-                    <div style="color: #ef4444;">
-                        <i class="fa-solid fa-times-circle"></i>
-                        <b>Error:</b> ${testResult.error}
-                    </div>
-                `);
-            } else if (testResult.isEmotionClassifier) {
-                const confidenceColor = testResult.confidence === 'high' ? '#22c55e' : '#eab308';
-                $result.css('background', 'rgba(34,197,94,0.2)').html(`
-                    <div style="color: #22c55e;">
-                        <i class="fa-solid fa-check-circle"></i>
-                        <b>Looks like an emotion classifier!</b>
-                    </div>
-                    <div style="margin-top: 4px; font-size: 0.9em;">
-                        <b>Confidence:</b> <span style="color: ${confidenceColor}">${testResult.confidence}</span><br>
-                        <b>Sample labels:</b> ${testResult.sampleLabels.join(', ')}
-                    </div>
-                `);
-            } else {
-                $result.css('background', 'rgba(234,179,8,0.2)').html(`
-                    <div style="color: #eab308;">
-                        <i class="fa-solid fa-exclamation-triangle"></i>
-                        <b>May not be an emotion classifier</b>
-                    </div>
-                    <div style="margin-top: 4px; font-size: 0.9em;">
-                        Labels don't look like emotions: ${testResult.sampleLabels.join(', ')}<br>
-                        Consider using a different model.
-                    </div>
-                `);
-            }
-        } catch (error) {
-            $result.show().css('background', 'rgba(239,68,68,0.2)').html(`
-                <div style="color: #ef4444;">
-                    <i class="fa-solid fa-times-circle"></i>
-                    <b>Test failed:</b> ${error.message}
-                </div>
-            `);
-        } finally {
-            $btn.removeClass('disabled').find('i').removeClass('fa-spinner fa-spin').addClass('fa-flask');
-        }
-    });
 }
 
 // Store current diagnostic results for copy/filter functionality

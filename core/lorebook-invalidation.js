@@ -31,7 +31,7 @@ import { resolveBackendForCollection } from './collection-ids.js';
 import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { log } from './log.js';
 
-export const REINDEX_DEBOUNCE_MS = 60_000;
+const REINDEX_DEBOUNCE_MS = 60_000;
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} bookName → pending debounce timer */
 const _timers = new Map();

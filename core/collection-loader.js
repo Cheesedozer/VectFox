@@ -12,7 +12,7 @@
 import { extension_settings } from '../../../../extensions.js';
 import { getContext } from '../../../../extensions.js';
 import { characters, getRequestHeaders, saveSettingsDebounced, getCurrentChatId } from '../../../../../script.js';
-import { getSavedHashes, queryCollection } from './core-vector-api.js';
+import { getSavedHashes } from './core-vector-api.js';
 import {
     isCollectionEnabled,
     setCollectionEnabled,
@@ -35,7 +35,6 @@ import {
     matchesPatterns,
     parseRegistryKey,
     COLLECTION_PREFIXES,
-    getRegistryBackend,
     buildRegistryKey,
 } from './collection-ids.js';
 
@@ -57,7 +56,7 @@ let pluginAvailable = null;
  * @param {string} collectionId - Plain collection ID (no backend:source: prefix)
  * @returns {string|null} Reason string when filtered, null when ID is OK
  */
-export function getCollectionFilterReason(collectionId) {
+function getCollectionFilterReason(collectionId) {
     if (!collectionId || typeof collectionId !== 'string') return null;
 
     // (1) Internal VECTFOX system collections (health checks, test indexes).
@@ -357,7 +356,7 @@ export function clearCollectionRegistry() {
 /**
  * Cleans up registry by removing null entries and duplicates
  */
-export function cleanupCollectionRegistry() {
+function cleanupCollectionRegistry() {
     const registry = getCollectionRegistry();
     const cleaned = [...new Set(registry.filter(id => id != null && id !== ''))];
     extension_settings.vectfox.vectfox_collection_registry = cleaned;
@@ -373,19 +372,7 @@ export function cleanupCollectionRegistry() {
  * Cleans up test collections from registry (visualizer/production tests)
  * Call this to remove ghost test entries that weren't properly cleaned up.
  *
- * Also sweeps the reverse lock-index `chat_lock_index` for orphan entries
- * matching the same test patterns. The registry filter alone misses
- * orphans because `setCollectionLock` writes to BOTH the forward
- * `meta.lockedToChatIds` AND the reverse `chat_lock_index[chatId] = […]`,
- * but unregister/cleanup paths historically only touch the forward side.
- * Result: ghost test collections accumulate dead reverse-index entries
- * across runs that `getChatLockedCollections(chatId)` then reports back.
- * Mirror of the same sweep the Playwright suite's beforeAll does for
- * `playwright_test`-prefixed entries — same bug class, different test
- * naming prefix.
- *
- * @returns {number} Number of registry entries removed (does NOT include
- *                   reverse-index orphans — those are logged separately).
+ * @returns {number} Number of registry entries removed
  */
 export function cleanupTestCollections() {
     const registry = getCollectionRegistry();
@@ -412,42 +399,12 @@ export function cleanupTestCollections() {
     });
 
     const removed = registry.length - cleaned.length;
-    let didMutate = false;
     if (removed > 0) {
         extension_settings.vectfox.vectfox_collection_registry = cleaned;
         log.lifecycle(`VectFox: Cleaned ${removed} test collection entries from registry`);
-        didMutate = true;
+        saveSettingsDebounced(); // Persist to disk!
     }
 
-    // Reverse-index orphan sweep — same patterns, applied to chat_lock_index.
-    // `setCollectionLock` writes the registryKey-form here (e.g.
-    // `vectra:vectfox_test_…`); `includes(pattern)` still matches because the
-    // test marker is a substring of either bare or prefixed form.
-    let indexOrphans = 0;
-    let indexChatsScanned = 0;
-    const idx = extension_settings?.vectfox?.chat_lock_index;
-    if (idx && typeof idx === 'object') {
-        for (const chatId of Object.keys(idx)) {
-            const arr = idx[chatId];
-            if (!Array.isArray(arr) || arr.length === 0) continue;
-            indexChatsScanned++;
-            const kept = arr.filter(rk => !isTestEntry(rk));
-            if (kept.length !== arr.length) {
-                indexOrphans += (arr.length - kept.length);
-                if (kept.length === 0) {
-                    delete idx[chatId];
-                } else {
-                    idx[chatId] = kept;
-                }
-            }
-        }
-        if (indexOrphans > 0) {
-            log.lifecycle(`VectFox: Pruned ${indexOrphans} stale test entries from chat_lock_index across ${indexChatsScanned} chat(s)`);
-            didMutate = true;
-        }
-    }
-
-    if (didMutate) saveSettingsDebounced(); // Persist to disk!
     return removed;
 }
 

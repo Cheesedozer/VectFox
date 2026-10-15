@@ -13,7 +13,7 @@
  *   lifecycle             — O(1)/run major state changes  (verbosity >= 1)
  *   verbose               — per-batch / per-window timing  (verbosity >= 2)
  *   trace                 — per-item detail                (verbosity >= 3)
- *   domain(name, level)   — subsystem deep-dive, independent of verbosity
+ *   domain(name, ...args) — subsystem deep-dive, independent of verbosity
  *
  * NO backward-compat migration shim (user decision 2026-05-30): defaults are
  * static. The old gate flags are NOT read here — flipping them does nothing.
@@ -62,9 +62,8 @@ export const log = {
      * Subsystem deep-dive. Fires only when the matching `debug_domain.<name>`
      * toggle is on, regardless of the verbosity dropdown.
      * @param {string} name  one of LOG_DOMAINS
-     * @param {string} level internal level — metadata for future sub-gating; ignored for now
      */
-    domain: (name, level, ...args) => {
+    domain: (name, ...args) => {
         if (!getDomain(name)) return;
         console.log(...args);
     },

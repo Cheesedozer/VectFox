@@ -962,7 +962,7 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
 
     // --- Query archive event collections in parallel ---
     // Archive events are stored with the same schema as live EventBase events so we
-    // query them via queryCollection directly and attach _hash (same as queryEvents does).
+    // query them via queryCollection directly and attach _hash.
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2;
     const ebSettings = { ...settings, keyword_scoring_method: settings.eventbase_keyword_scoring_method || 'bm25' };
     const archiveEventPromises = archiveCollections.map(async ({ registryKey: archKey, collectionId: archColId }) => {
@@ -1073,13 +1073,13 @@ export async function runEventBaseRetrieval({ chat, searchText, settings, chatUU
     setExtensionPrompt(EVENTBASE_PROMPT_TAG, injectionText, settings.position, settings.depth, false);
 
     if (log.domainEnabled('injection')) {
-        log.domain('injection', 'trace', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
-        log.domain('injection', 'trace', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
+        log.domain('injection', `[EventBase] Injected ${injectedCount} event(s) (requested ${events.length}), text length: ${injectionText.length}`);
+        log.domain('injection', `[EventBase] setExtensionPrompt tag="${EVENTBASE_PROMPT_TAG}" position=${settings.position} depth=${settings.depth}`);
         // Verify the slot is actually populated
         const slotContent = extension_prompts[EVENTBASE_PROMPT_TAG];
-        log.domain('injection', 'trace', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
-        log.domain('injection', 'trace', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
-        log.domain('injection', 'trace', '[EventBase] Injection preview:', injectionText.slice(0, 300));
+        log.domain('injection', `[EventBase] Slot verification — key exists: ${EVENTBASE_PROMPT_TAG in extension_prompts}, value type: ${typeof slotContent?.value}, length: ${slotContent?.value?.length ?? slotContent?.length ?? '?'}`);
+        log.domain('injection', '[EventBase] extension_prompts keys:', Object.keys(extension_prompts));
+        log.domain('injection', '[EventBase] Injection preview:', injectionText.slice(0, 300));
     }
 
 }
@@ -1153,7 +1153,7 @@ function _djb2(str) {
  * @param {string}   chatUUID  - Current chat UUID
  * @returns {boolean}
  */
-export function isChatFullyVectorized(messages, settings, chatUUID) {
+function isChatFullyVectorized(messages, settings, chatUUID) {
     const windowSize = Math.max(2, settings.eventbase_window_size || 6);
     const windowOverlap = Math.max(0, Math.min(windowSize - 1, settings.eventbase_window_overlap ?? 0));
     const step = windowSize - windowOverlap;

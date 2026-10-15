@@ -18,7 +18,7 @@ import { getEventBaseExtractionPrompt } from './prompts-i18n.js';
  * LLM is instructed to map any event to one of these; 'other' is the fallback.
  * @type {readonly string[]}
  */
-export const EVENT_TYPES = Object.freeze([
+const EVENT_TYPES = Object.freeze([
     'main_quest_update',
     'side_quest_update',
     'combat',
@@ -262,15 +262,6 @@ export function parseEmbedText(text) {
 // ---------------------------------------------------------------------------
 // Extraction prompt builder
 // ---------------------------------------------------------------------------
-
-/**
- * Deprecated direct export — points at the English (intl) variant for any
- * importers that haven't migrated. New callers should pass the user's
- * cjk_tokenizer_mode through buildExtractionPrompt() or call
- * getEventBaseExtractionPrompt(mode) from prompts-i18n.js directly.
- */
-export const DEFAULT_EXTRACTION_PROMPT = getEventBaseExtractionPrompt('intl');
-
 
 /**
  * Builds the LLM extraction prompt for a given excerpt.

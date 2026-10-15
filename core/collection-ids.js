@@ -19,9 +19,6 @@ import { log } from './log.js';
 // CONSTANTS
 // ============================================================================
 
-/** Prefix for new VectFox format */
-export const VF_PREFIX = 'vf';
-
 /** Internal system collection IDs that must never participate in retrieval */
 export const INTERNAL_COLLECTION_IDS = Object.freeze([
     '__vectfox_health_check__',
@@ -38,7 +35,7 @@ export const COLLECTION_PREFIXES = {
 };
 
 /** Collection types */
-export const COLLECTION_TYPES = {
+const COLLECTION_TYPES = {
     CHAT: 'chat',
     LOREBOOK: 'lorebook',
     CHARACTER: 'character',
@@ -61,7 +58,7 @@ export const COLLECTION_TYPES = {
  * (or `UNKNOWN` for unparseable IDs, which `getEffectiveScope` then defaults
  * to `'character'`).
  */
-export const COLLECTION_SCOPES = {
+const COLLECTION_SCOPES = {
     CHARACTER: 'character',
     CHAT: 'chat',
     UNKNOWN: 'unknown',
@@ -73,7 +70,7 @@ export const COLLECTION_SCOPES = {
  * storage name. New IDs always use `standard` instead.
  * Exported so other helpers (parsers, remappers) share one truth.
  */
-export const KNOWN_BACKEND_LABELS = Object.freeze(['standard', 'qdrant', 'vectra']);
+const KNOWN_BACKEND_LABELS = Object.freeze(['standard', 'qdrant', 'vectra']);
 
 /**
  * Normalize backend names used in IDs.

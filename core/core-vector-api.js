@@ -943,35 +943,6 @@ export async function queryMultipleCollections(collectionIds, searchText, topK, 
 }
 
 /**
- * Queries multiple collections with conditional activation filtering.
- * Collections that don't meet their activation conditions are skipped.
- *
- * @param {string[]} collectionIds - Collection IDs to potentially query
- * @param {string} searchText - Text to query
- * @param {number} topK - Number of results to return
- * @param {number} threshold - Score threshold
- * @param {object} settings - VectFox settings object
- * @param {object} context - Search context (from buildSearchContext)
- * @returns {Promise<Record<string, { hashes: number[], metadata: object[] }>>} - Results mapped to collection IDs
- */
-export async function queryActiveCollections(collectionIds, searchText, topK, threshold, settings, context) {
-    // Lazy import to avoid circular dependency
-    const { filterActiveCollections } = await import('./collection-metadata.js');
-
-    // Filter collections based on their activation conditions
-    const activeCollectionIds = await filterActiveCollections(collectionIds, context);
-
-    if (activeCollectionIds.length === 0) {
-        log.lifecycle('VectFox: No collections passed activation conditions');
-        return {};
-    }
-
-    // Query only the active collections
-    const backend = await getBackend(settings);
-    return await backend.queryMultipleCollections(activeCollectionIds, searchText, topK, threshold, settings);
-}
-
-/**
  * Purges the vector index for a collection.
  * @param {string} collectionId Collection ID to purge
  * @param {object} settings VectFox settings object

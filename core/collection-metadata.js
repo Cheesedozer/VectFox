@@ -9,9 +9,9 @@
  * - collection-metadata.js = Settings & state (talks to extension_settings)
  */
 
-import { extension_settings, getContext } from '../../../../extensions.js';
+import { extension_settings } from '../../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../../script.js';
-import { parseRegistryKey, COLLECTION_PREFIXES, parseCollectionId } from './collection-ids.js';
+import { parseRegistryKey, parseCollectionId } from './collection-ids.js';
 import { log } from './log.js';
 
 // ============================================================================
@@ -263,19 +263,9 @@ export function deleteCollectionMeta(collectionId) {
 
     if (extension_settings.vectfox.collections[collectionId]) {
         delete extension_settings.vectfox.collections[collectionId];
-        _updateChatLockIndex(collectionId, null, '*');
         saveSettingsDebounced();
         log.lifecycle(`VectFox: Deleted metadata for collection ${collectionId}`);
     }
-}
-
-/**
- * Gets all collection metadata
- * @returns {object} Map of collectionId -> metadata
- */
-export function getAllCollectionMeta() {
-    ensureCollectionsObject();
-    return extension_settings.vectfox.collections;
 }
 
 // ============================================================================
@@ -497,50 +487,6 @@ export function cleanupOrphanedMeta(actualCollectionIds) {
 // ============================================================================
 
 /**
- * Maintains the reverse index: extension_settings.vectfox.chat_lock_index[chatId] = [collectionId, ...]
- * @param {string} collectionId
- * @param {string|null} addChatId - chat to add collectionId to (null = skip)
- * @param {string|'*'|null} removeChatId - chat to remove collectionId from, '*' = remove from all, null = skip
- */
-function _updateChatLockIndex(collectionId, addChatId, removeChatId) {
-    const store = extension_settings?.vectfox;
-    if (!store) return;
-    if (!store.chat_lock_index) store.chat_lock_index = {};
-    const idx = store.chat_lock_index;
-
-    if (addChatId) {
-        const key = String(addChatId);
-        if (!Array.isArray(idx[key])) idx[key] = [];
-        if (!idx[key].includes(collectionId)) idx[key].push(collectionId);
-    }
-
-    if (removeChatId === '*') {
-        for (const key of Object.keys(idx)) {
-            idx[key] = idx[key].filter(id => id !== collectionId);
-            if (idx[key].length === 0) delete idx[key];
-        }
-    } else if (removeChatId) {
-        const key = String(removeChatId);
-        if (Array.isArray(idx[key])) {
-            idx[key] = idx[key].filter(id => id !== collectionId);
-            if (idx[key].length === 0) delete idx[key];
-        }
-    }
-}
-
-/**
- * Returns the collection IDs locked to a given chat (O(1) lookup).
- * Only includes collections registered via setCollectionLock after this index was introduced.
- * @param {string} chatId
- * @returns {string[]}
- */
-export function getChatLockedCollections(chatId) {
-    const idx = extension_settings?.vectfox?.chat_lock_index;
-    if (!idx || !chatId) return [];
-    return Array.isArray(idx[String(chatId)]) ? [...idx[String(chatId)]] : [];
-}
-
-/**
  * Adds a chat to the collection's lock list. Supports multiple chats per collection.
  * Stores chat IDs in metadata field `lockedToChatIds` (array).
  * Automatically migrates old single-value `lockedToChatId` to array format.
@@ -575,7 +521,6 @@ export function setCollectionLock(collectionId, chatId) {
     }
 
     setCollectionMeta(collectionId, update);
-    _updateChatLockIndex(collectionId, chatId === null ? null : chatId, chatId === null ? '*' : null);
     log.lifecycle(`VectFox: Collection ${collectionId} locks updated:`, update.lockedToChatIds);
 }
 
@@ -603,7 +548,6 @@ export function removeCollectionLock(collectionId, chatId) {
     update.lockedToChatId = null; // Clear old format
 
     setCollectionMeta(collectionId, update);
-    _updateChatLockIndex(collectionId, null, chatId);
     log.lifecycle(`VectFox: Removed chat ${chatId} from collection ${collectionId} locks`);
 }
 
@@ -631,16 +575,6 @@ export function getCollectionLocks(collectionId) {
     }
 
     return locks;
-}
-
-/**
- * Gets the first locked chat ID (for backward compat with single-lock code)
- * @param {string} collectionId
- * @returns {string|null}
- */
-export function getCollectionLock(collectionId) {
-    const locks = getCollectionLocks(collectionId);
-    return locks.length > 0 ? locks[0] : null;
 }
 
 /**
@@ -713,16 +647,6 @@ export function removeCollectionCharacterLock(collectionId, characterId) {
 }
 
 /**
- * Clears all character locks for a collection
- * @param {string} collectionId
- */
-export function clearCollectionCharacterLocks(collectionId) {
-    if (!collectionId) return;
-    setCollectionMeta(collectionId, { lockedToCharacterIds: [] });
-    log.lifecycle(`VectFox: Cleared all character locks for collection ${collectionId}`);
-}
-
-/**
  * Gets the array of locked character IDs for a collection, or empty array if not locked
  * @param {string} collectionId
  * @returns {string[]}
@@ -777,155 +701,6 @@ export function isCollectionActiveForContext(collectionId, { chatId, characterId
     return false;
 }
 
-// ============================================================================
-// LOCK FACADE — getLock / setLock
-// ============================================================================
-// Two-function entry point for everything lock-related. Bundles:
-//   1. Authorization (superadmin OR creator handle matches current persona)
-//   2. Scope-aware lock list (chat vs character)
-//   3. Current-context active check (locked to current chat/character)
-//
-// Callers MUST pass the canonical storage key (registry-key form "backend:id"
-// when the collection belongs to a backend, bare ID otherwise). There is no
-// auto-resolution — pass `collection.registryKey || collection.id` at call
-// sites where you have the loader's collection object.
-
-/**
- * Authorization check for lock operations. Returns true when:
- *   - settings.superadmin === true, OR
- *   - the collection's creatorHandle matches the current persona handle, OR
- *   - the collection has no creatorHandle stamp and its bare ID contains the
- *     current handle (legacy fallback — same logic as getCollectionListing).
- *
- * Returns true (allow) when context is unavailable so headless/system code
- * (collection-export imports, registry registration) isn't blocked.
- *
- * @param {object} meta - already-resolved collection metadata
- * @param {string} collectionId - original ID passed by caller (for legacy fallback)
- * @param {object} [settings] - extension_settings.vectfox (or partial)
- * @returns {boolean}
- */
-function _isLockAuthorized(meta, collectionId, settings) {
-    const store = settings || extension_settings?.vectfox || {};
-    if (store.superadmin === true) return true;
-
-    let currentHandle = '';
-    try {
-        // Dynamic require to avoid circular import with collection-loader.js.
-        // If the context modules aren't ready (early boot), allow the action.
-        const ctx = (typeof getContext === 'function') ? getContext() : null;
-        currentHandle = String(ctx?.name1 || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_');
-    } catch (_) {
-        return true; // permissive when context unavailable
-    }
-    if (!currentHandle || currentHandle === 'user') return true; // permissive when no persona
-
-    const creator = meta?.creatorHandle ? String(meta.creatorHandle).toLowerCase() : '';
-    if (creator) return creator === currentHandle;
-
-    // No creatorHandle stamp — legacy fallback to ID substring match.
-    const bareId = parseRegistryKey(collectionId).collectionId || collectionId || '';
-    return bareId.toLowerCase().includes(`_${currentHandle}_`);
-}
-
-/**
- * Get the lock state for a collection. One stop for: "is it locked anywhere?",
- * "is it locked to the current context?", "what chats/characters is it locked
- * to?", and "can the current user modify these locks?".
- *
- * Returns null when the caller is unauthorized (non-superadmin, non-owner).
- * Use options.ignoreAuth=true for internal/system callers that need the raw state.
- *
- * @param {string} collectionId - Bare ID or registry-key form ("backend:id")
- * @param {object} [options]
- * @param {string} [options.chatId] - Override current chat ID for the active check
- * @param {string|number} [options.characterId] - Override current character ID
- * @param {object} [options.settings] - VectFox settings (for superadmin flag)
- * @param {boolean} [options.ignoreAuth=false] - Skip authorization gate
- * @returns {null | {
- *   storageKey: string,
- *   scope: 'chat' | 'character' | 'unknown',
- *   chatLocks: string[],
- *   characterLocks: string[],
- *   isLocked: boolean,
- *   isActiveHere: boolean,
- *   canModify: boolean,
- * }}
- */
-export function getLock(collectionId, options = {}) {
-    if (!collectionId) return null;
-    const { chatId, characterId, settings, ignoreAuth = false } = options;
-
-    const meta = getCollectionMeta(collectionId);
-    const canModify = _isLockAuthorized(meta, collectionId, settings);
-
-    if (!ignoreAuth && !canModify) {
-        return null;
-    }
-
-    const chatLocks = getCollectionLocks(collectionId);
-    const characterLocks = getCollectionCharacterLocks(collectionId);
-    const scope = meta?.scope || 'unknown';
-
-    let isActiveHere = false;
-    if (scope === 'chat') {
-        isActiveHere = Boolean(chatId && chatLocks.some(id => String(id) === String(chatId)));
-    } else if (scope === 'character') {
-        isActiveHere = Boolean(characterId && characterLocks.some(id => String(id) === String(characterId)));
-    }
-
-    return {
-        storageKey: collectionId,
-        scope,
-        chatLocks,
-        characterLocks,
-        isLocked: chatLocks.length > 0 || characterLocks.length > 0,
-        isActiveHere,
-        canModify,
-    };
-}
-
-/**
- * Mutate a collection's lock state. Validates authorization first.
- *
- * @param {string} collectionId - Bare ID or registry-key form
- * @param {{ kind: 'chat'|'character', op: 'add'|'remove'|'clear', target?: string }} action
- *   - kind:   which lock list to modify
- *   - op:     'add' = include target, 'remove' = drop target, 'clear' = empty the list
- *   - target: chatId or characterId (required for add/remove; ignored for clear)
- * @param {object} [options]
- * @param {object} [options.settings] - VectFox settings (for superadmin)
- * @param {boolean} [options.ignoreAuth=false] - Skip authorization (system use)
- * @returns {{ success: boolean, reason?: string }}
- */
-export function setLock(collectionId, action, options = {}) {
-    if (!collectionId) return { success: false, reason: 'missing collectionId' };
-    if (!action || typeof action !== 'object') return { success: false, reason: 'missing action' };
-    const { kind, op, target } = action;
-    if (kind !== 'chat' && kind !== 'character') return { success: false, reason: 'invalid kind' };
-    if (op !== 'add' && op !== 'remove' && op !== 'clear') return { success: false, reason: 'invalid op' };
-    if ((op === 'add' || op === 'remove') && !target) return { success: false, reason: 'missing target' };
-
-    const { settings, ignoreAuth = false } = options;
-    const meta = getCollectionMeta(collectionId);
-
-    if (!ignoreAuth && !_isLockAuthorized(meta, collectionId, settings)) {
-        log.warn(`VectFox: setLock denied for ${collectionId} (kind=${kind}, op=${op}) — not superadmin and persona handle does not match creatorHandle`);
-        return { success: false, reason: 'unauthorized' };
-    }
-
-    if (kind === 'chat') {
-        if (op === 'add') setCollectionLock(collectionId, target);
-        else if (op === 'remove') removeCollectionLock(collectionId, target);
-        else clearCollectionLock(collectionId);
-    } else {
-        if (op === 'add') setCollectionCharacterLock(collectionId, String(target));
-        else if (op === 'remove') removeCollectionCharacterLock(collectionId, String(target));
-        else clearCollectionCharacterLocks(collectionId);
-    }
-    return { success: true };
-}
-
 /**
  * Ensures a collection has metadata (creates with defaults if missing)
  * Called when a collection is discovered/created
@@ -947,26 +722,6 @@ export function ensureCollectionMeta(collectionId, initialData = {}) {
         };
         saveSettingsDebounced();
         log.lifecycle(`VectFox: Created metadata for new collection ${collectionId}`);
-    }
-}
-
-/**
- * Updates lastUsed timestamp and increments queryCount
- * Called when a collection is queried
- * @param {string} collectionId Collection identifier
- */
-export function recordCollectionUsage(collectionId) {
-    if (!collectionId) {
-        return;
-    }
-
-    ensureCollectionsObject();
-
-    const existing = extension_settings.vectfox.collections[collectionId];
-    if (existing) {
-        existing.lastUsed = Date.now();
-        existing.queryCount = (existing.queryCount || 0) + 1;
-        saveSettingsDebounced();
     }
 }
 
@@ -1175,20 +930,6 @@ export async function filterActiveCollections(collectionIds, context) {
 // ============================================================================
 // ACTIVATION TRIGGER HELPERS
 // ============================================================================
-
-/**
- * Sets activation triggers for a collection
- * @param {string} collectionId Collection identifier
- * @param {string[]} triggers Array of trigger keywords
- * @param {object} options Optional: matchMode, caseSensitive, scanDepth
- */
-export function setCollectionTriggers(collectionId, triggers, options = {}) {
-    const update = { triggers };
-    if (options.matchMode !== undefined) update.triggerMatchMode = options.matchMode;
-    if (options.caseSensitive !== undefined) update.triggerCaseSensitive = options.caseSensitive;
-    if (options.scanDepth !== undefined) update.triggerScanDepth = options.scanDepth;
-    setCollectionMeta(collectionId, update);
-}
 
 /**
  * Gets activation triggers for a collection
