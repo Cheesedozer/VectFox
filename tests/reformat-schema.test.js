@@ -400,6 +400,15 @@ describe('buildStoredText', () => {
         ].join('\n'));
     });
 
+    it('does not restate the parent of a "<Parent>: <Part>" entry', () => {
+        const text = buildStoredText({
+            entry_type: 'concept', name: 'Bulwark: Hidden truth', hidden: true, body: 'Her form is killing her.',
+            relationships: [{ target: 'Bulwark', type: 'is part of' }, { target: 'Fortress', type: 'concerns' }],
+        });
+        expect(text).not.toContain('is part of');
+        expect(text).toContain('Bulwark: Hidden truth concerns Fortress.');
+    });
+
     it('tags hidden entries', () => {
         const text = buildStoredText({ ...record, hidden: true, affiliation: '', relationships: [] });
         expect(text).toBe(`Bulwark (character)\n${HIDDEN_TRUTH_TAG}\nBulwark turns her skin to metal.`);

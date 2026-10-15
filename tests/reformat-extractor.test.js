@@ -629,6 +629,15 @@ describe('linkSubEntriesToParents', () => {
         expect(records[2].relationships).toHaveLength(1);
         expect(records[3].relationships).toEqual([]);
     });
+
+    it('links through an alias, keeping the parent as written in the name', () => {
+        const records = [
+            { name: 'The United States after the Gender War', aliases: ['The Settlement'], relationships: [] },
+            { name: 'The Settlement: Daily life', aliases: [], relationships: [] },
+        ];
+        linkSubEntriesToParents(records);
+        expect(records[1].relationships).toEqual([{ target: 'The Settlement', type: 'is part of' }]);
+    });
 });
 
 describe('reformatDocument — linking pass name cleanup', () => {

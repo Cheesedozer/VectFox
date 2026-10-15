@@ -290,6 +290,9 @@ export function buildStoredText(record, { part = 0, total = 1 } = {}) {
         const affiliation = typeof record?.affiliation === 'string' ? record.affiliation.trim() : '';
         if (affiliation) facts.push(`${name} belongs to ${affiliation}.`);
         for (const rel of Array.isArray(record?.relationships) ? record.relationships : []) {
+            // "<Parent>: <Part>" already names its parent; don't restate it.
+            const target = typeof rel === 'string' ? rel : rel?.target;
+            if (target && name.toLowerCase().startsWith(`${String(target).trim().toLowerCase()}:`)) continue;
             const sentence = _relationshipSentence(name, rel);
             if (sentence) facts.push(sentence);
         }
@@ -429,7 +432,7 @@ Output a JSON array. Each element has exactly these fields:
   "name": the entry's name, in the source's wording,
   "aliases": other names for this same thing (a full name, an acronym, a title); never the name of a related group or place,
   "affiliation": the group this entry belongs to, or "",
-  "relationships": [{"target": the name of another named thing in the TEXT, "type": a short verb phrase that reads as "<name> <type> <target>", such as "is the mentor of", "is located in" or "enforces"}],
+  "relationships": for a named thing, [{"target": the name of another named thing in the TEXT, "type": a short verb phrase that reads as "<name> <type> <target>", such as "is the mentor of", "is located in" or "enforces"}]; for a topic, [],
   "keywords": an array of search terms someone might use to find this entry,
   "hidden": true for content from a section the document marks as spoilers, secrets or hidden truths, otherwise false,
   "body": the entry's content

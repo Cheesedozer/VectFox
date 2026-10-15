@@ -832,7 +832,10 @@ export function linkSubEntriesToParents(records) {
         const parentKeys = new Set(_entityKeys(parent));
         const alreadyLinked = (r.relationships || []).some(rel => _nameKeys(_relationshipTarget(rel)).some(k => parentKeys.has(k)));
         if (alreadyLinked) continue;
-        r.relationships = [...(r.relationships || []), { target: parent.name, type: 'is part of' }];
+        // Target the parent as written in this entry's name: it still resolves
+        // to the parent (by name or alias), and buildStoredText recognises it
+        // as the name's own prefix and doesn't restate it.
+        r.relationships = [...(r.relationships || []), { target: r.name.slice(0, idx).trim(), type: 'is part of' }];
         added++;
     }
     return added;
