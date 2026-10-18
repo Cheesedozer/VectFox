@@ -44,6 +44,18 @@ Two rules still apply:
 - **Auto Reformat** can still produce near-duplicate entries whose names differ
   by a suffix (e.g. "GAMA" vs "GAMA app"); merge only unifies exact name/alias
   keys.
+- **Auto Reformat whole-document mode loses content with small models.**
+  Gemini 3.5 Flash Lite given a 31k-char document in one call writes ~6k
+  tokens and drops about a third of the facts (coverage check flags ~20
+  paragraphs vs 0–2 batched), even with a length target in the prompt. That is
+  why `reformat_single_pass` defaults off. Batches that also carry the whole
+  document as read-only context kept batched-level coverage with fewer
+  duplicates, at ~4× the input tokens (quadratic in document length); not
+  implemented.
+- **Similharity plugin (separate branch) `queryCollection`** uses
+  `POST /points/search`, which Qdrant 1.19 dropped from its OpenAPI spec. It
+  still works on 1.19 but is slated for removal; the other read paths already
+  use `/points/query`.
 
 Corrections to the original audit: the purge in `collection-loader.js` already
 receives plugin backend names (no remap needed); the `String()` coercions in

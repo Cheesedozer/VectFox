@@ -314,6 +314,8 @@ const defaultSettings = {
     reformat_enable_repair_pass: true,  // Coverage check + one repair LLM call per under-captured batch
     reformat_coverage_threshold: 0.5,   // Hidden/power-user — min fact-token recall per section before repair triggers
     reformat_enable_linking_pass: false, // Second LLM pass linking entities across batches — doubles LLM calls per document
+    reformat_single_pass: false,        // Whole document in one LLM call (2 tries), batches as the fallback
+    reformat_single_pass_timeout_ms: 600000,
     reformat_custom_prompt: '',
 
     // ─── Hidden / Power-User ────────────────────────────────────────────

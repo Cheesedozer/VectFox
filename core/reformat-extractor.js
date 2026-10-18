@@ -10,7 +10,15 @@
  * are wrapped in AsyncUtils.retry(), since losing a large batch call costs
  * more than losing one small EventBase window.
  *
- * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches }.
+ * Optional whole-document mode (settings.reformat_single_pass) sends the
+ * document to the model in ONE call, so every entry is written with the full
+ * document in view. That call is tried twice; if both fail (or the document
+ * can't fit the model's context/output limits) the run falls back to the
+ * batched path below. It is off by default: measured on a 31k-character world
+ * bible with Gemini 3.5 Flash Lite, one reply came back ~6k tokens long and
+ * kept a third less of the source's facts than batches did.
+ *
+ * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode }.
  * Throws ReformatFatalError for config/auth failures (aborts the whole run).
  * Individual batch failures are non-fatal warnings.
  * ============================================================================
@@ -46,6 +54,22 @@ const DEFAULT_BATCH_CHARS = 6000;
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_NAME_FUZZY_THRESHOLD = 0.8;
 const DEFAULT_COVERAGE_THRESHOLD = 0.5;
+// Whole-document mode: one generation can run for minutes on a long document.
+const DEFAULT_SINGLE_PASS_TIMEOUT_MS = 600000;
+const SINGLE_PASS_ATTEMPTS = 2;
+// The extracted entries restate every fact plus JSON fields, names, keywords
+// and relationships, so the reply is larger than the source text it covers.
+const SINGLE_PASS_OUTPUT_RATIO = 1.5;
+// Room for the extraction prompt's instructions and example around the text.
+const PROMPT_OVERHEAD_TOKENS = 2500;
+
+/** The whole-document reply hit the output limit; retrying it can't help. */
+class ReformatTruncatedError extends ReformatExtractionError {
+    constructor(message) {
+        super(message);
+        this.name = 'ReformatTruncatedError';
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Config resolution (each VectFox LLM feature keeps its own copy; see
@@ -73,9 +97,12 @@ function _resolveVllmUrl(settings) {
  * @param {string} prompt
  * @param {object} settings
  * @param {number} batchIndex
+ * @param {{maxTokens?: number|null, timeoutMs?: number}} [callOptions] - Overrides
+ *        for the whole-document call. maxTokens null sends no max_tokens, so the
+ *        provider's own (model-maximum) limit applies.
  * @returns {Promise<{reply: string, finishReason: string|null}>}
  */
-async function _callLLM(prompt, settings, batchIndex) {
+async function _callLLM(prompt, settings, batchIndex, callOptions = {}) {
     const isVllm = _resolveProvider(settings) === 'vllm';
     const providerLabel = isVllm ? 'vLLM' : 'OpenRouter';
 
@@ -113,9 +140,11 @@ async function _callLLM(prompt, settings, batchIndex) {
         model,
         vllmUrl,
         messages: [{ role: 'user', content: prompt }],
-        maxTokens: settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS,
+        maxTokens: callOptions.maxTokens !== undefined
+            ? (callOptions.maxTokens ?? undefined)
+            : (settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS),
         temperature: settings.reformat_temperature ?? DEFAULT_TEMPERATURE,
-        timeoutMs: settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS,
+        timeoutMs: callOptions.timeoutMs || settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS,
     });
 
     if (!result.ok) {
@@ -149,9 +178,9 @@ async function _callLLM(prompt, settings, batchIndex) {
  * Calls the provider, retrying transient failures but never
  * ReformatFatalError (auth/config problems a retry can't fix).
  */
-async function _callProviderWithRetry(prompt, settings, batchIndex) {
-    return AsyncUtils.retry(() => _callLLM(prompt, settings, batchIndex), {
-        maxAttempts: 3,
+async function _callProviderWithRetry(prompt, settings, batchIndex, callOptions = {}) {
+    return AsyncUtils.retry(() => _callLLM(prompt, settings, batchIndex, callOptions), {
+        maxAttempts: callOptions.maxAttempts || 3,
         delay: 1500,
         maxDelay: 10000,
         backoffFactor: 2,
@@ -502,8 +531,12 @@ function _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, 
  * Processes one chain sequentially. After each batch, computeBatchCoverage
  * checks that the batch's distinctive facts landed in the records; flagged
  * sections get ONE repair call. Repair failures are non-fatal.
+ *
+ * With `strict` (the whole-document call), an extraction failure or a reply
+ * cut off by the output limit is thrown instead of recorded, so the caller
+ * can retry or fall back to batches.
  */
-async function _processChain(chain, settings, chainIndex, warnings, contentType) {
+async function _processChain(chain, settings, chainIndex, warnings, contentType, { callOptions = {}, strict = false } = {}) {
     const results = [];
     let failedCount = 0;
     let repairCalls = 0;
@@ -525,14 +558,17 @@ async function _processChain(chain, settings, chainIndex, warnings, contentType)
         });
 
         try {
-            const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, chainIndex);
+            const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, chainIndex, callOptions);
+            if (strict && finishReason === 'length') {
+                throw new ReformatTruncatedError('the response was cut off by the model\'s output limit');
+            }
             if (finishReason === 'length') {
                 warnings.push(`${batchLabel}: response was truncated by the model's output limit — some entries from this section may be missing. Consider lowering "Batch size (chars)" in Auto-Reformat settings.`);
             }
 
             _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel });
         } catch (err) {
-            if (err instanceof ReformatFatalError) throw err;
+            if (err instanceof ReformatFatalError || strict) throw err;
             failedCount++;
             warnings.push(`${batchLabel} failed: ${err?.message || err} — skipped, other batches continue.`);
             log.warn(`[Auto-Reformat] ${batchLabel} failed:`, err?.message || err);
@@ -552,7 +588,7 @@ async function _processChain(chain, settings, chainIndex, warnings, contentType)
                 headingPath: batch.headingPath,
                 contentType,
             });
-            const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex);
+            const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex, { ...callOptions, maxAttempts: undefined });
             repairCalls++;
             const added = _ingestReply(repairReply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel: `${batchLabel} (repair)` });
             log.lifecycle(`[Auto-Reformat] ${batchLabel}: repair call added ${added} record(s)`);
@@ -945,63 +981,210 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
 }
 
 // ---------------------------------------------------------------------------
+// Whole-document mode
+// ---------------------------------------------------------------------------
+
+/** @type {Map<string, {contextLength: number|null, maxOutputTokens: number|null}|null>} */
+const _modelLimitsCache = new Map();
+
+/**
+ * Context and output limits of an OpenRouter model, from OpenRouter's public
+ * model list. Null when unknown (vLLM, an unlisted model, or no network);
+ * the whole-document call is then attempted without a pre-check.
+ * @param {object} settings
+ * @returns {Promise<{contextLength: number|null, maxOutputTokens: number|null}|null>}
+ */
+async function _getModelLimits(settings) {
+    if (_resolveProvider(settings) === 'vllm') return null;
+    const model = _resolveModel(settings);
+    if (!model) return null;
+    if (_modelLimitsCache.has(model)) return _modelLimitsCache.get(model);
+
+    let limits = null;
+    try {
+        const response = await fetch('https://openrouter.ai/api/v1/models', { method: 'GET', signal: AbortSignal.timeout(15000) });
+        const data = response?.ok ? await response.json() : null;
+        const entry = Array.isArray(data?.data) ? data.data.find(m => m?.id === model) : null;
+        if (entry) {
+            limits = {
+                contextLength: Number(entry.context_length) || null,
+                maxOutputTokens: Number(entry.top_provider?.max_completion_tokens) || null,
+            };
+        }
+    } catch (err) {
+        log.verbose(`[Auto-Reformat] Could not read model limits for ${model}: ${err?.message || err}`);
+    }
+    _modelLimitsCache.set(model, limits);
+    return limits;
+}
+
+/**
+ * Rough token count: CJK characters are about one token each, other text
+ * about four characters per token.
+ * @param {string} text
+ * @returns {number}
+ */
+function estimateTokens(text) {
+    const str = String(text || '');
+    const cjk = (str.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/g) || []).length;
+    return Math.ceil(cjk + (str.length - cjk) / 4);
+}
+
+/**
+ * Why the whole document can't go out in one call, or null when it fits
+ * (or the limits are unknown).
+ * @param {string} text
+ * @param {{contextLength: number|null, maxOutputTokens: number|null}|null} limits
+ * @returns {string|null}
+ */
+function wholeDocumentMisfit(text, limits) {
+    if (!limits) return null;
+    const inputTokens = estimateTokens(text) + PROMPT_OVERHEAD_TOKENS;
+    const outputTokens = Math.ceil(estimateTokens(text) * SINGLE_PASS_OUTPUT_RATIO);
+    if (limits.contextLength && inputTokens + outputTokens > limits.contextLength) {
+        return `the document (~${inputTokens.toLocaleString()} tokens) plus its entries (~${outputTokens.toLocaleString()} tokens) exceed the model's ${limits.contextLength.toLocaleString()}-token context`;
+    }
+    if (limits.maxOutputTokens && outputTokens > limits.maxOutputTokens) {
+        return `its entries (~${outputTokens.toLocaleString()} tokens) would exceed the model's ${limits.maxOutputTokens.toLocaleString()}-token output limit`;
+    }
+    return null;
+}
+
+/**
+ * Sends the whole document in one call, twice at most. Batch size and the
+ * Max Output Tokens setting don't apply: max_tokens is the model's own
+ * output limit. Returns null when both attempts fail or the reply was cut
+ * off, so the caller falls back to batches.
+ * @returns {Promise<{results: object[], repairCalls: number}|null>}
+ */
+async function _runWholeDocument({ batch, settings, warnings, contentType, onProgress, abortSignal }) {
+    const limits = await _getModelLimits(settings);
+    const misfit = wholeDocumentMisfit(batch.text, limits);
+    if (misfit) {
+        warnings.push(`Whole-document mode skipped: ${misfit}. The document was processed in batches instead.`);
+        log.lifecycle(`[Auto-Reformat] Whole-document mode skipped: ${misfit}`);
+        return null;
+    }
+
+    const callOptions = {
+        maxTokens: limits?.maxOutputTokens ?? null,
+        timeoutMs: settings.reformat_single_pass_timeout_ms || DEFAULT_SINGLE_PASS_TIMEOUT_MS,
+        maxAttempts: 1,
+    };
+    const failures = [];
+    for (let attempt = 1; attempt <= SINGLE_PASS_ATTEMPTS; attempt++) {
+        if (abortSignal?.aborted) {
+            const err = new Error('Auto-Reformat stopped by user');
+            err.name = 'AbortError';
+            throw err;
+        }
+        onProgress?.(attempt, SINGLE_PASS_ATTEMPTS, 'whole');
+        const attemptWarnings = [];
+        try {
+            const { results, repairCalls } = await _processChain([batch], settings, 0, attemptWarnings, contentType, { callOptions, strict: true });
+            warnings.push(...attemptWarnings);
+            log.lifecycle(`[Auto-Reformat] Whole-document attempt ${attempt} succeeded: ${results.length} entries`);
+            return { results, repairCalls };
+        } catch (err) {
+            if (err instanceof ReformatFatalError || err?.name === 'AbortError') throw err;
+            failures.push(`attempt ${attempt}: ${err?.message || err}`);
+            log.warn(`[Auto-Reformat] Whole-document attempt ${attempt} failed:`, err?.message || err);
+            // The same document hits the same output limit again.
+            if (err instanceof ReformatTruncatedError) break;
+        }
+    }
+    warnings.push(`Whole-document mode failed (${failures.join('; ')}). The document was processed in batches instead.`);
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
 /**
  * Restructures source text into entries.
  *
+ * Whole-document mode (settings.reformat_single_pass, off by default) sends
+ * the document in one call and tries it twice; when both fail, or the
+ * document can't fit the model, it falls back to header-aligned batches.
+ *
  * @param {object} params
  * @param {string} params.text - Full prepared source text
  * @param {string} params.contentType - 'document' | 'url' | 'wiki' | 'youtube'
  * @param {object} params.settings - VectFox settings
  * @param {string} [params.sourceName] - Shown to the model as the root of each batch's heading path
- * @param {(processed: number, total: number, phase?: 'extract'|'link') => void} [params.onProgress]
+ * @param {(processed: number, total: number, phase?: 'whole'|'extract'|'link') => void} [params.onProgress]
  * @param {AbortSignal} [params.abortSignal]
- * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number}>}
+ * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number, mode: 'whole'|'batched'}>}
  */
 export async function reformatDocument({ text, contentType, settings, sourceName = '', onProgress = null, abortSignal = null } = {}) {
     if (!text || typeof text !== 'string' || !text.trim()) {
-        return { chunks: [], warnings: ['No text to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0 };
+        return { chunks: [], warnings: ['No text to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0, mode: 'batched' };
     }
 
-    const targetChars = settings.reformat_batch_chars || DEFAULT_BATCH_CHARS;
-    const { batches, skippedSections } = await _buildBatches(text, targetChars, sourceName);
-    if (batches.length === 0) {
-        return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0 };
-    }
-
-    const chains = _groupIntoChains(batches);
-    const totalBatches = batches.length;
     const warnings = [];
-    if (skippedSections.length > 0) {
-        warnings.push(`Skipped author-note section(s): ${skippedSections.map(t => `"${t}"`).join(', ')}.`);
-    }
+    const concurrency = Math.max(1, Math.min(8, settings.reformat_concurrency || DEFAULT_CONCURRENCY));
+    const linkingEnabled = Boolean(settings.reformat_enable_linking_pass);
+
+    let rawChunks = null;
+    let mode = 'batched';
+    let batches = [];
+    let skippedSections = [];
     let batchesProcessed = 0;
     let batchesFailed = 0;
     let totalRepairCalls = 0;
 
-    const concurrency = Math.max(1, Math.min(8, settings.reformat_concurrency || DEFAULT_CONCURRENCY));
-    const linkingEnabled = Boolean(settings.reformat_enable_linking_pass);
-
-    log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${totalBatches} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
-
-    const chainFns = chains.map((chain, chainIndex) => async () => {
-        if (abortSignal?.aborted) {
-            const err = new Error('Auto-Reformat stopped by user');
-            err.name = 'AbortError';
-            throw err;
+    if (settings.reformat_single_pass === true) {
+        const whole = await _buildBatches(text, Infinity, sourceName);
+        skippedSections = whole.skippedSections;
+        if (whole.batches.length === 0) {
+            return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0, mode };
         }
-        const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType);
-        batchesProcessed += chain.length;
-        batchesFailed += failedCount;
-        totalRepairCalls += repairCalls;
-        onProgress?.(batchesProcessed, totalBatches, 'extract');
-        return results;
-    });
+        log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, whole document in one call (${whole.batches[0].text.length} chars)`);
+        // The heading path _buildBatches records is the FIRST section's; the
+        // whole document sits under the document itself.
+        const wholeBatch = { ...whole.batches[0], headingPath: sourceName };
+        const outcome = await _runWholeDocument({ batch: wholeBatch, settings, warnings, contentType, onProgress, abortSignal });
+        if (outcome) {
+            rawChunks = outcome.results;
+            totalRepairCalls = outcome.repairCalls;
+            batches = whole.batches;
+            batchesProcessed = 1;
+            mode = 'whole';
+        }
+    }
 
-    const chainResultsArrays = await AsyncUtils.parallel(chainFns, concurrency);
-    const rawChunks = chainResultsArrays.flat();
+    if (!rawChunks) {
+        const targetChars = settings.reformat_batch_chars || DEFAULT_BATCH_CHARS;
+        ({ batches, skippedSections } = await _buildBatches(text, targetChars, sourceName));
+        if (batches.length === 0) {
+            return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0, mode };
+        }
+
+        const chains = _groupIntoChains(batches);
+        log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${batches.length} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
+
+        const chainFns = chains.map((chain, chainIndex) => async () => {
+            if (abortSignal?.aborted) {
+                const err = new Error('Auto-Reformat stopped by user');
+                err.name = 'AbortError';
+                throw err;
+            }
+            const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType);
+            batchesProcessed += chain.length;
+            batchesFailed += failedCount;
+            totalRepairCalls += repairCalls;
+            onProgress?.(batchesProcessed, batches.length, 'extract');
+            return results;
+        });
+
+        rawChunks = (await AsyncUtils.parallel(chainFns, concurrency)).flat();
+    }
+
+    const totalBatches = batches.length;
+    if (skippedSections.length > 0) {
+        warnings.unshift(`Skipped author-note section(s): ${skippedSections.map(t => `"${t}"`).join(', ')}.`);
+    }
 
     const chunks = mergeDuplicateEntities(rawChunks);
     if (chunks.length < rawChunks.length) {
@@ -1009,7 +1192,9 @@ export async function reformatDocument({ text, contentType, settings, sourceName
     }
     linkSubEntriesToParents(chunks);
 
-    if (linkingEnabled && chunks.length > 0) {
+    // The linking pass connects entries that separate batches couldn't see
+    // together; a whole-document call already saw everything.
+    if (linkingEnabled && mode === 'batched' && chunks.length > 0) {
         let linkBatchesDone = 0;
         await _runLinkingPass({
             batches,
@@ -1025,9 +1210,9 @@ export async function reformatDocument({ text, contentType, settings, sourceName
         });
     }
 
-    log.lifecycle(`[Auto-Reformat] Complete: ${chunks.length} entries extracted from ${totalBatches} batch(es), ${totalRepairCalls} coverage repair call(s), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
+    log.lifecycle(`[Auto-Reformat] Complete (${mode}): ${chunks.length} entries extracted from ${totalBatches} batch(es), ${totalRepairCalls} coverage repair call(s), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
 
-    return { chunks, warnings, batchesProcessed, batchesFailed, totalBatches };
+    return { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode };
 }
 
 // ---------------------------------------------------------------------------

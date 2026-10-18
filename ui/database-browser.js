@@ -39,6 +39,7 @@ import {
   isCollectionLockedToChat,
   getCollectionLockCount,
   // Character Locking API
+  getCollectionCharacterLocks,
   setCollectionCharacterLock,
   removeCollectionCharacterLock,
   isCollectionLockedToCharacter,
@@ -63,7 +64,9 @@ import {
   validateImportData,
   getExportInfo,
   MAX_IMPORT_FILE_BYTES,
+  revectorizeCollection,
 } from "../core/collection-export.js";
+import { getModelFromSettings } from "../core/providers.js";
 import {
   embedDataInPNG,
   extractDataFromPNG,
@@ -307,7 +310,7 @@ function createBrowserModal() {
                                 🔒 Active here only
                             </label>
                             <label id="vectfox_show_all_toggle_label"
-                                   title="Show collections created by every persona, not just the current one. Display-only: foreign collections stay inactive for this chat."
+                                   title="Also show chat memories and lorebooks created by other personas (documents and character cards are always listed). Display-only: foreign collections stay inactive for this chat."
                                    style="display:flex; gap:6px; align-items:center; white-space:nowrap; cursor:pointer; font-size:0.85em;">
                                 <input type="checkbox" id="vectfox_show_all_toggle">
                                 👥 Show all
@@ -826,7 +829,7 @@ const _KNOWN_BACKEND_TAGS = ["standard", "vectra", "qdrant"];
 function _extractHandleFromCollectionId(collectionId) {
   if (!collectionId) return null;
   const idLower = String(collectionId).toLowerCase();
-  for (const prefix of _PERSONA_SCOPED_PREFIXES) {
+  for (const prefix of _HANDLE_BEARING_PREFIXES) {
     const p = prefix.toLowerCase();
     if (!idLower.startsWith(p)) continue;
     const segments = idLower.slice(p.length).split("_");
@@ -839,21 +842,29 @@ function _extractHandleFromCollectionId(collectionId) {
 }
 
 /**
- * Collection prefixes whose collections carry a persona-owned `creatorHandle`.
- * All VECTFOX content types follow the unified `vectfox_<type>_<backend>_<handle>_...`
- * naming protocol and are persona-scoped.
+ * Collection prefixes the browser hides from other personas unless "Show all"
+ * is on: the ones retrieval also limits to their own persona — chat memory
+ * (EventBase / archive events) and lorebooks (world-info-integration.js skips
+ * a lorebook another persona created). Documents and character cards are
+ * retrieved through their character lock whoever created them, so they are
+ * always listed.
  */
 const _PERSONA_SCOPED_PREFIXES = [
   COLLECTION_PREFIXES.VECTFOX_EVENTBASE,
   COLLECTION_PREFIXES.VECTFOX_ARCHIVE_EVENT,
   COLLECTION_PREFIXES.VECTFOX_LOREBOOK,
+];
+
+/** Prefixes whose IDs carry the creator's handle (vf_<type>_<backend>_<handle>_…). */
+const _HANDLE_BEARING_PREFIXES = [
+  ..._PERSONA_SCOPED_PREFIXES,
   COLLECTION_PREFIXES.VECTFOX_CHARACTER,
   COLLECTION_PREFIXES.VECTFOX_DOCUMENT,
 ];
 
 /**
- * Filter collections to only the current persona's chat-scoped collections.
- * Global-scope collections (lorebook, document, character) are always kept.
+ * Filter persona-scoped collections (see _PERSONA_SCOPED_PREFIXES) to the
+ * current persona's. Documents and character cards are always kept.
  *
  * Authoritative source: `creatorHandle` stamped onto collection metadata at
  * registerCollection time (see core/collection-loader.js). Exact-equality check —
@@ -898,7 +909,7 @@ function _filterCollectionsByCurrentPersona(collections) {
       idLower.startsWith(prefix.toLowerCase())
     );
 
-    // Shared types (lorebook / document / character) — always visible.
+    // Shared types (document / character) — always visible.
     if (!isPersonaScoped) return true;
 
     // Persona-scoped — keep only if the listing says we own it.
@@ -943,7 +954,7 @@ async function refreshCollections(withScan = false) {
     if (allCollections.length !== browserState.collections.length) {
       const hidden = allCollections.length - browserState.collections.length;
       if (browserState.settings?.eventbase_debug_logging) console.log(
-        `VECTFOX DB Browser: Hiding ${hidden} chat-scoped collection(s) from other personas (current: ${_sanitizeHandleForFilter(getContext()?.name1)})`,
+        `VECTFOX DB Browser: Hiding ${hidden} chat-memory/lorebook collection(s) from other personas (current: ${_sanitizeHandleForFilter(getContext()?.name1)})`,
       );
     }
 
@@ -1030,11 +1041,14 @@ export function renderCollections() {
 
     // Type filter - map filter categories to actual collection types
     if (browserState.filters.collectionType !== "all") {
+      // `document` is what vf_document_* collections parse to and what the
+      // Vectorize Content modal stores; `archive_event` is chat memory from an
+      // uploaded chat archive.
       const typeMap = {
-        chat: ["chat"],
+        chat: ["chat", "archive_event"],
         lorebook: ["lorebook"],
         character: ["character", "persona"],
-        document: ["file", "doc", "paste", "select", "current"],
+        document: ["document", "file", "doc", "paste", "select", "current"],
         web: ["url", "wiki", "youtube"],
       };
       const allowedTypes = typeMap[browserState.filters.collectionType];
@@ -1307,6 +1321,17 @@ function renderCollectionCard(collection, isActiveById = null, ownershipById = n
                         </button>
                     </div>
                 </div>
+                ${
+                  collection.backend === "qdrant"
+                    ? `
+                <button class="vectfox-btn-sm vectfox-action-revectorize"
+                        data-collection-key="${safeKey}"
+                        title="Re-embed every chunk with the current embedding settings, keeping the collection's ID, chunks, locks and settings">
+                    ${icons.refreshCw(16)} Re-vectorize
+                </button>
+                `
+                    : ""
+                }
                 <button class="vectfox-btn-sm vectfox-btn-danger vectfox-action-delete"
                         data-collection-key="${safeKey}">
                     ${icons.trash(16)} Delete
@@ -1576,6 +1601,40 @@ function bindCollectionCardEvents() {
       } catch (error) {
         console.error("VectFox: Failed to delete collection", error);
         toastr.error(`Failed to delete collection: ${error.message}`, "VectFox");
+      }
+    });
+
+  // Re-vectorize (Qdrant) — re-embed every chunk in place with the current
+  // embedding settings; restores the old vectors if embedding fails.
+  $(".vectfox-action-revectorize")
+    .off("click")
+    .on("click", async function (e) {
+      e.stopPropagation();
+      const collectionKey = $(this).data("collection-key");
+      const collection = findCollectionByKey(collectionKey);
+      if (!collection) return;
+
+      const settings = browserState.settings;
+      const target = `${settings.source || "transformers"}${getModelFromSettings(settings) ? ` / ${getModelFromSettings(settings)}` : ""}`;
+      const foreignWarning = _foreignOwnershipWarning(collectionKey);
+      const confirmed = confirm(
+        (foreignWarning ? `${foreignWarning}\n\n` : "") +
+          `Re-vectorize "${collection.name}"?\n\n` +
+          `All ${collection.chunkCount} chunks will be re-embedded with your current embedding settings (${target}). ` +
+          `The chunk text, locks and collection settings are kept. If embedding fails, the old vectors are put back.`,
+      );
+      if (!confirmed) return;
+
+      const $btn = $(this);
+      $btn.prop("disabled", true);
+      try {
+        const result = await revectorizeCollection(collection.id, settings, { backend: collection.backend });
+        toastr.success(`Re-vectorized "${collection.name}" (${result.chunkCount} chunks)`, "VectFox");
+        await refreshCollections(true);
+      } catch (error) {
+        console.error("VectFox: Re-vectorize failed", error);
+        toastr.error(`Re-vectorize failed: ${error.message}`, "VectFox", { timeOut: 15000 });
+        $btn.prop("disabled", false);
       }
     });
 
