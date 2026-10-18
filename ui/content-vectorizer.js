@@ -20,7 +20,7 @@ import {
     CHARACTER_FIELDS,
 } from '../core/content-types.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
-import { saveSettingsDebounced, getRequestHeaders } from '../../../../../script.js';
+import { saveSettingsDebounced, getRequestHeaders, chat_metadata } from '../../../../../script.js';
 import { Readability } from '../../../../../lib.js';
 import { getChatUUID, vectorizeAll } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
@@ -1063,9 +1063,11 @@ async function runAutoReformat() {
             settings: mergedSettings,
             sourceName,
             onProgress: (done, total, phase) => {
-                const label = phase === 'link'
-                    ? `Running Auto-Reformat — linking pass (${done}/${total})...`
-                    : `Running Auto-Reformat — extracting (${done}/${total} batches)...`;
+                const label = phase === 'whole'
+                    ? `Running Auto-Reformat — whole document in one response (attempt ${done}/${total})...`
+                    : phase === 'link'
+                        ? `Running Auto-Reformat — linking pass (${done}/${total})...`
+                        : `Running Auto-Reformat — extracting (${done}/${total} batches)...`;
                 container.find('.vectfox-cv-loading').html(
                     `<i class="fa-solid fa-spinner fa-spin"></i> ${label}`
                 );
@@ -1391,7 +1393,7 @@ function renderScopeOptions(type) {
     let chatName = 'No chat';
     if (hasChat) {
         // Try to get a meaningful chat name
-        if (typeof chat_metadata !== 'undefined' && chat_metadata?.chat_name) {
+        if (chat_metadata?.chat_name) {
             chatName = chat_metadata.chat_name;
         } else {
             chatName = `Chat #${context.chatId}`;

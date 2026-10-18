@@ -56,6 +56,8 @@ function baseSettings(overrides = {}) {
         reformat_batch_chars: 150,
         reformat_concurrency: 1, // deterministic call ordering for assertions
         reformat_timeout_ms: 5000,
+        // These suites pin the batched path; whole-document mode has its own suite.
+        reformat_single_pass: false,
         ...overrides,
     };
 }
@@ -778,6 +780,250 @@ describe('reformatDocument — linking pass', () => {
 // ---------------------------------------------------------------------------
 // Oversized-entity fallback (accept-time)
 // ---------------------------------------------------------------------------
+
+describe('reformatDocument — whole-document mode', () => {
+    const DOC = [
+        '# World',
+        '',
+        '## Settings',
+        '- **Voice:** grim',
+        '',
+        '## Ironclad Agency',
+        'Ironclad Agency is a hero agency based in New York City.',
+        '',
+        '## Bulwark',
+        'Bulwark leads Ironclad Agency.',
+    ].join('\n');
+    const ENTRY = { entry_type: 'organization', name: 'Ironclad Agency', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'Ironclad Agency is a hero agency based in New York City. Bulwark leads Ironclad Agency.' };
+
+    /**
+     * fetch mock that answers OpenRouter's model list with `models` (or a
+     * failure when null) and every chat call with the next of `replies`
+     * (the last one repeats). A reply is an entries array, a Response-like
+     * object, or {entries, finish}.
+     */
+    function routedFetch(models, replies) {
+        let i = 0;
+        return vi.fn(async (url) => {
+            if (String(url).includes('openrouter.ai/api/v1/models')) {
+                return models ? { ok: true, status: 200, json: async () => ({ data: models }) } : { ok: false, status: 503, json: async () => ({}) };
+            }
+            const reply = replies[Math.min(i++, replies.length - 1)];
+            if (Array.isArray(reply)) return mockChatCompletionResponse(reply);
+            if (reply.entries) return mockChatCompletionResponse(reply.entries, reply.finish);
+            return reply;
+        });
+    }
+    const chatCalls = fetchMock => fetchMock.mock.calls.filter(c => !String(c[0]).includes('/models'));
+    const wholeSettings = (model, overrides = {}) => baseSettings({ reformat_single_pass: true, reformat_model: model, ...overrides });
+
+    it('sends the whole document in one call with the model\'s own output limit, ignoring batch size and Max Output Tokens', async () => {
+        const fetchMock = routedFetch([{ id: 'test/whole-a', context_length: 1048576, top_provider: { max_completion_tokens: 65536 } }], [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const progress = [];
+        const result = await reformatDocument({
+            text: DOC, contentType: 'document', sourceName: 'World',
+            settings: wholeSettings('test/whole-a', { reformat_batch_chars: 20, reformat_max_output_tokens: 2000 }),
+            onProgress: (...args) => progress.push(args),
+        });
+
+        const calls = chatCalls(fetchMock);
+        expect(calls).toHaveLength(1);
+        const body = JSON.parse(calls[0][1].body);
+        expect(body.max_tokens).toBe(65536);
+        const prompt = body.messages[0].content;
+        expect(prompt).toContain('## Ironclad Agency');
+        expect(prompt).toContain('## Bulwark');
+        expect(prompt).not.toContain('**Voice:** grim');
+        expect(result.mode).toBe('whole');
+        expect(result.chunks.map(c => c.name)).toEqual(['Ironclad Agency']);
+        expect(result.warnings.some(w => /Skipped author-note section\(s\): "Settings"/.test(w))).toBe(true);
+        expect(progress).toEqual([[1, 2, 'whole']]);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('sends no max_tokens when the model\'s limits are unknown', async () => {
+        const fetchMock = routedFetch(null, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-unknown') });
+
+        const body = JSON.parse(chatCalls(fetchMock)[0][1].body);
+        expect('max_tokens' in body).toBe(false);
+        expect(result.mode).toBe('whole');
+
+        vi.unstubAllGlobals();
+    });
+
+    it('tries the whole document a second time when the first attempt fails', async () => {
+        const fetchMock = routedFetch(null, [{ ok: false, status: 500, text: async () => 'upstream error' }, [ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const progress = [];
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-retry'), onProgress: (...a) => progress.push(a) });
+
+        expect(chatCalls(fetchMock)).toHaveLength(2);
+        expect(result.mode).toBe('whole');
+        expect(result.chunks).toHaveLength(1);
+        expect(progress).toEqual([[1, 2, 'whole'], [2, 2, 'whole']]);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('falls back to batches after two failed whole-document attempts', async () => {
+        const fetchMock = routedFetch(null, ['not json at all', 'still not json', [ENTRY]].map(r => (typeof r === 'string'
+            ? { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: r }, finish_reason: 'stop' }] }) }
+            : r)));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-fail', { reformat_batch_chars: 6000 }) });
+
+        const prompts = chatCalls(fetchMock).map(extractPrompt);
+        expect(prompts).toHaveLength(3);
+        expect(result.mode).toBe('batched');
+        expect(result.chunks).toHaveLength(1);
+        expect(result.warnings.some(w => /Whole-document mode failed \(attempt 1: .*; attempt 2: .*\)/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('does not repeat a whole-document reply cut off by the output limit; goes straight to batches', async () => {
+        const fetchMock = routedFetch(null, [{ entries: [ENTRY], finish: 'length' }, [ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-trunc', { reformat_batch_chars: 6000 }) });
+
+        expect(chatCalls(fetchMock)).toHaveLength(2);
+        expect(result.mode).toBe('batched');
+        expect(result.warnings.some(w => /attempt 1: the response was cut off/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('skips the whole-document call when the entries could not fit the model\'s output limit', async () => {
+        const fetchMock = routedFetch([{ id: 'test/whole-small', context_length: 1048576, top_provider: { max_completion_tokens: 10 } }], [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-small', { reformat_batch_chars: 6000 }) });
+
+        const calls = chatCalls(fetchMock);
+        expect(calls).toHaveLength(1);
+        expect(JSON.parse(calls[0][1].body).max_tokens).toBe(16000); // the batched call keeps the setting
+        expect(result.mode).toBe('batched');
+        expect(result.warnings.some(w => /Whole-document mode skipped: .*10-token output limit/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('is off by default: no model lookup, the document goes out in batches', async () => {
+        const fetchMock = routedFetch(null, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { reformat_single_pass, ...settings } = wholeSettings('test/whole-default');
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings });
+
+        expect(reformat_single_pass).toBe(true);
+        expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/models'))).toBe(false);
+        expect(result.mode).toBe('batched');
+
+        vi.unstubAllGlobals();
+    });
+
+    it('reserves output room for thinking when deciding whether the document fits', async () => {
+        const models = [{ id: 'test/whole-think', context_length: 1048576, top_provider: { max_completion_tokens: 30000 } }];
+
+        let fetchMock = routedFetch(models, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+        const medium = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-think', { reformat_reasoning_effort: 'medium' }) });
+        expect(medium.mode).toBe('whole');
+
+        fetchMock = routedFetch(models, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+        const high = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-think', { reformat_reasoning_effort: 'high', reformat_batch_chars: 6000 }) });
+        expect(high.mode).toBe('batched');
+        expect(high.warnings.some(w => /including ~40,000 for thinking\) would exceed the model's 30,000-token output limit/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('does not run the linking pass after a whole-document call', async () => {
+        const fetchMock = routedFetch(null, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-link', { reformat_enable_linking_pass: true }) });
+
+        expect(chatCalls(fetchMock).map(extractPrompt).some(p => p.includes('ENTRIES:'))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('reformatDocument — reasoning effort', () => {
+    const DOC = '# Topic\n\nOne short paragraph.';
+    const ENTRY = { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'One short paragraph.' };
+    const modelsFetch = (models) => vi.fn(async (url) => {
+        if (String(url).includes('openrouter.ai/api/v1/models')) {
+            return models ? { ok: true, status: 200, json: async () => ({ data: models }) } : { ok: false, status: 503, json: async () => ({}) };
+        }
+        return mockChatCompletionResponse([ENTRY]);
+    });
+    const chatBodies = fetchMock => fetchMock.mock.calls.filter(c => !String(c[0]).includes('/models')).map(c => JSON.parse(c[1].body));
+
+    it('sends no reasoning_effort and keeps Max Output Tokens by default', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect('reasoning_effort' in body).toBe(false);
+        expect(body.max_tokens).toBe(16000);
+        expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/models'))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('sends the effort and gives each batch the model\'s own output limit', async () => {
+        const fetchMock = modelsFetch([{ id: 'test/think-known', context_length: 1048576, top_provider: { max_completion_tokens: 65536 } }]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_model: 'test/think-known', reformat_reasoning_effort: 'medium', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect(body.reasoning_effort).toBe('medium');
+        expect(body.max_tokens).toBe(65536);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('adds the thinking reserve to Max Output Tokens when the model\'s limit is unknown', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_model: 'test/think-unknown', reformat_reasoning_effort: 'high', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect(body.reasoning_effort).toBe('high');
+        expect(body.max_tokens).toBe(16000 + 40000);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('ignores an unknown effort value', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_reasoning_effort: 'extreme', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect('reasoning_effort' in body).toBe(false);
+        expect(body.max_tokens).toBe(16000);
+
+        vi.unstubAllGlobals();
+    });
+});
 
 describe('expandOversizedChunk', () => {
     it('returns the chunk unchanged when body is within the size ceiling', async () => {

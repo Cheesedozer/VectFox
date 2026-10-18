@@ -651,6 +651,27 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="VectFox_hint">API key is shared with Embedding/Summarize/AgentMode — set it in Core → LLM Summarization.</small>
                             </div>
 
+                            <div class="vectfox-form-group">
+                                <label for="VectFox_reformat_reasoning_effort"><small>Reasoning Effort</small></label>
+                                <select id="VectFox_reformat_reasoning_effort" class="vectfox-select">
+                                    <option value="">Model default</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <small class="VectFox_hint">How much the model thinks before writing entries (models without thinking ignore it). Thinking counts against the output limit, so with an effort set each batch gets the model's full output limit and at least a 5-minute timeout. More thinking is not always better: Gemini 3.5 Flash Lite kept fewer facts on medium than on its default.</small>
+                            </div>
+
+                            <label class="checkbox_label" style="margin-bottom:6px;" title="Sends the whole document to the model in one call, with the model's own output limit instead of Max Output Tokens and no Batch Size, so every entry is written with the whole document in view (fewer duplicate entries). If that call fails it is tried once more; if it fails again, or the document is too long for the model's output limit (about 2.5–3 tokens of entries per token of source, plus thinking), the document is processed in batches as usual. Use a model that keeps detail over long replies: Claude Haiku 5.5 on medium effort kept 99% of a test document's facts this way; Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%) and are better in batches.">
+                                <input type="checkbox" id="VectFox_reformat_single_pass" />
+                                <small>Whole Document in One Response (fallback: batches)</small>
+                            </label>
+                            <div id="VectFox_reformat_single_pass_row" style="display:none; margin-bottom:8px;">
+                                <label for="VectFox_reformat_single_pass_timeout_ms"><small>Whole-document timeout (ms)</small></label>
+                                <input id="VectFox_reformat_single_pass_timeout_ms" type="number" class="vectfox-input" min="60000" step="10000" style="width:140px;" />
+                                <small class="VectFox_hint">One reply for a long document can take several minutes to generate.</small>
+                            </div>
+
                             <label for="VectFox_reformat_batch_chars">
                                 <small>Batch Size: <span id="VectFox_reformat_batch_chars_val">6000</span> chars</small>
                             </label>
@@ -2576,6 +2597,34 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
+    $('#VectFox_reformat_reasoning_effort')
+        .val(settings.reformat_reasoning_effort || '')
+        .on('change', function () {
+            settings.reformat_reasoning_effort = String($(this).val());
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#VectFox_reformat_single_pass')
+        .prop('checked', settings.reformat_single_pass === true)
+        .on('change', function () {
+            settings.reformat_single_pass = $(this).prop('checked');
+            $('#VectFox_reformat_single_pass_row').toggle(settings.reformat_single_pass);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+    $('#VectFox_reformat_single_pass_row').toggle(settings.reformat_single_pass === true);
+
+    $('#VectFox_reformat_single_pass_timeout_ms')
+        .val(Number(settings.reformat_single_pass_timeout_ms ?? 600000))
+        .on('change', function () {
+            const v = parseInt(String($(this).val()), 10);
+            settings.reformat_single_pass_timeout_ms = Math.max(60000, v || 600000);
+            $(this).val(settings.reformat_single_pass_timeout_ms);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
     $('#VectFox_reformat_enable_repair_pass')
         .prop('checked', settings.reformat_enable_repair_pass !== false)
         .on('change', function() {
@@ -3256,8 +3305,9 @@ function bindSettingsEvents(settings, callbacks) {
                         const metaMod = await import('../core/collection-metadata.js');
 
                         for (const registryKey of registry) {
+                            let collKey = registryKey;
                             try {
-                                const collKey = parseRegistryKey(registryKey).collectionId;
+                                collKey = parseRegistryKey(registryKey).collectionId;
                                 if (!collKey.startsWith('vf_lorebook_')) continue; // focus on lorebooks
                                 const meta = metaMod.getCollectionMeta(collKey);
                                 log.trace(`VectFox: Collection meta for ${collKey}:`, meta);

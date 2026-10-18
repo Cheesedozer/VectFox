@@ -754,6 +754,140 @@ export async function importCollection(exportData, settings, options = {}) {
 }
 
 // ============================================================================
+// RE-VECTORIZE
+// ============================================================================
+
+/** Payload fields the backend writes itself on insert; everything else is carried over. */
+const REVECTORIZE_BACKEND_FIELDS = new Set(['text', 'hash', 'vector', 'type', 'sourceId', 'embeddingSource', 'embeddingModel', 'messageIndex']);
+/** Fields backends/qdrant.js reads from the item itself (it overwrites them in metadata). */
+const REVECTORIZE_ITEM_FIELDS = ['keywords', 'importance', 'conditions', 'isSummaryChunk', 'parentHash'];
+
+/**
+ * Text as it was before insert: Qdrant ingestion stores the chunk text with
+ * " [KEYWORDS: …]" appended, and inserting it again would append it twice.
+ * @param {string} text
+ * @param {Array<string|{text: string}>} keywords
+ * @returns {string}
+ */
+export function stripKeywordSuffix(text, keywords) {
+    const kwText = (Array.isArray(keywords) ? keywords : [])
+        .map(kw => (typeof kw === 'string' ? kw : kw?.text || ''))
+        .join(' ');
+    const suffix = ` [KEYWORDS: ${kwText}]`;
+    return kwText && String(text || '').endsWith(suffix) ? text.slice(0, -suffix.length) : String(text || '');
+}
+
+/**
+ * Splits a chunk listed by /chunks/list into the item insertVectorItems takes,
+ * keeping its hash (chunk metadata and saved hashes are keyed by it) and
+ * every payload field.
+ * @param {object} listed - One item from fetchChunksWithVectors
+ * @param {number} position - Fallback index
+ * @returns {object}
+ */
+export function revectorizeItemFromListed(listed, position) {
+    const payload = listed.metadata || listed;
+    const item = {
+        hash: payload.hash ?? listed.hash,
+        index: payload.messageIndex ?? payload.chunkIndex ?? listed.index ?? position,
+        metadata: {},
+    };
+    for (const [key, value] of Object.entries(payload)) {
+        if (REVECTORIZE_BACKEND_FIELDS.has(key)) continue;
+        if (REVECTORIZE_ITEM_FIELDS.includes(key)) item[key] = value;
+        else item.metadata[key] = value;
+    }
+    item.text = stripKeywordSuffix(payload.text ?? listed.text, item.keywords);
+    return item;
+}
+
+/**
+ * Re-embeds every chunk of a Qdrant collection with the current embedding
+ * settings, in place: same collection ID, chunk hashes, payload, metadata,
+ * locks and activation settings. Useful after a Qdrant upgrade or an
+ * embedding-model change.
+ *
+ * The chunks (with their old vectors) are read into memory before the
+ * collection is cleared. If re-embedding fails, the old vectors are written
+ * back so the collection is left as it was.
+ *
+ * @param {string} collectionId - Bare collection ID
+ * @param {object} settings - VectFox settings (current embedding provider/model)
+ * @param {{backend?: string}} [collectionInfo]
+ * @returns {Promise<{chunkCount: number, restored: boolean}>}
+ */
+export async function revectorizeCollection(collectionId, settings, collectionInfo = {}) {
+    const backend = collectionInfo.backend || settings.vector_backend;
+    if (getRegistryBackend(backend) !== 'qdrant') {
+        throw new Error('Re-vectorize supports Qdrant collections only.');
+    }
+    if (settings.qdrant_multitenancy) {
+        throw new Error('Re-vectorize does not support Qdrant multitenancy mode (all collections share one Qdrant collection).');
+    }
+    const runSettings = { ...settings, vector_backend: 'qdrant' };
+
+    progressTracker.show('Re-vectorizing Collection', 3, 'Steps');
+    progressTracker.updateCurrentItem(collectionId);
+    const abortController = new AbortController();
+    progressTracker.setCancelHandler(() => abortController.abort('user-stop'));
+
+    let purged = false;
+    let backup = [];
+    try {
+        progressTracker.updateProgress(1, 'Reading chunks...');
+        const listed = await fetchChunksWithVectors(collectionId, runSettings);
+        const items = listed.map(revectorizeItemFromListed).filter(item => item.text.trim() && item.hash != null);
+        if (items.length === 0) {
+            throw new Error('The collection has no chunks with text to re-embed.');
+        }
+        backup = items.map((item, i) => {
+            let vector = listed[i]?.vector ?? null;
+            if (vector && typeof vector === 'object' && !Array.isArray(vector)) vector = vector[''] ?? null;
+            return { ...item, vector };
+        });
+        progressTracker.updateChunks(items.length);
+
+        progressTracker.updateProgress(2, 'Clearing old vectors...');
+        if (!await purgeVectorIndex(collectionId, runSettings)) {
+            throw new Error('Could not clear the collection; nothing was changed.');
+        }
+        purged = true;
+
+        progressTracker.updateProgress(3, `Embedding ${items.length} chunks...`);
+        await insertVectorItems(collectionId, items, runSettings, (done, total) => {
+            progressTracker.updateEmbeddingProgress(done, total);
+        }, abortController.signal);
+
+        setCollectionMeta(buildRegistryKey(collectionId, runSettings), { revectorizedAt: new Date().toISOString() });
+        progressTracker.complete(true, `Re-embedded ${items.length} chunks`);
+        return { chunkCount: items.length, restored: false };
+    } catch (error) {
+        let restored = false;
+        if (purged && backup.length > 0 && backup.every(item => Array.isArray(item.vector))) {
+            try {
+                await purgeVectorIndex(collectionId, runSettings);
+                await insertChunksWithVectors(collectionId, backup.map(item => ({
+                    ...item,
+                    metadata: { ...item.metadata, ...Object.fromEntries(REVECTORIZE_ITEM_FIELDS.map(k => [k, item[k]])) },
+                })), runSettings);
+                restored = true;
+                log.lifecycle(`VectFox Re-vectorize: restored ${backup.length} chunks of ${collectionId} with their old vectors`);
+            } catch (restoreError) {
+                log.error(`VectFox Re-vectorize: restoring ${collectionId} failed`, restoreError);
+            }
+        }
+        const message = purged
+            ? `${error.message} — ${restored ? 'the collection was restored with its old vectors' : 'the collection could NOT be restored; re-import it from an export'}`
+            : error.message;
+        progressTracker.addError(message);
+        progressTracker.complete(false, 'Re-vectorize failed');
+        throw Object.assign(new Error(message), { name: error?.name, restored });
+    } finally {
+        progressTracker.clearCancelHandler();
+    }
+}
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 

@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Database Browser: "Manage Locks" works again.** Opening the lock dialog
+  threw `getCollectionCharacterLocks is not defined` (its import was dropped in
+  the unused-import cleanup) and showed "Failed to open lock dialog".
+- **Database Browser: the Documents filter shows documents.** Vectorized
+  documents (including Auto-Reformat output) are typed `document`, which the
+  filter didn't accept, so only "All Types" listed them. The Chats filter now
+  also includes uploaded chat archives.
+- **Database Browser: documents and character cards are listed for every
+  persona.** They are retrieved through their character lock whoever created
+  them, but the browser hid them unless the persona that created them was
+  active. Chat memories and lorebooks, which retrieval does limit to their own
+  persona, still need **👥 Show all**.
+
+### New
+
+- **Re-vectorize (Qdrant collections).** A button on each Qdrant collection
+  card re-embeds every chunk with the current embedding settings, in place:
+  same collection ID, chunk text, locks and settings. Use it after changing
+  the embedding model (the vector size may change) or if a Qdrant upgrade ever
+  requires it. Chunks and their old vectors are read first; if embedding
+  fails the old vectors are written back.
+- **Auto-Reformat: Whole Document in One Response** (ChunkBase → Auto-Reformat,
+  off by default). Sends the whole document in one call with the model's own
+  output limit (Batch Size and Max Output Tokens don't apply), tries it a
+  second time if it fails, and falls back to batches after that, when the
+  reply is cut off, or when the document can't fit the model's context/output
+  limit (checked against OpenRouter's model list, allowing ~3 tokens of
+  entries per source token plus room for thinking). The linking pass is
+  skipped after a whole-document call. Whether it helps depends on the model.
+  On a 31k-character world bible, Claude Haiku 5.5 on medium effort kept 99%
+  of the source's facts in one reply with no duplicate entries ($0.015, 93 s);
+  Gemini 3.5 Flash Lite and 3.8 Flash summarized to ~88% (Flash Lite in
+  batches: 98%).
+- **Auto-Reformat: Reasoning Effort** (Model default / Low / Medium / High).
+  Sent as SillyTavern's `reasoning_effort`, which its proxy maps to the
+  provider (OpenRouter's `reasoning.effort`). Thinking counts against the
+  output limit, so with an effort set each batch gets the model's full output
+  limit (or Max Output Tokens plus a thinking reserve when the limit is
+  unknown) and at least a 5-minute timeout; without this, Gemini 3.8 Flash on
+  high had 7 of 12 batches cut off at 16k tokens.
+
 ### Performance
 
 - **Full-collection metadata is now cached.** `getSavedHashes(..., includeMetadata=true)`
