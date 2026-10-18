@@ -651,7 +651,18 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="VectFox_hint">API key is shared with Embedding/Summarize/AgentMode — set it in Core → LLM Summarization.</small>
                             </div>
 
-                            <label class="checkbox_label" style="margin-bottom:6px;" title="Sends the whole document to the model in one call, with the model's own output limit instead of Max Output Tokens and no Batch Size. If that call fails it is tried once more; if it fails again, or the document can't fit the model's context or output limit, the document is processed in batches as usual. Smaller models tend to summarize when given a whole document at once, so check the review screen's coverage warnings.">
+                            <div class="vectfox-form-group">
+                                <label for="VectFox_reformat_reasoning_effort"><small>Reasoning Effort</small></label>
+                                <select id="VectFox_reformat_reasoning_effort" class="vectfox-select">
+                                    <option value="">Model default</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <small class="VectFox_hint">How much the model thinks before writing entries (models without thinking ignore it). Thinking counts against the output limit, so with an effort set each batch gets the model's full output limit and at least a 5-minute timeout. More thinking is not always better: Gemini 3.5 Flash Lite kept fewer facts on medium than on its default.</small>
+                            </div>
+
+                            <label class="checkbox_label" style="margin-bottom:6px;" title="Sends the whole document to the model in one call, with the model's own output limit instead of Max Output Tokens and no Batch Size, so every entry is written with the whole document in view (fewer duplicate entries). If that call fails it is tried once more; if it fails again, or the document is too long for the model's output limit (about 2.5–3 tokens of entries per token of source, plus thinking), the document is processed in batches as usual. Use a model that keeps detail over long replies: Claude Haiku 5.5 on medium effort kept 99% of a test document's facts this way; Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%) and are better in batches.">
                                 <input type="checkbox" id="VectFox_reformat_single_pass" />
                                 <small>Whole Document in One Response (fallback: batches)</small>
                             </label>
@@ -2582,6 +2593,14 @@ function bindSettingsEvents(settings, callbacks) {
         .on('change input', function() {
             const v = Number($(this).val());
             settings.reformat_timeout_ms = Math.max(10000, v || 90000);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#VectFox_reformat_reasoning_effort')
+        .val(settings.reformat_reasoning_effort || '')
+        .on('change', function () {
+            settings.reformat_reasoning_effort = String($(this).val());
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

@@ -931,6 +931,23 @@ describe('reformatDocument — whole-document mode', () => {
         vi.unstubAllGlobals();
     });
 
+    it('reserves output room for thinking when deciding whether the document fits', async () => {
+        const models = [{ id: 'test/whole-think', context_length: 1048576, top_provider: { max_completion_tokens: 30000 } }];
+
+        let fetchMock = routedFetch(models, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+        const medium = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-think', { reformat_reasoning_effort: 'medium' }) });
+        expect(medium.mode).toBe('whole');
+
+        fetchMock = routedFetch(models, [[ENTRY]]);
+        vi.stubGlobal('fetch', fetchMock);
+        const high = await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-think', { reformat_reasoning_effort: 'high', reformat_batch_chars: 6000 }) });
+        expect(high.mode).toBe('batched');
+        expect(high.warnings.some(w => /including ~40,000 for thinking\) would exceed the model's 30,000-token output limit/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
     it('does not run the linking pass after a whole-document call', async () => {
         const fetchMock = routedFetch(null, [[ENTRY]]);
         vi.stubGlobal('fetch', fetchMock);
@@ -938,6 +955,71 @@ describe('reformatDocument — whole-document mode', () => {
         await reformatDocument({ text: DOC, contentType: 'document', settings: wholeSettings('test/whole-link', { reformat_enable_linking_pass: true }) });
 
         expect(chatCalls(fetchMock).map(extractPrompt).some(p => p.includes('ENTRIES:'))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('reformatDocument — reasoning effort', () => {
+    const DOC = '# Topic\n\nOne short paragraph.';
+    const ENTRY = { entry_type: 'concept', name: 'Topic', aliases: [], affiliation: '', relationships: [], keywords: [], body: 'One short paragraph.' };
+    const modelsFetch = (models) => vi.fn(async (url) => {
+        if (String(url).includes('openrouter.ai/api/v1/models')) {
+            return models ? { ok: true, status: 200, json: async () => ({ data: models }) } : { ok: false, status: 503, json: async () => ({}) };
+        }
+        return mockChatCompletionResponse([ENTRY]);
+    });
+    const chatBodies = fetchMock => fetchMock.mock.calls.filter(c => !String(c[0]).includes('/models')).map(c => JSON.parse(c[1].body));
+
+    it('sends no reasoning_effort and keeps Max Output Tokens by default', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect('reasoning_effort' in body).toBe(false);
+        expect(body.max_tokens).toBe(16000);
+        expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/models'))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('sends the effort and gives each batch the model\'s own output limit', async () => {
+        const fetchMock = modelsFetch([{ id: 'test/think-known', context_length: 1048576, top_provider: { max_completion_tokens: 65536 } }]);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_model: 'test/think-known', reformat_reasoning_effort: 'medium', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect(body.reasoning_effort).toBe('medium');
+        expect(body.max_tokens).toBe(65536);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('adds the thinking reserve to Max Output Tokens when the model\'s limit is unknown', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_model: 'test/think-unknown', reformat_reasoning_effort: 'high', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect(body.reasoning_effort).toBe('high');
+        expect(body.max_tokens).toBe(16000 + 40000);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('ignores an unknown effort value', async () => {
+        const fetchMock = modelsFetch(null);
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: DOC, contentType: 'document', settings: baseSettings({ reformat_reasoning_effort: 'extreme', reformat_batch_chars: 6000 }) });
+
+        const [body] = chatBodies(fetchMock);
+        expect('reasoning_effort' in body).toBe(false);
+        expect(body.max_tokens).toBe(16000);
 
         vi.unstubAllGlobals();
     });

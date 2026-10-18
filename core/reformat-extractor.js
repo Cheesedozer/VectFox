@@ -14,9 +14,15 @@
  * document to the model in ONE call, so every entry is written with the full
  * document in view. That call is tried twice; if both fail (or the document
  * can't fit the model's context/output limits) the run falls back to the
- * batched path below. It is off by default: measured on a 31k-character world
- * bible with Gemini 3.5 Flash Lite, one reply came back ~6k tokens long and
- * kept a third less of the source's facts than batches did.
+ * batched path below. It is off by default because it depends on the model:
+ * measured on a 31k-character world bible, Claude Haiku 5.5 (medium effort)
+ * kept 99% of the source's facts in one reply with no duplicate entries,
+ * while Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%, against ~98%
+ * for Flash Lite in batches).
+ *
+ * settings.reformat_reasoning_effort ('' = model default) sets the thinking
+ * level. Thinking tokens count against the output limit, so with an effort
+ * set every call gets more output room and a longer timeout.
  *
  * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode }.
  * Throws ReformatFatalError for config/auth failures (aborts the whole run).
@@ -58,8 +64,15 @@ const DEFAULT_COVERAGE_THRESHOLD = 0.5;
 const DEFAULT_SINGLE_PASS_TIMEOUT_MS = 600000;
 const SINGLE_PASS_ATTEMPTS = 2;
 // The extracted entries restate every fact plus JSON fields, names, keywords
-// and relationships, so the reply is larger than the source text it covers.
-const SINGLE_PASS_OUTPUT_RATIO = 1.5;
+// and relationships: measured at ~2.5 output tokens per source token, so 3
+// leaves a margin.
+const SINGLE_PASS_OUTPUT_RATIO = 3;
+// Output tokens to set aside for thinking, per reasoning effort. The measured
+// whole-document peak was ~7k (Haiku 5.5, medium) and ~38k (Gemini 3.8 Flash,
+// high); per batch, Gemini 3.8 Flash on high used more than 16k.
+const THINKING_RESERVE_TOKENS = { low: 8000, medium: 24000, high: 40000 };
+// A thinking model can take minutes on one batch.
+const REASONING_MIN_TIMEOUT_MS = 300000;
 // Room for the extraction prompt's instructions and example around the text.
 const PROMPT_OVERHEAD_TOKENS = 2500;
 
@@ -88,6 +101,12 @@ function _resolveVllmUrl(settings) {
     return (settings.reformat_vllm_url || settings.summarize_vllm_url || '').trim();
 }
 
+/** 'low' | 'medium' | 'high', or '' for the model's default. */
+function _resolveReasoningEffort(settings) {
+    const effort = String(settings.reformat_reasoning_effort || '').toLowerCase();
+    return Object.hasOwn(THINKING_RESERVE_TOKENS, effort) ? effort : '';
+}
+
 // ---------------------------------------------------------------------------
 // HTTP caller
 // ---------------------------------------------------------------------------
@@ -98,8 +117,9 @@ function _resolveVllmUrl(settings) {
  * @param {object} settings
  * @param {number} batchIndex
  * @param {{maxTokens?: number|null, timeoutMs?: number}} [callOptions] - Overrides
- *        for the whole-document call. maxTokens null sends no max_tokens, so the
- *        provider's own (model-maximum) limit applies.
+ *        for the whole-document call and for calls with a reasoning effort.
+ *        maxTokens null sends no max_tokens, so the provider's own
+ *        (model-maximum) limit applies.
  * @returns {Promise<{reply: string, finishReason: string|null}>}
  */
 async function _callLLM(prompt, settings, batchIndex, callOptions = {}) {
@@ -145,6 +165,7 @@ async function _callLLM(prompt, settings, batchIndex, callOptions = {}) {
             : (settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS),
         temperature: settings.reformat_temperature ?? DEFAULT_TEMPERATURE,
         timeoutMs: callOptions.timeoutMs || settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS,
+        reasoningEffort: _resolveReasoningEffort(settings) || undefined,
     });
 
     if (!result.ok) {
@@ -914,9 +935,10 @@ function _cleanLinkName(raw) {
  * @param {number} params.concurrency
  * @param {AbortSignal|null} params.abortSignal
  * @param {(() => void)|null} params.onTick
+ * @param {{maxTokens?: number, timeoutMs?: number}} [params.callOptions] - Reasoning-effort overrides (see _batchCallOptions)
  * @returns {Promise<{applied: number, dropped: number}>}
  */
-async function _runLinkingPass({ batches, records, settings, warnings, concurrency, abortSignal = null, onTick = null }) {
+async function _runLinkingPass({ batches, records, settings, warnings, concurrency, abortSignal = null, onTick = null, callOptions = {} }) {
     const catalog = records.map(r => ({ name: r.name, aliases: r.aliases || [] }));
 
     /** @type {Map<string, object>} name/alias key → record (first registration wins) */
@@ -949,7 +971,7 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
         }
         try {
             const prompt = buildLinkingPrompt(batch.text, catalog);
-            const { reply } = await _callProviderWithRetry(prompt, settings, i);
+            const { reply } = await _callProviderWithRetry(prompt, settings, i, callOptions);
             const triples = _parseReformatArray(reply, i, ['source', 'target']);
 
             for (const t of triples) {
@@ -1035,19 +1057,42 @@ function estimateTokens(text) {
  * (or the limits are unknown).
  * @param {string} text
  * @param {{contextLength: number|null, maxOutputTokens: number|null}|null} limits
+ * @param {string} [reasoningEffort] - Reserves THINKING_RESERVE_TOKENS for it
  * @returns {string|null}
  */
-function wholeDocumentMisfit(text, limits) {
+function wholeDocumentMisfit(text, limits, reasoningEffort = '') {
     if (!limits) return null;
     const inputTokens = estimateTokens(text) + PROMPT_OVERHEAD_TOKENS;
-    const outputTokens = Math.ceil(estimateTokens(text) * SINGLE_PASS_OUTPUT_RATIO);
+    const thinkingTokens = THINKING_RESERVE_TOKENS[reasoningEffort] || 0;
+    const outputTokens = Math.ceil(estimateTokens(text) * SINGLE_PASS_OUTPUT_RATIO) + thinkingTokens;
+    const thinkingNote = thinkingTokens ? `, including ~${thinkingTokens.toLocaleString()} for thinking` : '';
     if (limits.contextLength && inputTokens + outputTokens > limits.contextLength) {
-        return `the document (~${inputTokens.toLocaleString()} tokens) plus its entries (~${outputTokens.toLocaleString()} tokens) exceed the model's ${limits.contextLength.toLocaleString()}-token context`;
+        return `the document (~${inputTokens.toLocaleString()} tokens) plus its entries (~${outputTokens.toLocaleString()} tokens${thinkingNote}) exceed the model's ${limits.contextLength.toLocaleString()}-token context`;
     }
     if (limits.maxOutputTokens && outputTokens > limits.maxOutputTokens) {
-        return `its entries (~${outputTokens.toLocaleString()} tokens) would exceed the model's ${limits.maxOutputTokens.toLocaleString()}-token output limit`;
+        return `its entries (~${outputTokens.toLocaleString()} tokens${thinkingNote}) would exceed the model's ${limits.maxOutputTokens.toLocaleString()}-token output limit`;
     }
     return null;
+}
+
+/**
+ * Call overrides for batches when a reasoning effort is set: thinking tokens
+ * come out of max_tokens, so the batch gets the model's own output limit (or
+ * Max Output Tokens plus the thinking reserve when the limit is unknown), and
+ * at least REASONING_MIN_TIMEOUT_MS. Without an effort, batches keep the
+ * settings as they are.
+ * @param {object} settings
+ * @param {{maxOutputTokens: number|null}|null} limits
+ * @returns {{maxTokens?: number, timeoutMs?: number}}
+ */
+function _batchCallOptions(settings, limits) {
+    const effort = _resolveReasoningEffort(settings);
+    if (!effort) return {};
+    return {
+        maxTokens: limits?.maxOutputTokens
+            || (settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS) + THINKING_RESERVE_TOKENS[effort],
+        timeoutMs: Math.max(settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS, REASONING_MIN_TIMEOUT_MS),
+    };
 }
 
 /**
@@ -1059,7 +1104,7 @@ function wholeDocumentMisfit(text, limits) {
  */
 async function _runWholeDocument({ batch, settings, warnings, contentType, onProgress, abortSignal }) {
     const limits = await _getModelLimits(settings);
-    const misfit = wholeDocumentMisfit(batch.text, limits);
+    const misfit = wholeDocumentMisfit(batch.text, limits, _resolveReasoningEffort(settings));
     if (misfit) {
         warnings.push(`Whole-document mode skipped: ${misfit}. The document was processed in batches instead.`);
         log.lifecycle(`[Auto-Reformat] Whole-document mode skipped: ${misfit}`);
@@ -1133,6 +1178,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
     let batchesProcessed = 0;
     let batchesFailed = 0;
     let totalRepairCalls = 0;
+    let batchCallOptions = {};
 
     if (settings.reformat_single_pass === true) {
         const whole = await _buildBatches(text, Infinity, sourceName);
@@ -1162,6 +1208,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
         }
 
         const chains = _groupIntoChains(batches);
+        batchCallOptions = _batchCallOptions(settings, _resolveReasoningEffort(settings) ? await _getModelLimits(settings) : null);
         log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${batches.length} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
 
         const chainFns = chains.map((chain, chainIndex) => async () => {
@@ -1170,7 +1217,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
                 err.name = 'AbortError';
                 throw err;
             }
-            const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType);
+            const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType, { callOptions: batchCallOptions });
             batchesProcessed += chain.length;
             batchesFailed += failedCount;
             totalRepairCalls += repairCalls;
@@ -1203,6 +1250,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
             warnings,
             concurrency,
             abortSignal,
+            callOptions: batchCallOptions,
             onTick: () => {
                 linkBatchesDone++;
                 onProgress?.(linkBatchesDone, totalBatches, 'link');

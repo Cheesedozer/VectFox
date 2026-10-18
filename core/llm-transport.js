@@ -51,6 +51,9 @@ const CHAT_COMPLETIONS_ENDPOINT = '/api/backends/chat-completions/generate';
  * @param {number}   params.timeoutMs
  * @param {string}   [params.vllmUrl]        - Required when provider is 'vllm'.
  * @param {object}   [params.responseFormat] - Omitted from the body when absent.
+ * @param {string}   [params.reasoningEffort] - 'low' | 'medium' | 'high'. Sent as ST's
+ *        `reasoning_effort`, which its proxy maps to the provider's field (OpenRouter's
+ *        `reasoning.effort`). Omitted when absent, so the model's default applies.
  * @returns {Promise<{ok: true, status: number, data: any} | {ok: false, status: number, errText: string}>}
  */
 export async function callChatCompletion({
@@ -62,6 +65,7 @@ export async function callChatCompletion({
     timeoutMs,
     vllmUrl,
     responseFormat,
+    reasoningEffort,
 }) {
     const isVllm = provider === 'vllm';
 
@@ -76,6 +80,7 @@ export async function callChatCompletion({
             max_tokens: maxTokens,
             temperature,
             ...(responseFormat ? { response_format: responseFormat } : {}),
+            ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
     });

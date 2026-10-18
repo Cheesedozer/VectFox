@@ -44,14 +44,23 @@ Two rules still apply:
 - **Auto Reformat** can still produce near-duplicate entries whose names differ
   by a suffix (e.g. "GAMA" vs "GAMA app"); merge only unifies exact name/alias
   keys.
-- **Auto Reformat whole-document mode loses content with small models.**
-  Gemini 3.5 Flash Lite given a 31k-char document in one call writes ~6k
-  tokens and drops about a third of the facts (coverage check flags ~20
-  paragraphs vs 0–2 batched), even with a length target in the prompt. That is
-  why `reformat_single_pass` defaults off. Batches that also carry the whole
-  document as read-only context kept batched-level coverage with fewer
-  duplicates, at ~4× the input tokens (quadratic in document length); not
-  implemented.
+- **Auto Reformat whole-document mode depends on the model**, so
+  `reformat_single_pass` defaults off. On a 31k-char world bible (mean
+  per-paragraph fact recall): Claude Haiku 5.5 medium effort 99%, no
+  duplicates; Gemini 3.5 Flash Lite (any effort) and 3.8 Flash high ~88% —
+  they summarize long replies, and a length target in the prompt didn't help.
+  Batched Flash Lite (default effort) 98%; batched Haiku 99% but ~35 duplicate
+  records merged and near-duplicates left. Replies ran ~2.5 output tokens per
+  source token plus thinking, so one 128k-output reply fits ~40k source
+  tokens. Batches that also carry the whole document as read-only context
+  kept batched-level coverage with fewer duplicates at ~4× the input tokens
+  (quadratic in document length); not implemented.
+- **JSON schema (`response_format`) for Auto Reformat** was measured and not
+  adopted: no completeness gain, lower recall for Flash Lite, and no parse
+  failures to fix. Through ST's proxy it would have to be sent as
+  `json_schema`; ST does not forward a raw `response_format` to OpenRouter, so
+  `agentic-retrieval.js`'s `response_format: json_object` is currently dropped
+  (harmless — its parser accepts plain JSON).
 - **Similharity plugin (separate branch) `queryCollection`** uses
   `POST /points/search`, which Qdrant 1.19 dropped from its OpenAPI spec. It
   still works on 1.19 but is slated for removal; the other read paths already

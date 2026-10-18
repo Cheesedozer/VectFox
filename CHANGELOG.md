@@ -30,10 +30,20 @@
   output limit (Batch Size and Max Output Tokens don't apply), tries it a
   second time if it fails, and falls back to batches after that, when the
   reply is cut off, or when the document can't fit the model's context/output
-  limit (checked against OpenRouter's model list). The linking pass is skipped
-  after a whole-document call. Off by default because, measured on a
-  31k-character world bible with Gemini 3.5 Flash Lite, a single reply stopped
-  at ~6k tokens and kept about a third less of the source's facts than batches.
+  limit (checked against OpenRouter's model list, allowing ~3 tokens of
+  entries per source token plus room for thinking). The linking pass is
+  skipped after a whole-document call. Whether it helps depends on the model.
+  On a 31k-character world bible, Claude Haiku 5.5 on medium effort kept 99%
+  of the source's facts in one reply with no duplicate entries ($0.015, 93 s);
+  Gemini 3.5 Flash Lite and 3.8 Flash summarized to ~88% (Flash Lite in
+  batches: 98%).
+- **Auto-Reformat: Reasoning Effort** (Model default / Low / Medium / High).
+  Sent as SillyTavern's `reasoning_effort`, which its proxy maps to the
+  provider (OpenRouter's `reasoning.effort`). Thinking counts against the
+  output limit, so with an effort set each batch gets the model's full output
+  limit (or Max Output Tokens plus a thinking reserve when the limit is
+  unknown) and at least a 5-minute timeout; without this, Gemini 3.8 Flash on
+  high had 7 of 12 batches cut off at 16k tokens.
 
 ### Performance
 
