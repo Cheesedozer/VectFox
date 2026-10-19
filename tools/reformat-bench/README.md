@@ -14,7 +14,15 @@ only.
 - `run-baseline.mjs` — the extension as shipped: `batched` (6k-char batches,
   continuation names, coverage repair, exact-key merge) or `whole`
   (whole-document mode).
-- `roster.mjs` — roster-first prototype:
+- `roster2.mjs` — incremental roster, for documents of any length (see the
+  Bulfinch results below). The roster is built window by window (60k chars):
+  each call sees one window, every roster name so far, and details for the
+  items the window mentions, and returns `new` / `update` operations. Fill is
+  either `items` (a slice of roster items from their listed sections) or
+  `sections` (6k-char source batches, each writing what it says about the
+  roster items it covers, under their roster names; pieces are joined by
+  name). Pass a previous run's JSON as the last argument to reuse its roster.
+- `roster.mjs` — single-call roster prototype:
   - **A. Roster:** one call lists every entry to write (name, aliases, type,
     hidden, scope, sources). Duplicate names are resolved here, with the
     whole document in view.
@@ -45,7 +53,14 @@ node --import ./register.mjs run-baseline.mjs DOC.md out/base.json anthropic/cla
 node --import ./register.mjs roster.mjs DOC.md out/roster.json anthropic/claude-haiku-5.5 "" 12 8
 node --import ./register.mjs evaluate.mjs DOC.md out/*.json
 node --import ./register.mjs semantic.mjs DOC.md out/base.json out/roster.json
+node --import ./register.mjs roster2.mjs DOC.md out/r2.json anthropic/claude-haiku-5.5 "" 8 sections
+node --import ./register.mjs semantic-rag.mjs DOC.md 200 out/base.json out/r2.json
 ```
+
+`semantic-rag.mjs` is judged recall for large documents. Each sampled
+paragraph is checked against its top 8 stored pieces, retrieved by embedding
+similarity. A piece is what the extension stores: an entry split at the
+2,000-character `reformat_max_body_chars`, under its name.
 
 ## Results: "The Settlement" (85k chars, ~21k tokens, 9 hidden truths)
 
@@ -87,3 +102,47 @@ Findings:
 - **The roster call is the slow part.** It is one sequential call: ~170 s
   with 33k thinking tokens. It is also the part that still depends on output
   limits: about 0.5 roster tokens per source token, before thinking.
+
+## Results: Bulfinch's Mythology, "Stories of Gods and Heroes" (727k chars, ~180k tokens, ~300 pages)
+
+Source: Project Gutenberg #4928, converted to markdown (chapters `##`,
+stories `###`). The book is too long for whole-document mode and for a
+single roster call.
+
+| Run | Entries | Lexical recall | Judged duplicates | Retrieved recall | Cost | Time |
+|---|---|---|---|---|---|---|
+| batched (shipped, concurrency 8) | 1380 | 94.9% | 34 (+5 exact) | 94.4% | $0.57 | 9 min |
+| incremental roster, `items` fill | 711 | 88.7% | 0 | 76.4% | $0.65 | 25 min |
+| incremental roster, `sections` fill | 715 | 95.3% | 1 | 93.7% | $0.81 | 27 min |
+
+On the Settlement, incremental roster + `sections` fill scored:
+- 86 entries, 0 duplicates
+- 99.8% lexical and 96.4% judged recall
+- $0.10, 3 min
+
+Findings:
+
+- **The incremental roster scales.**
+  - 726 items from 13 sequential calls.
+  - Largest prompt 36k tokens, largest reply 25k tokens including thinking.
+  - No call crossed the 100k-token prompt size where Haiku 5.5's
+    long-context price (5× input and output) starts.
+  - The roster phase cost $0.16 and took 16 min.
+- **`items` fill summarizes.**
+  - A slice of 12 items got up to 120k chars of source and wrote replies
+    as short as 4k tokens.
+  - This is the same failure as whole-document mode: a large input against
+    a few entries comes back compressed.
+- **`sections` fill keeps the detail and the identity.**
+  - It matches batched recall, within judge noise.
+  - Duplicates: 1 against 34.
+  - Fragmentation is mostly gone. Entries named after Hercules: 11 in
+    batched, e.g. "Achelous and Hercules: The wrestling match". In this run:
+    3, e.g. "Pillars of Hercules".
+  - Only 14 of 1,713 pieces landed outside the roster.
+- **Costs:**
+  - About 40% more money than batched and three times the time, mostly the
+    sequential roster.
+  - The roster's name list grows with the document (726 names ≈ 9k
+    tokens). Past a few thousand items it should also be filtered to the
+    names that resemble the window's.

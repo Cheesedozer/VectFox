@@ -15,7 +15,7 @@ import { nearDuplicates, scorableText } from './metrics.mjs';
 const { validateReformattedChunk, computeBatchCoverage } = await import('../../core/reformat-schema.js');
 const { mergeDuplicateEntities, linkSubEntriesToParents } = await import('../../core/reformat-extractor.js');
 
-const ENTRY_RULES = `An entry is either:
+export const ENTRY_RULES = `An entry is either:
 - a named thing: a character, organization, location or item; or
 - a topic: a system, law, event, period, custom or other subject that is not one named thing.
 
@@ -27,7 +27,7 @@ Content from a section the document marks as spoilers, secrets or hidden truths 
 
 One thing, one entry: a thing the document calls by several names (a full name, a short name, an acronym, "the app" and "GAMA") is ONE entry with the other names as aliases.`;
 
-const BODY_RULES = `Writing the body:
+export const BODY_RULES = `Writing the body:
 - Keep every fact: names, numbers, dates, prices, rules, definitions, and every list item together with its meaning. Gather the facts about the entry from EVERY place in the document that discusses it, not only its main section.
 - Write clear third-person prose. Fix spelling and grammar and replace pronouns with names, but keep the source's own words for names, terms, quotations and specific details.
 - Keep quotations word for word, together with who said them.
@@ -36,7 +36,7 @@ const BODY_RULES = `Writing the body:
 - Hidden entries ("hidden": true) hold the secret; public entries must not reveal it.
 - Each roster item has a scope. Put each fact in the most specific entry whose scope covers it. A broader entry may name a narrower one and say in one sentence what it is, but leaves the details to that entry.`;
 
-const RECORD_SHAPE = `{
+export const RECORD_SHAPE = `{
   "entry_type": "character" | "organization" | "concept" | "location" | "item" | "other",
   "name": the roster name, exactly,
   "aliases": the roster aliases, plus any other names for this same thing,
@@ -59,7 +59,7 @@ function docBlock(doc) {
 
 // ---------------------------------------------------------------------------
 
-function parseJsonArray(raw) {
+export function parseJsonArray(raw) {
     let text = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
     try { const v = JSON.parse(text); if (Array.isArray(v)) return v; } catch { /* fall through */ }
     const a = text.indexOf('['), b = text.lastIndexOf(']');
@@ -80,7 +80,7 @@ function parseJsonArray(raw) {
     throw new Error(`unparseable reply: ${text.slice(0, 200)}`);
 }
 
-function makeCaller({ model, effort }) {
+export function makeCaller({ model, effort }) {
     return async function call(phase, messages, { maxTokens = 64000 } = {}) {
         const r = await openrouter({
             model,
@@ -152,7 +152,7 @@ ${BODY_RULES}
 Output only the JSON array.`;
 }
 
-function validate(rawItems, label, warnings) {
+export function validate(rawItems, label, warnings) {
     const out = [];
     for (const raw of rawItems) {
         const v = validateReformattedChunk(raw);
@@ -168,7 +168,7 @@ async function fillSlice(call, doc, rText, slice, warnings) {
     return validate(parseJsonArray(content), `fill ${slice[0].id}`, warnings);
 }
 
-async function parallel(fns, n) {
+export async function parallel(fns, n) {
     const results = new Array(fns.length);
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(n, fns.length) }, async () => {
@@ -198,7 +198,7 @@ ${BODY_RULES}
 Do not restate details that are not in the list above. Output only the JSON array of operations.`;
 }
 
-function applyOps(ops, records, warnings) {
+export function applyOps(ops, records, warnings) {
     const byName = new Map(records.map(r => [r.name.toLowerCase(), r]));
     let appended = 0, created = 0;
     for (const op of ops) {
@@ -243,7 +243,7 @@ export async function judgePairs(call, records, pairs, phase = 'D-dedupe') {
     return verdicts;
 }
 
-function mergeJudged(records, verdicts) {
+export function mergeJudged(records, verdicts) {
     // union-find over records judged the same
     const parent = records.map((_, i) => i);
     const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
