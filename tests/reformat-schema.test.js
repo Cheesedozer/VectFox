@@ -14,6 +14,7 @@ import {
     computeKeywordVerification,
     buildReformatPrompt,
     buildRepairPrompt,
+    buildRosterPrompt,
     buildStoredText,
     buildLinkingPrompt,
     computeBatchCoverage,
@@ -301,6 +302,42 @@ describe('computeKeywordVerification', () => {
 
         expect(keywordResult.ungroundedKeywords).toEqual([]);
         expect(nameResult.nameGrounded).toBe(false);
+    });
+});
+
+describe('roster mode prompts', () => {
+    const item = { id: 3, name: 'Zeus', aliases: ['Jupiter'], entry_type: 'character', hidden: false, scope: 'The king of the gods.', sources: ['B1'] };
+
+    it('gives the roster step its numbered sections, the names so far and the mentioned items', () => {
+        const prompt = buildRosterPrompt(
+            [{ id: 'B4', headingPath: 'Myths › Zeus', text: 'Zeus rules the gods.' }],
+            { part: 2, totalParts: 5, names: 'Zeus | Jupiter', mentioned: [item] },
+        );
+        expect(prompt).toContain('PART 2 OF 5');
+        expect(prompt).toContain('[B4] Myths › Zeus\nZeus rules the gods.');
+        expect(prompt).toContain('ROSTER SO FAR (name | aliases):\nZeus | Jupiter');
+        expect(prompt).toContain('#3 Zeus [aliases: Jupiter] (character) — The king of the gods. Sources so far: B1');
+        expect(prompt).toContain('"op": "update"');
+    });
+
+    it('adds the roster note to an extraction prompt and asks continuations to add under the same name', () => {
+        const prompt = buildReformatPrompt('Jupiter had a temple.', {
+            batchContext: { sectionTitle: 'Rome', alreadyExtractedNames: ['Zeus'] },
+            roster: { covered: [item], names: 'Zeus | Jupiter' },
+        });
+        expect(prompt).toContain('write its entry under the roster name exactly');
+        expect(prompt).toContain('Do not create a "<Roster name>: <Part>" entry that is not on the roster');
+        expect(prompt).toContain('Roster items this TEXT is expected to describe:\n#3 Zeus [aliases: Jupiter]');
+        expect(prompt).toContain('All roster names (name | aliases):\nZeus | Jupiter');
+        expect(prompt).toContain('Write what this part adds to an entry under the same name');
+        expect(prompt).not.toContain('Do not repeat them; extract only what this part adds.');
+    });
+
+    it('carries the roster note into a repair prompt', () => {
+        const prompt = buildRepairPrompt([{ title: 'Rome', text: 'Jupiter had a temple.', missingFacts: ['temple'] }], {
+            roster: { covered: [item], names: 'Zeus | Jupiter' },
+        });
+        expect(prompt).toContain('Roster items this TEXT is expected to describe:');
     });
 });
 

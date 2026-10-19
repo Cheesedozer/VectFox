@@ -496,9 +496,10 @@ function _fillTemplate(template, notes, text) {
  * @param {string} [ctx.headingPath] - "Doc › Section › Subsection" for this batch
  * @param {string} [ctx.contentType] - 'document' | 'url' | 'wiki' | 'youtube'
  * @param {{sectionTitle: string, alreadyExtractedNames: string[]}} [ctx.continuation]
+ * @param {{covered: object[], names: string}} [ctx.roster] - Roster mode: see buildRosterNote
  * @returns {string}
  */
-function _buildNotes({ headingPath = '', contentType = '', continuation = null } = {}) {
+function _buildNotes({ headingPath = '', contentType = '', continuation = null, roster = null } = {}) {
     const notes = [];
     if (headingPath) {
         notes.push(`NOTE: This TEXT comes from this place in the document: ${headingPath}. Use it for context only; entry names stay short. When a section title is generic (such as "History" or "Abilities"), name its entry after its subject, like "History of <subject>" or "<Subject>: Abilities".`);
@@ -510,9 +511,95 @@ function _buildNotes({ headingPath = '', contentType = '', continuation = null }
         const names = continuation.alreadyExtractedNames?.length
             ? continuation.alreadyExtractedNames.join(', ')
             : '(none yet)';
-        notes.push(`NOTE: This TEXT continues section "${continuation.sectionTitle}", which was split because it is long. Entries already extracted from earlier parts of this section: ${names}. Do not repeat them; extract only what this part adds.`);
+        notes.push(roster
+            ? `NOTE: This TEXT continues section "${continuation.sectionTitle}", which was split because it is long. Entries already extracted from earlier parts of this section: ${names}. Write what this part adds to an entry under the same name; do not repeat what earlier parts said.`
+            : `NOTE: This TEXT continues section "${continuation.sectionTitle}", which was split because it is long. Entries already extracted from earlier parts of this section: ${names}. Do not repeat them; extract only what this part adds.`);
     }
+    if (roster) notes.push(_rosterNote(roster));
     return notes.length ? notes.join('\n') + '\n\n' : '';
+}
+
+// ---------------------------------------------------------------------------
+// Roster mode
+// ---------------------------------------------------------------------------
+
+/**
+ * One roster item as a prompt line: number, name, aliases, type, scope.
+ * @param {{id: number, name: string, aliases?: string[], entry_type?: string, hidden?: boolean, scope?: string}} item
+ * @returns {string}
+ */
+export function formatRosterItem(item) {
+    const aliases = item.aliases?.length ? ` [aliases: ${item.aliases.join('; ')}]` : '';
+    const flags = `${item.entry_type || 'other'}${item.hidden ? ', hidden' : ''}`;
+    return `#${item.id} ${item.name}${aliases} (${flags})${item.scope ? ` — ${item.scope}` : ''}`;
+}
+
+/**
+ * The roster note for one extraction batch: the roster's names (so entries
+ * are written under them and relationships point at them) and the items the
+ * roster expects this batch to describe.
+ * @param {{covered: object[], names: string}} roster
+ * @returns {string}
+ */
+function _rosterNote({ covered = [], names = '' }) {
+    const coveredLines = covered.length ? covered.map(formatRosterItem).join('\n') : '(none listed)';
+    return `NOTE: This document was first read whole to build a ROSTER: one entry per thing, under one name, however many places mention it. Entries from every part of the document are joined by name afterwards, so:
+- When the TEXT describes a roster item, write its entry under the roster name exactly, with what THIS TEXT says about it. Use another roster name only for a different thing.
+- Create an entry with a new name only for a thing the TEXT describes that has no roster item.
+- The roster already decided which parts of a subject get their own "<Name>: <Part>" entries. Do not create a "<Roster name>: <Part>" entry that is not on the roster: put that part's content (an episode, a scene, a detail) in the roster entry itself.
+- In relationships, name other things by their roster names.
+Roster items this TEXT is expected to describe:
+${coveredLines}
+${names ? `All roster names (name | aliases):\n${names}` : ''}`.trim();
+}
+
+/**
+ * Builds the prompt for one step of the roster: the model reads one PART of
+ * the document (numbered sections) with the roster so far and returns
+ * operations that add items or extend existing ones. Content is not written
+ * here; the extraction batches write it under the roster's names.
+ *
+ * @param {Array<{id: string, headingPath: string, text: string}>} sections - This part's sections
+ * @param {object} ctx
+ * @param {number} ctx.part - 1-based
+ * @param {number} ctx.totalParts
+ * @param {string} ctx.names - Every roster name so far, one item per line
+ * @param {object[]} ctx.mentioned - Roster items named in this part, with details
+ * @param {string} [ctx.contentType]
+ * @returns {string}
+ */
+export function buildRosterPrompt(sections, { part, totalParts, names = '', mentioned = [], contentType = '' }) {
+    const transcriptNote = contentType === 'youtube'
+        ? '\nThis document is a video transcript: plan entries by the subjects discussed, not by the speakers\' filler.\n'
+        : '';
+    const sectionText = sections.map(s => `[${s.id}] ${s.headingPath || '(untitled)'}\n${s.text}`).join('\n\n');
+    return `You are planning the entries of an AI roleplay memory system built from one long document (a lore document, world bible, book, wiki export, web page or video transcript). Each entry will be retrieved on its own. The document is read part by part to build a ROSTER: the list of entries to write, one per thing, under one name. The entries' content is written later.
+${transcriptNote}
+What gets an entry:
+- a named thing: a character, organization, location or item; or a topic: a system, law, event, period, custom or other subject that is not one named thing.
+- Every named thing the document describes (says what it is: its nature, purpose, members, abilities, appearance or rules) gets its own entry, even when the description sits inside a larger section, in a list, or only in bold. A thing that only takes part in events gets no entry; those events belong in the subject's entries.
+- A topic section whose parts are each discussed at length (a paragraph or more) gives each part its own entry named "<Section name>: <Part title>".
+- A generic section title (such as "History") gives an entry named after its subject, like "History of <subject>".
+- Content the document marks as spoilers, secrets or hidden truths goes in its own entries named "<Subject>: Hidden truth", with "hidden": true.
+- Sections written for the author or the site (writing settings, canon logs, change logs, open questions, navigation) get no entry.
+- One thing, one entry: when the document calls a thing by several names (a full name, a short name, an acronym, a title, a translation, another culture's name for the same figure), it is ONE item with the other names as aliases.
+
+ROSTER SO FAR (name | aliases):
+${names || '(empty)'}
+
+DETAILS OF ROSTER ITEMS NAMED IN THIS PART:
+${mentioned.length ? mentioned.map(x => `${formatRosterItem(x)} Sources so far: ${(x.sources || []).slice(-8).join(', ')}`).join('\n') : '(none)'}
+
+PART ${part} OF ${totalParts}:
+${sectionText}
+
+Update the roster for PART ${part}. Before adding an item, check whether the same thing is already on the roster under any name; if it is, update that item instead.
+
+Output a JSON array of operations:
+- {"op": "new", "name": the entry's name in the source's wording, "aliases": other names for this same thing, "entry_type": "character" | "organization" | "concept" | "location" | "item" | "other", "hidden": true or false, "scope": one sentence saying what the entry covers (and what it leaves to a neighbouring entry), "sources": ids of the sections in this part that say something about it}
+- {"op": "update", "id": the roster number, "add_aliases": [new names for it found in this part], "add_sources": [ids of sections in this part that say something about it], "scope": a revised scope sentence, only if this part widens what the entry covers}
+
+Every section in this part must be in the sources of at least one new or updated item. Output only the JSON array.`;
 }
 
 /**
@@ -525,11 +612,12 @@ function _buildNotes({ headingPath = '', contentType = '', continuation = null }
  * @param {string} [options.contentType]
  * @param {{sectionTitle: string, alreadyExtractedNames: string[]}} [options.batchContext] -
  *        Set for continuation batches of an oversized section
+ * @param {{covered: object[], names: string}} [options.roster] - Roster mode
  * @returns {string}
  */
-export function buildReformatPrompt(text, { customPrompt = '', headingPath = '', contentType = '', batchContext = null } = {}) {
+export function buildReformatPrompt(text, { customPrompt = '', headingPath = '', contentType = '', batchContext = null, roster = null } = {}) {
     const template = (customPrompt && customPrompt.trim()) ? customPrompt : DEFAULT_REFORMAT_PROMPT;
-    const notes = _buildNotes({ headingPath, contentType, continuation: batchContext });
+    const notes = _buildNotes({ headingPath, contentType, continuation: batchContext, roster });
     return _fillTemplate(template, notes, text);
 }
 
@@ -723,7 +811,7 @@ export function computeBatchCoverage(batchText, entries, threshold = 0.5) {
  * @param {string} [options.contentType]
  * @returns {string}
  */
-export function buildRepairPrompt(flaggedSections, { customPrompt = '', alreadyExtractedNames = [], headingPath = '', contentType = '' } = {}) {
+export function buildRepairPrompt(flaggedSections, { customPrompt = '', alreadyExtractedNames = [], headingPath = '', contentType = '', roster = null } = {}) {
     const sections = Array.isArray(flaggedSections) ? flaggedSections : [];
     const namesList = alreadyExtractedNames.length ? alreadyExtractedNames.join(', ') : '(none)';
     const missingLines = sections
@@ -738,5 +826,5 @@ Extract entries that cover what is missing. You may add entries named "<Existing
 
     const template = (customPrompt && customPrompt.trim()) ? customPrompt : DEFAULT_REFORMAT_PROMPT;
     const text = sections.map(s => s.text).join('\n\n');
-    return _fillTemplate(template, _buildNotes({ headingPath, contentType }) + repairNote, text);
+    return _fillTemplate(template, _buildNotes({ headingPath, contentType, roster }) + repairNote, text);
 }

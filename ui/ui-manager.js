@@ -672,6 +672,11 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="VectFox_hint">One reply for a long document can take several minutes to generate.</small>
                             </div>
 
+                            <label class="checkbox_label" style="margin-bottom:8px;" title="Before extracting, the model reads the document part by part (about 60,000 characters per call) and builds a roster: one entry per thing, under one name, however many places mention it. The batches then write their entries under the roster's names, and the pieces of each entry are joined. Fewer duplicate and fragmented entries on long documents, and no length limit; on a 300-page book it cost about 1.7× and took about 3× as long as batches, because the roster is built one part at a time. Needs a model that plans well: tested with Claude Haiku 5.5. If whole-document mode is also on and falls back, the fallback uses the roster.">
+                                <input type="checkbox" id="VectFox_reformat_roster" />
+                                <small>Build a Roster First (fewer duplicates on long documents)</small>
+                            </label>
+
                             <label for="VectFox_reformat_batch_chars">
                                 <small>Batch Size: <span id="VectFox_reformat_batch_chars_val">6000</span> chars</small>
                             </label>
@@ -2614,6 +2619,14 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
     $('#VectFox_reformat_single_pass_row').toggle(settings.reformat_single_pass === true);
+
+    $('#VectFox_reformat_roster')
+        .prop('checked', settings.reformat_roster === true)
+        .on('change', function () {
+            settings.reformat_roster = $(this).prop('checked');
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
 
     $('#VectFox_reformat_single_pass_timeout_ms')
         .val(Number(settings.reformat_single_pass_timeout_ms ?? 600000))

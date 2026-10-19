@@ -1063,11 +1063,12 @@ async function runAutoReformat() {
             settings: mergedSettings,
             sourceName,
             onProgress: (done, total, phase) => {
-                const label = phase === 'whole'
-                    ? `Running Auto-Reformat — whole document in one response (attempt ${done}/${total})...`
-                    : phase === 'link'
-                        ? `Running Auto-Reformat — linking pass (${done}/${total})...`
-                        : `Running Auto-Reformat — extracting (${done}/${total} batches)...`;
+                const labels = {
+                    whole: `whole document in one response (attempt ${done}/${total})`,
+                    roster: `building the roster (part ${Math.min(done + 1, total)}/${total})`,
+                    link: `linking pass (${done}/${total})`,
+                };
+                const label = `Running Auto-Reformat — ${labels[phase] || `extracting (${done}/${total} batches)`}...`;
                 container.find('.vectfox-cv-loading').html(
                     `<i class="fa-solid fa-spinner fa-spin"></i> ${label}`
                 );

@@ -37,6 +37,28 @@
   of the source's facts in one reply with no duplicate entries ($0.015, 93 s);
   Gemini 3.5 Flash Lite and 3.8 Flash summarized to ~88% (Flash Lite in
   batches: 98%).
+- **Auto-Reformat: Build a Roster First** (ChunkBase → Auto-Reformat, off by
+  default). Before extracting, the model reads the document in ~60k-character
+  parts and builds a roster: one item per thing, under one name, with its
+  aliases and the batches that describe it. The batches then extract as usual
+  (coverage repair, custom prompts and linking all still apply), each told the
+  roster's names and the items it covers. An item's pieces are joined under its
+  roster name, and off-roster "<Name>: <Part>" fragments fold into their
+  roster entry. Every call stays small, so there is no document-length limit
+  (whole-document mode is capped by the model's output limit).
+  - On a 300-page book (Bulfinch's "Stories of Gods and Heroes", 727k
+    characters) with Claude Haiku 5.5:
+    - Entries: 881 against 1,380 in batches.
+    - Judged duplicate pairs: 3 against 34. Hercules is no longer spread
+      over fragments like "Achelous and Hercules: The wrestling match".
+    - Retrieved-fact recall: 95.3% against 94.4%.
+    - Cost and time: $0.97 and 28 min against $0.57 and 9 min. The roster
+      parts run one after another.
+  - On the 72k-character world bible: 0 duplicates and the same recall as
+    batches.
+  - The roster needs a model that plans well. Gemini 3.5 Flash Lite produced
+    a coarse 24-item roster in testing.
+  - Tools and results: `tools/reformat-bench/`.
 - **Auto-Reformat: Reasoning Effort** (Model default / Low / Medium / High).
   Sent as SillyTavern's `reasoning_effort`, which its proxy maps to the
   provider (OpenRouter's `reasoning.effort`). Thinking counts against the

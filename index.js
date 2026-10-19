@@ -315,6 +315,7 @@ const defaultSettings = {
     reformat_coverage_threshold: 0.5,   // Hidden/power-user — min fact-token recall per section before repair triggers
     reformat_enable_linking_pass: false, // Second LLM pass linking entities across batches — doubles LLM calls per document
     reformat_single_pass: false,        // Whole document in one LLM call (2 tries), batches as the fallback
+    reformat_roster: false,             // Build a roster (one name per thing) before the batches; batches write under its names
     reformat_reasoning_effort: '',      // '' = model default | 'low' | 'medium' | 'high'
     reformat_single_pass_timeout_ms: 600000,
     reformat_custom_prompt: '',

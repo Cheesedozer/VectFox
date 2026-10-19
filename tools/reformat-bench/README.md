@@ -14,6 +14,11 @@ only.
 - `run-baseline.mjs` — the extension as shipped: `batched` (6k-char batches,
   continuation names, coverage repair, exact-key merge) or `whole`
   (whole-document mode).
+- `run-baseline.mjs ... roster` — the extension's roster mode
+  (`reformat_roster`), the shipped version of `roster2.mjs` + `sections`.
+- `e2e-sillybunny.mjs` — drives a running SillyBunny/SillyTavern in headless
+  Chromium: Auto-Reformat of a document in roster mode, review, accept,
+  vectorize into Qdrant (setup in the file's header).
 - `roster2.mjs` — incremental roster, for documents of any length (see the
   Bulfinch results below). The roster is built window by window (60k chars):
   each call sees one window, every roster name so far, and details for the
@@ -146,3 +151,38 @@ Findings:
   - The roster's name list grows with the document (726 names ≈ 9k
     tokens). Past a few thousand items it should also be filtered to the
     names that resemble the window's.
+
+## Results: the extension's roster mode (`reformat_roster`)
+
+Same documents, run through `reformatDocument` with Claude Haiku 5.5 at
+concurrency 8. Batched rows are repeated from above.
+
+| Document / run | Entries | Lexical recall | Judged duplicates | Judged recall | Cost | Time |
+|---|---|---|---|---|---|---|
+| Bulfinch, batched | 1380 | 94.9% | 34 | 94.4% (retrieved) | $0.57 | 9 min |
+| Bulfinch, roster v1 | 1042 | 95.4% | 33 | 93.7% (retrieved) | $0.96 | 28 min |
+| Bulfinch, roster v2 | 881 | 95.3% | 3 | 95.3% (retrieved) | $0.97 | 28 min |
+| Settlement, batched | 140 / 165 | 99.6% / 99.5% | 9 / 7 | 95.7% / 93.4% | ~$0.06 | ~3 min |
+| Settlement, roster v1 | 135 | 98.8% | 1 | 94.8% | $0.09 | 3.4 min |
+| Settlement, roster v2 | 104 | 99.1% | 0 | 94.7% | $0.09 | 3.7 min |
+
+- **v1 → v2.** v1 only told batches the roster names. The standard
+  extraction prompt's "<Section>: <Part>" rule still split each story's
+  episodes off as their own entries ("Tantalus: Punishment",
+  "Icarus: Fall into the sea"); those were 33 of v1's 34 pairs. v2:
+  - tells batches the roster already decided which parts get entries;
+  - folds an off-roster "<Roster name>: <Part>" piece into its roster entry
+    (never a hidden piece into a public one).
+- **Cost.** The extension costs more than the `roster2.mjs` prototype
+  ($0.81) because its prompts carry no cache markers (see `CLAUDE.md`).
+- **End-to-end check in SillyBunny 1.8.0** (Similharity plugin, Qdrant
+  Cloud, `qwen/qwen3-embedding-8b`):
+  - The Settlement, roster mode, gave 110 entries in 226 s, stored as 124
+    chunks.
+  - The collection had 125 points, 111 distinct names and all 9 hidden
+    truths.
+  - GAMA was stored once, with "Gender Authentication Mobile Application"
+    as its alias.
+  - Vector queries returned the expected entry first, e.g. "Which app
+    tracks where men are at all times?" → GAMA.
+  - The collection was deleted afterwards.

@@ -20,11 +20,23 @@
  * while Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%, against ~98%
  * for Flash Lite in batches).
  *
+ * Optional roster mode (settings.reformat_roster) reads the document part by
+ * part first and builds a ROSTER: one item per thing, under one name, with
+ * the batches that describe it. The batches then extract as usual, each told
+ * the roster's names and the items it covers, and the pieces of an item are
+ * joined under its roster name. Every call stays small, so it works for
+ * documents of any length. Measured on a 300-page book with Claude Haiku
+ * 5.5, it matched batched recall with 3 judged duplicate pairs instead of
+ * 34 and 881 entries instead of 1380 (far fewer "<Hero>: <one episode>"
+ * fragments), at ~1.7x the cost and ~3x the time (the roster is built
+ * sequentially). See tools/reformat-bench/README.md.
+ *
  * settings.reformat_reasoning_effort ('' = model default) sets the thinking
  * level. Thinking tokens count against the output limit, so with an effort
  * set every call gets more output room and a longer timeout.
  *
- * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode }.
+ * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode }
+ * (mode: 'whole' | 'roster' | 'batched').
  * Throws ReformatFatalError for config/auth failures (aborts the whole run).
  * Individual batch failures are non-fatal warnings.
  * ============================================================================
@@ -38,10 +50,12 @@ import AsyncUtils from '../utils/async-utils.js';
 import {
     ReformatExtractionError,
     ReformatFatalError,
+    REFORMAT_ENTRY_TYPES,
     validateReformattedChunk,
     buildReformatPrompt,
     buildLinkingPrompt,
     buildRepairPrompt,
+    buildRosterPrompt,
     computeBatchCoverage,
     computeNameVerification,
     computeKeywordVerification,
@@ -75,6 +89,15 @@ const THINKING_RESERVE_TOKENS = { low: 8000, medium: 24000, high: 40000 };
 const REASONING_MIN_TIMEOUT_MS = 300000;
 // Room for the extraction prompt's instructions and example around the text.
 const PROMPT_OVERHEAD_TOKENS = 2500;
+
+// Roster mode: source chars per roster call (a reply lists ~0.5 tokens of
+// roster per source token, plus thinking), the cap on the roster's name list
+// in a prompt, and the call budget (measured roster replies reached ~25k
+// tokens including thinking, and ~3 minutes).
+const ROSTER_PART_CHARS = 60000;
+const ROSTER_NAMES_MAX_CHARS = 60000;
+const ROSTER_MIN_OUTPUT_TOKENS = 32000;
+const ROSTER_MIN_TIMEOUT_MS = 300000;
 
 /** The whole-document reply hit the output limit; retrying it can't help. */
 class ReformatTruncatedError extends ReformatExtractionError {
@@ -576,6 +599,7 @@ async function _processChain(chain, settings, chainIndex, warnings, contentType,
             headingPath: batch.headingPath,
             contentType,
             batchContext,
+            roster: batch.roster || null,
         });
 
         try {
@@ -608,6 +632,7 @@ async function _processChain(chain, settings, chainIndex, warnings, contentType,
                 alreadyExtractedNames: [...alreadyExtractedNames],
                 headingPath: batch.headingPath,
                 contentType,
+                roster: batch.roster || null,
             });
             const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex, { ...callOptions, maxAttempts: undefined });
             repairCalls++;
@@ -626,6 +651,199 @@ async function _processChain(chain, settings, chainIndex, warnings, contentType,
     }
 
     return { results, failedCount, repairCalls };
+}
+
+// ---------------------------------------------------------------------------
+// Roster mode
+// ---------------------------------------------------------------------------
+
+/** All names of a roster item. */
+function _rosterItemNames(item) {
+    return [item.name, ...(item.aliases || [])].filter(Boolean);
+}
+
+/** The roster's name list for prompts, one item per line. */
+function _rosterNameLines(items) {
+    return items.map(x => _rosterItemNames(x).join(' | ')).join('\n');
+}
+
+/** Roster items any of whose names appear in `text` as whole words. */
+function _rosterItemsNamedIn(items, text) {
+    const haystack = ` ${normalizeForMatch(text)} `;
+    return items.filter(x => _rosterItemNames(x).some(n => {
+        const key = normalizeForMatch(n);
+        return key.length >= 3 && haystack.includes(` ${key} `);
+    }));
+}
+
+/**
+ * The name list a prompt gets: every name while the roster is small, else
+ * only the items named in `text` (a very long document's roster would
+ * otherwise fill the prompt).
+ */
+function _rosterNamesFor(items, text) {
+    const all = _rosterNameLines(items);
+    return all.length <= ROSTER_NAMES_MAX_CHARS ? all : _rosterNameLines(_rosterItemsNamedIn(items, text));
+}
+
+/**
+ * Applies one roster reply's operations. Sources outside this part are
+ * dropped; an update to an unknown id is ignored.
+ * @returns {{added: number, updated: number}}
+ */
+function _applyRosterOps(ops, items, partIds) {
+    let added = 0;
+    let updated = 0;
+    const strings = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x.trim()).map(x => x.trim());
+    for (const op of ops) {
+        const sources = strings(op?.op === 'update' ? op.add_sources : op?.sources).filter(id => partIds.has(id));
+        if (op?.op === 'update') {
+            const item = items[Number(op.id) - 1];
+            if (!item) continue;
+            for (const alias of strings(op.add_aliases)) {
+                if (!_rosterItemNames(item).some(n => n.toLowerCase() === alias.toLowerCase())) item.aliases.push(alias);
+            }
+            for (const id of sources) if (!item.sources.includes(id)) item.sources.push(id);
+            if (typeof op.scope === 'string' && op.scope.trim()) item.scope = op.scope.trim();
+            updated++;
+        } else if (op?.op === 'new' && typeof op.name === 'string' && op.name.trim()) {
+            const name = op.name.trim();
+            items.push({
+                id: items.length + 1,
+                name,
+                aliases: strings(op.aliases).filter(a => a.toLowerCase() !== name.toLowerCase()),
+                entry_type: REFORMAT_ENTRY_TYPES.includes(op.entry_type) ? op.entry_type : 'other',
+                hidden: op.hidden === true,
+                scope: typeof op.scope === 'string' ? op.scope.trim() : '',
+                sources: [...new Set(sources)],
+            });
+            added++;
+        }
+    }
+    return { added, updated };
+}
+
+/**
+ * Builds the roster: batches are grouped into parts of ROSTER_PART_CHARS,
+ * and each part is one call that sees its batches (numbered B1, B2, ...),
+ * the roster's names so far and details for the items it names. Parts run
+ * in order, since each extends the roster the previous ones built. A failed
+ * part is a warning: its batches simply get no expected items.
+ *
+ * @returns {Promise<object[]>} Roster items {id, name, aliases, entry_type, hidden, scope, sources}
+ */
+async function _buildRoster({ batches, settings, warnings, contentType, onProgress, abortSignal }) {
+    const sections = batches.map((b, i) => ({ id: `B${i + 1}`, headingPath: b.headingPath, text: b.text }));
+    const parts = [];
+    let current = [];
+    let size = 0;
+    for (const section of sections) {
+        if (current.length && size + section.text.length > ROSTER_PART_CHARS) {
+            parts.push(current);
+            current = [];
+            size = 0;
+        }
+        current.push(section);
+        size += section.text.length;
+    }
+    if (current.length) parts.push(current);
+
+    const limits = await _getModelLimits(settings);
+    const callOptions = {
+        maxTokens: limits?.maxOutputTokens || Math.max(settings.reformat_max_output_tokens || DEFAULT_MAX_TOKENS, ROSTER_MIN_OUTPUT_TOKENS),
+        timeoutMs: Math.max(settings.reformat_timeout_ms || DEFAULT_TIMEOUT_MS, ROSTER_MIN_TIMEOUT_MS),
+    };
+
+    const items = [];
+    for (let k = 0; k < parts.length; k++) {
+        if (abortSignal?.aborted) {
+            const err = new Error('Auto-Reformat stopped by user');
+            err.name = 'AbortError';
+            throw err;
+        }
+        onProgress?.(k, parts.length, 'roster');
+        const part = parts[k];
+        const partText = part.map(s => s.text).join('\n\n');
+        const prompt = buildRosterPrompt(part, {
+            part: k + 1,
+            totalParts: parts.length,
+            names: _rosterNamesFor(items, partText),
+            mentioned: _rosterItemsNamedIn(items, partText),
+            contentType,
+        });
+        try {
+            const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, k, callOptions);
+            if (finishReason === 'length') {
+                warnings.push(`Roster part ${k + 1}/${parts.length}: the response was cut off by the model's output limit; some items from this part may be missing from the roster.`);
+            }
+            const ops = _parseReformatArray(reply, k, ['op', 'name', 'id']);
+            const { added, updated } = _applyRosterOps(ops, items, new Set(part.map(s => s.id)));
+            log.lifecycle(`[Auto-Reformat] Roster part ${k + 1}/${parts.length}: +${added} new, ${updated} updated (${items.length} items)`);
+        } catch (err) {
+            if (err instanceof ReformatFatalError) throw err;
+            warnings.push(`Roster part ${k + 1}/${parts.length} failed: ${err?.message || err} — its sections are extracted without roster guidance.`);
+            log.warn(`[Auto-Reformat] Roster part ${k + 1} failed:`, err?.message || err);
+        }
+    }
+    onProgress?.(parts.length, parts.length, 'roster');
+    return items;
+}
+
+/**
+ * Gives every batch its roster note: the items whose sources include it and
+ * the roster's names.
+ */
+function _attachRoster(batches, items) {
+    const coveredBy = new Map();
+    for (const item of items) {
+        for (const id of item.sources) {
+            if (!coveredBy.has(id)) coveredBy.set(id, []);
+            coveredBy.get(id).push(item);
+        }
+    }
+    batches.forEach((batch, i) => {
+        batch.roster = { covered: coveredBy.get(`B${i + 1}`) || [], names: _rosterNamesFor(items, batch.text) };
+    });
+}
+
+/**
+ * Renames extracted pieces to their roster item's name so the merge joins an
+ * item's pieces:
+ * - a piece written under one of the item's names (same match keys as the
+ *   duplicate merge) keeps that name as an alias;
+ * - an off-roster "<Name>: <Part>" piece whose <Name> is a roster item is
+ *   folded into that item (batches still split episodes off on their own;
+ *   "Tantalus: Punishment" is not another name for Tantalus, so it is not
+ *   kept as an alias). A piece of the other visibility is left alone, so a
+ *   "<Name>: Hidden truth" never folds into a public entry.
+ * @returns {{renamed: number, folded: number}}
+ */
+function _canonicalizeToRoster(records, items) {
+    const byKey = new Map();
+    for (const item of items) {
+        for (const key of _entityKeys(item)) if (!byKey.has(key)) byKey.set(key, item);
+    }
+    const itemFor = name => _nameKeys(name).map(k => byKey.get(k)).find(Boolean);
+    let renamed = 0;
+    let folded = 0;
+    for (const record of records) {
+        let item = itemFor(record.name);
+        let fold = false;
+        if (!item) {
+            const idx = record.name.indexOf(': ');
+            if (idx > 0) {
+                item = itemFor(record.name.slice(0, idx));
+                fold = Boolean(item);
+            }
+        }
+        if (!item || item.name === record.name || Boolean(item.hidden) !== Boolean(record.hidden)) continue;
+        if (!fold) record.aliases = _unionStrings(record.aliases || [], [record.name]);
+        record.aliases = (record.aliases || []).filter(a => a.toLowerCase() !== item.name.toLowerCase());
+        record.name = item.name;
+        if (fold) folded++;
+        else renamed++;
+    }
+    return { renamed, folded };
 }
 
 // ---------------------------------------------------------------------------
@@ -1152,15 +1370,17 @@ async function _runWholeDocument({ batch, settings, warnings, contentType, onPro
  * Whole-document mode (settings.reformat_single_pass, off by default) sends
  * the document in one call and tries it twice; when both fail, or the
  * document can't fit the model, it falls back to header-aligned batches.
+ * Roster mode (settings.reformat_roster, off by default) builds a roster
+ * before the batches run and joins each item's pieces under its roster name.
  *
  * @param {object} params
  * @param {string} params.text - Full prepared source text
  * @param {string} params.contentType - 'document' | 'url' | 'wiki' | 'youtube'
  * @param {object} params.settings - VectFox settings
  * @param {string} [params.sourceName] - Shown to the model as the root of each batch's heading path
- * @param {(processed: number, total: number, phase?: 'whole'|'extract'|'link') => void} [params.onProgress]
+ * @param {(processed: number, total: number, phase?: 'whole'|'roster'|'extract'|'link') => void} [params.onProgress]
  * @param {AbortSignal} [params.abortSignal]
- * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number, mode: 'whole'|'batched'}>}
+ * @returns {Promise<{chunks: object[], warnings: string[], batchesProcessed: number, batchesFailed: number, totalBatches: number, mode: 'whole'|'batched'|'roster'}>}
  */
 export async function reformatDocument({ text, contentType, settings, sourceName = '', onProgress = null, abortSignal = null } = {}) {
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -1179,6 +1399,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
     let batchesFailed = 0;
     let totalRepairCalls = 0;
     let batchCallOptions = {};
+    let rosterItems = null;
 
     if (settings.reformat_single_pass === true) {
         const whole = await _buildBatches(text, Infinity, sourceName);
@@ -1207,6 +1428,17 @@ export async function reformatDocument({ text, contentType, settings, sourceName
             return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0, mode };
         }
 
+        if (settings.reformat_roster === true) {
+            log.lifecycle(`[Auto-Reformat] Building the roster for ${batches.length} batch(es)`);
+            rosterItems = await _buildRoster({ batches, settings, warnings, contentType, onProgress, abortSignal });
+            if (rosterItems.length > 0) {
+                _attachRoster(batches, rosterItems);
+                mode = 'roster';
+            } else {
+                warnings.push('Roster mode produced no roster; the document was processed in batches as usual.');
+            }
+        }
+
         const chains = _groupIntoChains(batches);
         batchCallOptions = _batchCallOptions(settings, _resolveReasoningEffort(settings) ? await _getModelLimits(settings) : null);
         log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${batches.length} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
@@ -1233,15 +1465,23 @@ export async function reformatDocument({ text, contentType, settings, sourceName
         warnings.unshift(`Skipped author-note section(s): ${skippedSections.map(t => `"${t}"`).join(', ')}.`);
     }
 
+    if (mode === 'roster') {
+        const { renamed, folded } = _canonicalizeToRoster(rawChunks, rosterItems);
+        log.lifecycle(`[Auto-Reformat] Roster: ${renamed} piece(s) renamed to their roster name, ${folded} off-roster part(s) folded into their roster entry`);
+    }
     const chunks = mergeDuplicateEntities(rawChunks);
     if (chunks.length < rawChunks.length) {
-        warnings.push(`Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was extracted from multiple document sections.`);
+        // In roster mode the batches write each item's pieces under one name
+        // on purpose; joining them is the plan, not a duplicate cleanup.
+        warnings.push(mode === 'roster'
+            ? `Joined ${rawChunks.length} pieces into ${chunks.length} ${chunks.length === 1 ? 'entry' : 'entries'} under their roster names.`
+            : `Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was extracted from multiple document sections.`);
     }
     linkSubEntriesToParents(chunks);
 
     // The linking pass connects entries that separate batches couldn't see
     // together; a whole-document call already saw everything.
-    if (linkingEnabled && mode === 'batched' && chunks.length > 0) {
+    if (linkingEnabled && mode !== 'whole' && chunks.length > 0) {
         let linkBatchesDone = 0;
         await _runLinkingPass({
             batches,

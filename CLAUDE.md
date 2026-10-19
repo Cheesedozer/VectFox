@@ -41,9 +41,20 @@ Two rules still apply:
   `collection-loader.js` `cacheKey = registryKey`.
 - **`core/keyword-boost.js:~82`** — comment *"for some reason, bigger value
   speed up retrival"* above `= 5000`; the constant's rationale is unknown.
-- **Auto Reformat** can still produce near-duplicate entries whose names differ
-  by a suffix (e.g. "GAMA" vs "GAMA app"); merge only unifies exact name/alias
-  keys.
+- **Auto Reformat** batched mode can still produce near-duplicate entries
+  whose names differ by a suffix (e.g. "GAMA" vs "GAMA app"); merge only
+  unifies exact name/alias keys. Roster mode (`reformat_roster`, off by
+  default) mostly fixes this: 3 judged duplicate pairs instead of 34 on a
+  300-page book (`tools/reformat-bench/README.md`). What it leaves is the
+  occasional "<Name>: <Part>" fragment of an item the roster missed, and it
+  costs ~1.7× and ~3× the time of batches.
+- **Roster mode sends no prompt-cache markers.** Every batch prompt repeats
+  the roster's names (~9k tokens at 700 items); the bench prototype
+  (`roster2.mjs`) put them in an Anthropic `cache_control` prefix and paid
+  ~10% for them. `llm-transport.js` sends a plain string through ST's proxy;
+  whether ST forwards content-part `cache_control` to OpenRouter is
+  unverified. The roster's name list is capped at 60k chars and then
+  filtered to names in the batch, unmeasured on a roster that large.
 - **Auto Reformat whole-document mode depends on the model**, so
   `reformat_single_pass` defaults off. On a 31k-char world bible (mean
   per-paragraph fact recall): Claude Haiku 5.5 medium effort 99%, no

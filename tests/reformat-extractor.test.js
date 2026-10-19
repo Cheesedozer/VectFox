@@ -1025,6 +1025,134 @@ describe('reformatDocument — reasoning effort', () => {
     });
 });
 
+describe('reformatDocument — roster mode', () => {
+    const DOC = [
+        '# Myths',
+        '',
+        '## Zeus',
+        'Zeus rules the gods from Mount Olympus and wields the thunderbolt against his enemies.',
+        '',
+        '## Roman worship',
+        'The Romans worshipped the same god as Jupiter, with a great temple on the Capitoline Hill.',
+    ].join('\n');
+
+    const ROSTER_OPS = [
+        { op: 'new', name: 'Zeus', aliases: ['Jupiter'], entry_type: 'character', hidden: false, scope: 'The king of the gods.', sources: ['B1', 'B2'] },
+        { op: 'new', name: 'Olympus', aliases: [], entry_type: 'location', hidden: false, scope: 'The gods\' mountain.', sources: ['B9'] },
+        { op: 'update', id: 99, add_aliases: ['Nobody'] },
+    ];
+
+    /** Answers the model list, the roster call (by its prompt) and each batch. */
+    function rosterFetch(rosterReply) {
+        return vi.fn(async (url, init) => {
+            if (String(url).includes('openrouter.ai/api/v1/models')) {
+                return { ok: true, status: 200, json: async () => ({ data: [] }) };
+            }
+            const prompt = JSON.parse(init.body).messages[0].content;
+            if (prompt.includes('ROSTER SO FAR')) {
+                return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: rosterReply }, finish_reason: 'stop' }] }) };
+            }
+            const roman = prompt.includes('Capitoline');
+            return mockChatCompletionResponse([{
+                entry_type: 'character',
+                name: roman ? 'Jupiter' : 'Zeus',
+                aliases: [],
+                affiliation: '',
+                relationships: [],
+                keywords: [],
+                body: roman ? 'The Romans worshipped Jupiter at a great temple on the Capitoline Hill.' : 'Zeus rules the gods from Mount Olympus and wields the thunderbolt.',
+            }]);
+        });
+    }
+    const settings = (overrides = {}) => baseSettings({ reformat_roster: true, reformat_batch_chars: 120, reformat_enable_repair_pass: false, ...overrides });
+    const promptsOf = fetchMock => fetchMock.mock.calls.filter(c => !String(c[0]).includes('/models')).map(extractPrompt);
+
+    it('builds the roster first, tells each batch its roster items, and joins the pieces under the roster name', async () => {
+        const fetchMock = rosterFetch(JSON.stringify(ROSTER_OPS));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const progress = [];
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: settings(), onProgress: (...a) => progress.push(a) });
+
+        const prompts = promptsOf(fetchMock);
+        expect(prompts[0]).toContain('ROSTER SO FAR');
+        expect(prompts[0]).toContain('[B1] Myths\n# Myths');
+        expect(prompts[0]).toContain('[B2] Myths › Roman worship');
+        const extraction = prompts.slice(1);
+        expect(extraction).toHaveLength(2);
+        for (const p of extraction) {
+            expect(p).toContain('Roster items this TEXT is expected to describe:');
+            expect(p).toContain('#1 Zeus [aliases: Jupiter] (character) — The king of the gods.');
+        }
+        // the "new" item whose only source was outside the part keeps no sources
+        expect(extraction.every(p => !p.includes('#2 Olympus'))).toBe(true);
+
+        expect(result.mode).toBe('roster');
+        expect(result.chunks).toHaveLength(1);
+        expect(result.chunks[0].name).toBe('Zeus');
+        expect(result.chunks[0].aliases).toContain('Jupiter');
+        expect(result.chunks[0].body).toContain('thunderbolt');
+        expect(result.chunks[0].body).toContain('Capitoline Hill');
+        expect(progress.filter(p => p[2] === 'roster')).toEqual([[0, 1, 'roster'], [1, 1, 'roster']]);
+        expect(result.warnings).toContain('Joined 2 pieces into 1 entry under their roster names.');
+
+        vi.unstubAllGlobals();
+    });
+
+    it('folds off-roster "<Name>: <Part>" pieces into the roster entry, but never a hidden one into a public entry', async () => {
+        const piece = (name, body, hidden = false) => ({ entry_type: 'character', name, aliases: [], affiliation: '', relationships: [], keywords: [], hidden, body });
+        const fetchMock = vi.fn(async (url, init) => {
+            if (String(url).includes('openrouter.ai/api/v1/models')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+            const prompt = JSON.parse(init.body).messages[0].content;
+            if (prompt.includes('ROSTER SO FAR')) {
+                return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(ROSTER_OPS) }, finish_reason: 'stop' }] }) };
+            }
+            return mockChatCompletionResponse(prompt.includes('Capitoline')
+                ? [piece('Zeus: Hidden truth', 'Zeus fears a prophecy about his son.', true)]
+                : [piece('Zeus', 'Zeus rules the gods from Mount Olympus.'), piece('Zeus: The thunderbolt', 'Zeus wields the thunderbolt against his enemies.')]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: settings() });
+
+        const zeus = result.chunks.find(c => c.name === 'Zeus');
+        expect(zeus.body).toContain('Mount Olympus');
+        expect(zeus.body).toContain('thunderbolt');
+        expect(zeus.aliases).not.toContain('Zeus: The thunderbolt');
+        expect(result.chunks.map(c => c.name).sort()).toEqual(['Zeus', 'Zeus: Hidden truth']);
+        expect(result.chunks.find(c => c.name === 'Zeus: Hidden truth').hidden).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('keeps the pieces apart without roster mode (control)', async () => {
+        const fetchMock = rosterFetch(JSON.stringify(ROSTER_OPS));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: settings({ reformat_roster: false }) });
+
+        expect(promptsOf(fetchMock).some(p => p.includes('ROSTER SO FAR'))).toBe(false);
+        expect(result.mode).toBe('batched');
+        expect(result.chunks.map(c => c.name)).toEqual(['Zeus', 'Jupiter']);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('falls back to plain batches when the roster call yields nothing usable', async () => {
+        const fetchMock = rosterFetch('I could not build a roster.');
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: DOC, contentType: 'document', settings: settings() });
+
+        expect(result.mode).toBe('batched');
+        expect(result.warnings.some(w => /Roster part 1\/1 failed/.test(w))).toBe(true);
+        expect(result.warnings.some(w => /Roster mode produced no roster/.test(w))).toBe(true);
+        expect(result.chunks.map(c => c.name)).toEqual(['Zeus', 'Jupiter']);
+
+        vi.unstubAllGlobals();
+    });
+});
+
 describe('expandOversizedChunk', () => {
     it('returns the chunk unchanged when body is within the size ceiling', async () => {
         const chunk = { entry_type: 'character', name: 'Bulwark', body: 'Short body.' };
