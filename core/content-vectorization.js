@@ -13,7 +13,7 @@
 import { getContentType, getContentTypeDefaults } from './content-types.js';
 import { chunkText } from './chunking.js';
 import { insertVectorItems, purgeVectorIndex, getSavedHashes } from './core-vector-api.js';
-import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock, saveChunkMetadata } from './collection-metadata.js';
+import { setCollectionMeta, setCollectionLock, setCollectionCharacterLock, saveChunkMetadata, getCharacterLockKey } from './collection-metadata.js';
 import { registerCollection } from './collection-loader.js';
 import { getBackend } from '../backends/backend-manager.js';
 // Import from collection-ids.js - single source of truth for collection ID operations
@@ -187,8 +187,8 @@ export async function vectorizeContent({ contentType, source, settings, abortSig
             const currentChatId = getCurrentChatId();
             if (currentChatId) setCollectionLock(registryKey, currentChatId);
         } else if (scope === 'character') {
-            const currentCharacterId = getContext()?.characterId;
-            if (currentCharacterId) setCollectionCharacterLock(registryKey, String(currentCharacterId));
+            const currentCharacterId = getCharacterLockKey(getContext());
+            if (currentCharacterId) setCollectionCharacterLock(registryKey, currentCharacterId);
         }
 
         // Get full extension settings for keyword extraction (includes custom_stopwords)

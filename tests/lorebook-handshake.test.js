@@ -44,6 +44,7 @@ vi.mock('../core/collection-metadata.js', () => ({
     setCollectionMeta: vi.fn((key, data) => { _state.meta[key] = { ..._state.meta[key], ...data }; }),
     isCollectionEnabled: vi.fn(() => true),
     shouldCollectionActivate: vi.fn(async () => true),
+    getCharacterLockKey: vi.fn((ctx) => ctx?.characters?.[ctx?.characterId]?.avatar ?? null),
 }));
 vi.mock('../core/collection-loader.js', () => ({
     getCollectionListing: vi.fn(() => []),

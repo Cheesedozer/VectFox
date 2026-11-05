@@ -37,6 +37,7 @@ vi.mock('../core/collection-metadata.js', () => ({
     setCollectionLock: vi.fn(),
     setCollectionCharacterLock: vi.fn(),
     saveChunkMetadata: vi.fn(),
+    getCharacterLockKey: vi.fn((ctx) => ctx?.characters?.[ctx?.characterId]?.avatar ?? null),
 }));
 vi.mock('../core/collection-loader.js', () => ({
     registerCollection: vi.fn(),

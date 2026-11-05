@@ -19,7 +19,7 @@ import {
 } from './core-vector-api.js';
 import { isBackendAvailable } from '../backends/backend-manager.js';
 import { getCollectionRegistry, isCollectionEmpty } from './collection-loader.js';
-import { isCollectionEnabled, filterActiveCollections } from './collection-metadata.js';
+import { isCollectionEnabled, filterActiveCollections, getCharacterLockKey } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { buildSearchContext, filterChunksByConditions, processChunkLinks } from './conditional-activation.js';
 import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
@@ -1282,7 +1282,7 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
                 currentCharacter: getContext().name2 || null,
                 activeLorebookEntries: [],
                 currentChatId: getCurrentChatId(),
-                currentCharacterId: getContext().characterId || null
+                currentCharacterId: getCharacterLockKey(getContext())
             });
             activeCollections = await filterActiveCollections(collectionsToQuery, searchContext);
         }

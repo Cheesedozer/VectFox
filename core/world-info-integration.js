@@ -14,7 +14,7 @@ import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
 import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
-import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
+import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate, getCharacterLockKey } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG, RETRIEVAL_TIMEOUT_MS } from './constants.js';
 import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
@@ -243,7 +243,7 @@ async function getEnabledLorebookCollections(settings) {
     const collections = [];
 
     const currentChatId = getCurrentChatId() ? String(getCurrentChatId()) : null;
-    const currentCharacterId = getContext().characterId != null ? String(getContext().characterId) : null;
+    const currentCharacterId = getCharacterLockKey(getContext());
     const context = { currentChatId, currentCharacterId };
 
     for (const entry of listing) {

@@ -3146,8 +3146,8 @@ function bindSettingsEvents(settings, callbacks) {
                 .filter(e => e.isOwn && e.collectionId.startsWith('vf_lorebook_'));
 
             const chatId = getCurrentChatId();
-            const characterId = getContext()?.characterId;
-            const { removeCollectionLock, removeCollectionCharacterLock } = await import('../core/collection-metadata.js');
+            const { removeCollectionLock, removeCollectionCharacterLock, getCharacterLockKey } = await import('../core/collection-metadata.js');
+            const characterId = getCharacterLockKey(getContext());
 
             if (enabled) {
                 if (ownLorebookEntries.length === 0) {
