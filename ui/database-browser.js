@@ -43,6 +43,8 @@ import {
   setCollectionCharacterLock,
   removeCollectionCharacterLock,
   isCollectionLockedToCharacter,
+  getCharacterLockKey,
+  getCharacterLockDisplayName,
   getCollectionCharacterLockCount,
   isCollectionActiveForContext,
 } from "../core/collection-metadata.js";
@@ -1187,7 +1189,7 @@ function renderCollectionCard(collection, isActiveById = null, ownershipById = n
   } else {
     isActive = isCollectionActiveForContext(lockLookupId, {
       chatId: getCurrentChatId(),
-      characterId: getContext()?.characterId,
+      characterId: getCharacterLockKey(getContext()),
     });
   }
   let lockBadge = "";
@@ -2130,7 +2132,7 @@ function openActivationEditor(collectionId, collectionName) {
     meta.scope === "chat" ? "chat" : meta.type || "unknown";
 
   const currentChatId = getCurrentChatId();
-  const currentCharacterId = getContext()?.characterId;
+  const currentCharacterId = getCharacterLockKey(getContext());
   const resolvedAlwaysActive = isCollectionActiveForContext(collectionId, {
     chatId: currentChatId,
     characterId: currentCharacterId,
@@ -2484,7 +2486,7 @@ function refreshActivationLockButton() {
     const $btn = $("#vectfox_activation_lock_collection");
     const chatId = getCurrentChatId();
     const context = getContext();
-    const charId = context?.characterId || null;
+    const charId = getCharacterLockKey(context);
 
     if (!$btn || $btn.length === 0) return;
 
@@ -2559,7 +2561,7 @@ function saveActivation() {
 
   const isChecked = $("#vectfox_always_active").prop("checked");
   const currentChatId = getCurrentChatId();
-  const currentCharacterId = getContext()?.characterId;
+  const currentCharacterId = getCharacterLockKey(getContext());
   const saveMeta = getCollectionMeta(state.collectionId);
   console.log(`[VectFox] saveActivation: checkbox=${isChecked}, scope=${saveMeta.scope}, chatId=${currentChatId || 'none'}, charId=${currentCharacterId ?? 'none'}, collection=${state.collectionId}`);
 
@@ -3859,7 +3861,7 @@ function openCollectionLockDialog(collectionId) {
     const characterLocks = getCollectionCharacterLocks(collectionId);
     const currentChatId = getCurrentChatId();
     const context = getContext();
-    const currentCharacterId = context?.characterId || null;
+    const currentCharacterId = getCharacterLockKey(context);
     const characters = context?.characters || [];
 
     // Build HTML for locked chats
@@ -3881,16 +3883,17 @@ function openCollectionLockDialog(collectionId) {
     const charLocksHtml = characterLocks.length === 0
         ? '<div class="vectfox-lock-list-empty">No characters locked yet</div>'
         : characterLocks.map((charId) => {
-            const charName = characters[charId]?.data?.name || `Character ${charId}`;
+            const charName = StringUtils.escapeHtml(getCharacterLockDisplayName(charId, characters));
+            const safeCharId = StringUtils.escapeHtml(charId);
             return `
-                <div class="vectfox-lock-item" data-character-id="${charId}">
+                <div class="vectfox-lock-item" data-character-id="${safeCharId}">
                     <span class="vectfox-lock-character-name">
                         <i class="fa-solid fa-user"></i>
                         ${charName}
                     </span>
                     <div class="vectfox-lock-item-actions">
                         ${String(charId) === String(currentCharacterId) ? '<span class="vectfox-lock-badge-current">Active</span>' : ''}
-                        <button class="vectfox-lock-remove-char-btn" data-character-id="${charId}" title="Remove lock">
+                        <button class="vectfox-lock-remove-char-btn" data-character-id="${safeCharId}" title="Remove lock">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
@@ -3982,7 +3985,7 @@ function openCollectionLockDialog(collectionId) {
     // Handle add lock button (character)
     $('#vectfox_lock_add_character').on('click', function() {
         const context = getContext();
-        const charId = context?.characterId;
+        const charId = getCharacterLockKey(context);
         if (!charId) {
             toastr.warning('No character currently active');
             return;
@@ -4014,7 +4017,7 @@ function openCollectionLockDialog(collectionId) {
     // Handle remove lock buttons (character)
     $dialog.find('.vectfox-lock-remove-char-btn').on('click', function(e) {
         e.stopPropagation();
-        const charId = $(this).data('character-id');
+        const charId = String($(this).attr('data-character-id'));
 
         removeCollectionCharacterLock(collectionId, charId);
         toastr.info('Removed lock from character', 'VectFox');

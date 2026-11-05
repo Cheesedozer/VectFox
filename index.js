@@ -18,13 +18,14 @@ import {
 import {
     ModuleWorkerWrapper,
     extension_settings,
+    getContext,
 } from '../../../extensions.js';
 import { debounce } from '../../../utils.js';
 import { debounce_timeout } from '../../../constants.js';
 
 // VectFox modules - Core
 import { synchronizeChat, rearrangeChat, vectorizeAll } from './core/chat-vectorization.js';
-import { migrateOldEnabledKeys } from './core/collection-metadata.js';
+import { migrateOldEnabledKeys, migrateLegacyCharacterLocks } from './core/collection-metadata.js';
 import { discoverExistingCollections, cleanupCorruptedCollections } from './core/collection-loader.js';
 import { migrateLegacyApiKeys } from './core/api-keys.js';
 import { migrateRemovedProviderSettings } from './core/providers.js';
@@ -692,6 +693,14 @@ jQuery(async () => {
     // When chat changes, refresh UI state to match settings
     eventSource.on(event_types.CHAT_CHANGED, () => {
         console.log('VectFox: Chat changed, refreshing UI state');
+        // Characters are loaded by the first CHAT_CHANGED; convert old index-keyed
+        // character locks to avatar keys (runs once per session).
+        try {
+            const converted = migrateLegacyCharacterLocks(getContext()?.characters);
+            if (converted > 0) console.log(`VectFox: Converted ${converted} legacy character lock(s) to avatar keys`);
+        } catch (err) {
+            console.warn('VectFox: Character lock migration failed', err);
+        }
         refreshAutoSyncCheckbox(settings);
     });
 

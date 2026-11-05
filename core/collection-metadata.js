@@ -602,11 +602,87 @@ export function getCollectionLockCount(collectionId) {
 // CHARACTER LOCKING (Bind collection to one or more character cards)
 // ============================================================================
 
+// Character locks are keyed by the character's avatar filename (e.g. "Alice.png"),
+// which SillyTavern uses as the stable per-character identifier.
+// `getContext().characterId` (this_chid) is NOT stable: it is the character's
+// index in the `characters` array, so adding, deleting or re-sorting characters
+// makes an index-keyed lock point at a different character.
+
+/**
+ * Returns the stable character-lock key (avatar filename) for the active character.
+ * @param {{characterId?: string|number, characters?: Array<{avatar?: string}>}} context - SillyTavern context
+ * @returns {string|null} Avatar filename, or null when no single character is active
+ */
+export function getCharacterLockKey(context) {
+    const index = context?.characterId;
+    // index 0 is a valid character; only null/undefined/'' mean "none".
+    if (index === undefined || index === null || index === '') return null;
+    const avatar = context?.characters?.[index]?.avatar;
+    return avatar ? String(avatar) : null;
+}
+
+/**
+ * Display name for a stored character-lock key.
+ * @param {string} lockKey - Avatar filename (or a legacy array index)
+ * @param {Array<{avatar?: string, name?: string, data?: {name?: string}}>} characters
+ * @returns {string}
+ */
+export function getCharacterLockDisplayName(lockKey, characters = []) {
+    const char = (characters || []).find(c => c?.avatar === lockKey);
+    return char?.data?.name || char?.name || `Unknown character (${lockKey})`;
+}
+
+let legacyCharacterLocksMigrated = false;
+
+/**
+ * One-time conversion of legacy index-keyed character locks ("0", "3", ...) to
+ * avatar keys. Best effort: maps each index through the current `characters`
+ * array, so a lock whose index already shifted maps to whatever character is
+ * at that index now (same as before the fix) and must be corrected by hand.
+ * Avatar filenames always carry an extension, so digit-only values are legacy.
+ * @param {Array<{avatar?: string}>} characters - SillyTavern characters array
+ * @returns {number} Number of lock entries converted
+ */
+export function migrateLegacyCharacterLocks(characters) {
+    if (legacyCharacterLocksMigrated) return 0;
+    if (!Array.isArray(characters) || characters.length === 0) return 0;
+    legacyCharacterLocksMigrated = true;
+
+    const collections = extension_settings.vectfox?.collections;
+    if (!collections) return 0;
+
+    let converted = 0;
+    for (const [collectionId, meta] of Object.entries(collections)) {
+        const locks = meta?.lockedToCharacterIds;
+        if (!Array.isArray(locks) || !locks.some(id => /^\d+$/.test(String(id)))) continue;
+        const next = [];
+        for (const id of locks) {
+            let key = String(id);
+            if (/^\d+$/.test(key)) {
+                const avatar = characters[Number(key)]?.avatar;
+                if (!avatar) continue; // index points at nothing; drop the dead lock
+                key = String(avatar);
+                converted++;
+            }
+            if (!next.includes(key)) next.push(key);
+        }
+        meta.lockedToCharacterIds = next;
+        log.lifecycle(`VectFox: Migrated character locks for ${collectionId} to avatar keys:`, next);
+    }
+    if (converted > 0) saveSettingsDebounced();
+    return converted;
+}
+
+/** Test hook: allow migrateLegacyCharacterLocks to run again. */
+export function _resetCharacterLockMigrationForTests() {
+    legacyCharacterLocksMigrated = false;
+}
+
 /**
  * Adds a character to the collection's character lock list. Supports multiple characters per collection.
  * Stores character IDs in metadata field `lockedToCharacterIds` (array).
  * @param {string} collectionId
- * @param {string} characterId - Character ID to lock to
+ * @param {string} characterId - Character lock key (avatar filename, see getCharacterLockKey)
  */
 export function setCollectionCharacterLock(collectionId, characterId) {
     if (!collectionId || !characterId) return;

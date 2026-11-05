@@ -26,6 +26,7 @@ import { getChatUUID, vectorizeAll } from '../core/chat-vectorization.js';
 import { validateLLMConfig } from '../core/summarizer.js';
 import { getOpenRouterApiKey } from '../core/api-keys.js';
 import StringUtils from '../utils/string-utils.js';
+import { getCharacterLockKey } from '../core/collection-metadata.js';
 import { resolveEffectiveSettings } from '../core/content-vectorization.js';
 import { renderCollections } from './database-browser.js';
 import { buildArchiveEventCollectionId } from '../core/collection-ids.js';
@@ -1385,7 +1386,7 @@ function renderScopeOptions(type) {
     const context = getContext();
 
     // Get current character name (if any)
-    const hasCharacter = !!context?.characterId;
+    const hasCharacter = !!getCharacterLockKey(context);
     const characterName = context?.name2 || 'No character';
 
     // Get current chat name (if any)
@@ -1888,8 +1889,10 @@ async function populateSourceSelect(type) {
 
             if (characters.length > 0) {
                 // Add current character at top if available
-                if (context?.characterId) {
-                    const currentChar = characters.find(c => c.avatar === context.characterId);
+                // characterId is an array index; match on the avatar it points to.
+                const currentAvatar = getCharacterLockKey(context);
+                if (currentAvatar) {
+                    const currentChar = characters.find(c => c.avatar === currentAvatar);
                     if (currentChar) {
                         select.append(`<option value="${StringUtils.escapeHtml(currentChar.avatar)}" selected>📌 ${StringUtils.escapeHtml(currentChar.name)} (current)</option>`);
                     }
@@ -1898,7 +1901,7 @@ async function populateSourceSelect(type) {
                 // Add all other characters
                 characters.forEach(char => {
                     // Skip if already added as current
-                    if (char.avatar === context?.characterId) return;
+                    if (currentAvatar && char.avatar === currentAvatar) return;
                     select.append(`<option value="${StringUtils.escapeHtml(char.avatar)}">${StringUtils.escapeHtml(char.name)}</option>`);
                 });
             } else {

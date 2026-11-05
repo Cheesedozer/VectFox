@@ -24,6 +24,7 @@ import {
     getCollectionMeta,
     setCollectionMeta,
     isCollectionActiveForContext,
+    getCharacterLockKey,
 } from './collection-metadata.js';
 import { purgeVectorIndex } from './core-vector-api.js';
 import { log } from './log.js';
@@ -188,7 +189,7 @@ export function getCollectionListing(settings) {
 
     // Snapshot active context once per listing call.
     const chatId = getCurrentChatId();
-    const characterId = getContext()?.characterId;
+    const characterId = getCharacterLockKey(getContext());
 
     return registry.map(registryKey => {
         const parsed = parseRegistryKey(registryKey);
