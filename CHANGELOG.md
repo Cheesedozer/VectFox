@@ -2,8 +2,55 @@
 
 ## Unreleased
 
+### Auto-Reformat: batches build on each other
+
+- **Batches now see the entries already written.** A long document is still
+  split into batches, but they run one after another and each one is shown
+  the entries made from the earlier batches: in full for the entries the batch
+  mentions, by name and first sentence for the rest. The model writes new
+  entries, or additions to existing ones, instead of writing the same thing
+  again in every section that mentions it. On an 89k-character world bible
+  with Claude Haiku 5.5, independent batches wrote 274 records of which 105
+  were duplicates to merge afterwards (about 9 near-duplicates survived, such
+  as "GARS" next to "Gender Authentication Registry System"), and a third of
+  all sentences restated another entry. The same document now gives 131–134
+  entries with nothing to merge and 12–18% restated sentences (two runs),
+  with the same fact recall and about the same cost. Batches can no longer run in parallel, so a run takes
+  about twice as long. The **Parallel Batches** slider is now **Parallel
+  Linking Calls** and only affects the Relationship Linking Pass.
+- **New setting: Earlier Entries Shown to Each Batch.** "Names and text"
+  (default) suits Claude Haiku 5.5 and stronger models. Small models skip
+  detail when they are shown what earlier entries say: Gemini 3.5 Flash Lite
+  kept 88% of a 200-detail checklist that way, against 99% with "Names only"
+  (and 99% before this change). "Names only" still prevents duplicate
+  entries, but more facts are repeated across entries (27% of sentences with
+  Haiku, against 12–18%).
+- **Fix: a slightly malformed reply no longer loses a whole batch.** One
+  stray character in the model's JSON made the reader keep 1 entry out of 26,
+  with no warning. It now recovers every readable entry, asks the model once
+  more, and warns if the second reply is malformed too.
+- **Coverage Repair Pass is now Coverage Check.** The repair call did more
+  harm than good: it treated "See also" lists as missing content and wrote
+  entries such as "listed as related to Pythia in the source document", which
+  were then merged into real entries. The check now runs once at the end
+  against every entry, ignores "See also"/"Related" lines, and lists
+  under-covered paragraphs as warnings on the review screen. It makes no LLM
+  calls.
+- **Prompt:** each fact belongs in one entry, "See also" lists are skipped,
+  keywords are short terms, and entries never describe the document itself.
+  New entry type **event**.
+- **Fix:** "<Subject>: Hidden truth" entries are no longer flagged as possibly
+  invented names.
+
 ### Fixes
 
+- **Keyword tags of several words, and acronyms, now boost retrieval.** A tag
+  only counted when it equalled one capitalised word of the message, so tags
+  like "new york" or "minerva program" (about two thirds of Auto-Reformat's
+  tags) and acronyms like "GAMA" never matched. Multi-word tags now match as
+  a phrase and capitalised acronyms are recognised. Boosted chunks are also
+  moved to the front of the results. The weight shown on a tag (1.5x, 2x) is
+  still not used: a match sets the chunk's score to 100%.
 - **Database Browser: "Manage Locks" works again.** Opening the lock dialog
   threw `getCollectionCharacterLocks is not defined` (its import was dropped in
   the unused-import cleanup) and showed "Failed to open lock dialog".

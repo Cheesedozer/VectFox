@@ -196,7 +196,7 @@ function _recordCardHtml(record) {
                     <span>Keep this entry</span>
                 </label>
                 <select class="vectfox-rr-field vectfox-rr-entry-type" data-field="entry_type">
-                    ${['character', 'organization', 'concept', 'location', 'item', 'other'].map(t =>
+                    ${['character', 'organization', 'concept', 'location', 'item', 'event', 'other'].map(t =>
                         `<option value="${t}" ${t === record.entry_type ? 'selected' : ''}>${t}</option>`).join('')}
                 </select>
             </div>

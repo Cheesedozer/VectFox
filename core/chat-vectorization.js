@@ -12,7 +12,7 @@
 import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, extension_prompts } from '../../../../../script.js';
 import { getContext } from '../../../../extensions.js';
 import { getStringHash as calculateHash } from '../../../../utils.js';
-import { extractChatKeywords } from './keyword-boost.js';
+import { extractChatKeywords, matchChunkKeywords } from './keyword-boost.js';
 import {
     getSavedHashes,
     queryCollection,
@@ -1105,20 +1105,24 @@ function injectChunksIntoPrompt(chunksToInject, settings, debugData) {
 }
 
 /**
- * Boosts chunks whose keywords (Auto-Reformat or heuristic) include any of
- * the query's extracted keywords to a perfect score. Binary match, not
- * diminishing-returns weighting — this is rearrangeChat's STAGE 4.3, pulled
- * out into its own function so it's testable without driving the whole
- * rearrangeChat pipeline (see diagnostics/production-tests.js).
+ * Boosts chunks whose keyword tags (Auto-Reformat or heuristic) are hit by
+ * the query to a perfect score, then re-sorts so the boosted chunks lead,
+ * ordered among themselves by their original score. Binary match, not
+ * diminishing-returns weighting (the tags' weights are not used). This is
+ * rearrangeChat's STAGE 4.3, pulled out into its own function so it's
+ * testable without driving the whole rearrangeChat pipeline (see
+ * diagnostics/production-tests.js). What counts as a hit is decided by
+ * matchChunkKeywords in keyword-boost.js.
  * Mutates `chunks` in place.
  *
  * @param {object[]} chunks
  * @param {string[]} queryKeywordTexts - Lowercased keywords extracted from the query
  * @param {object} [debugData] - Optional; when provided, boost traces/stats are recorded on it
+ * @param {string} [queryText] - The raw query, for multi-word tags and acronyms
  * @returns {number} Number of chunks boosted
  */
-export function applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData = null) {
-    if (!queryKeywordTexts?.length || !chunks?.length) return 0;
+export function applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData = null, queryText = '') {
+    if (!chunks?.length || (!queryKeywordTexts?.length && !queryText)) return 0;
 
     let keywordMatchCount = 0;
     for (const chunk of chunks) {
@@ -1131,7 +1135,7 @@ export function applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData = nu
             .map(kw => (typeof kw === 'object' ? kw.text : kw)?.toLowerCase())
             .filter(Boolean);
 
-        const matchedKeywords = queryKeywordTexts.filter(qk => chunkKeywords.includes(qk));
+        const matchedKeywords = matchChunkKeywords(chunkKeywords, queryKeywordTexts, queryText);
 
         if (matchedKeywords.length > 0) {
             const oldScore = chunk.score;
@@ -1150,6 +1154,12 @@ export function applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData = nu
                 });
             }
         }
+    }
+
+    if (keywordMatchCount > 0) {
+        // Keep the list sorted by score, as queryAndMergeCollections left it.
+        chunks.sort((a, b) => (b.score - a.score)
+            || ((b.originalScore ?? b.score) - (a.originalScore ?? a.score)));
     }
 
     if (debugData && keywordMatchCount > 0) {
@@ -1365,8 +1375,8 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
         }
 
         // === STAGE 4.3: Boost chunks with matching query keywords ===
-        if (queryKeywordTexts.length > 0 && chunks.length > 0) {
-            const keywordMatchCount = applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData);
+        if (chunks.length > 0) {
+            const keywordMatchCount = applyQueryKeywordBoost(chunks, queryKeywordTexts, debugData, queryText);
             if (keywordMatchCount > 0) {
                 log.verbose(`VectFox: Boosted ${keywordMatchCount}/${chunks.length} chunks with matching keywords to 100% score`);
             } else {

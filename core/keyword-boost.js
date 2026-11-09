@@ -561,6 +561,55 @@ export function extractChatKeywords(text, options = {}) {
     return keywords;
 }
 
+/** Lowercases and reduces text to words separated by single spaces, padded with a space at each end. */
+function _phraseNormalize(text) {
+    const words = String(text || '')
+        .toLowerCase()
+        .replace(/['’]s\b/g, '')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+    return words ? ` ${words} ` : '';
+}
+
+/**
+ * Which of a chunk's keyword tags does the query hit?
+ *
+ * - A one-word tag matches when it is one of the query keywords
+ *   (extractChatKeywords: names written with a capital) or an acronym written
+ *   in capitals in the query ("GAMA"), which extractChatKeywords does not pick up.
+ * - A tag of several words ("new york", "minerva program") matches when the
+ *   query contains it as a whole phrase. Comparing such a tag with the
+ *   one-word query keywords could never match, which left most
+ *   Auto-Reformat tags (names, aliases and multi-word keywords) unused.
+ *
+ * @param {string[]} chunkKeywords - The chunk's tags, lowercased
+ * @param {string[]} queryKeywordTexts - Lowercased keywords extracted from the query
+ * @param {string} [queryText] - The raw query; without it only one-word tags can match
+ * @returns {string[]} The tags that matched, in the chunk's order, without repeats
+ */
+export function matchChunkKeywords(chunkKeywords, queryKeywordTexts, queryText = '') {
+    if (!Array.isArray(chunkKeywords) || chunkKeywords.length === 0) return [];
+    const singles = new Set(Array.isArray(queryKeywordTexts) ? queryKeywordTexts : []);
+    for (const m of String(queryText || '').matchAll(/(?<![\p{L}\p{N}])\p{Lu}[\p{Lu}\p{N}]{1,11}(?![\p{L}\p{N}])/gu)) {
+        singles.add(m[0].toLowerCase());
+    }
+    const haystack = _phraseNormalize(queryText);
+
+    const matched = [];
+    for (const raw of chunkKeywords) {
+        const tag = typeof raw === 'string' ? raw.trim() : '';
+        if (!tag || matched.includes(tag)) continue;
+        if (singles.has(tag)) {
+            matched.push(tag);
+            continue;
+        }
+        const phrase = _phraseNormalize(tag);
+        // phrase is " a b ": more than one word means a space inside the padding
+        if (haystack && phrase.trim().includes(' ') && haystack.includes(phrase)) matched.push(tag);
+    }
+    return matched;
+}
+
 /**
  * Extract keywords using BM25/TF-IDF scoring
  * Finds the most distinctive and important words in a text by:

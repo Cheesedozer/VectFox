@@ -309,11 +309,12 @@ const defaultSettings = {
     reformat_max_output_tokens: 16000,  // Output headroom for full-fidelity bodies; models with lower caps still warn via finish_reason
     reformat_temperature: 0.2,
     reformat_timeout_ms: 90000,
-    reformat_concurrency: 2,            // Parallel batch chains
+    reformat_concurrency: 2,            // Parallel calls for the linking pass (extraction runs one batch at a time)
     reformat_max_body_chars: 2000,      // Oversize-entity ceiling — falls back to the adaptive splitter above this
     reformat_name_fuzzy_threshold: 0.8, // Hallucination guardrail — min similarity to count a name as source-grounded
-    reformat_enable_repair_pass: true,  // Coverage check + one repair LLM call per under-captured batch
-    reformat_coverage_threshold: 0.5,   // Hidden/power-user — min fact-token recall per section before repair triggers
+    reformat_ledger_detail: 'full',     // What a batch sees of earlier entries: 'full' (text of the ones it mentions) | 'names' (names only; for small models)
+    reformat_enable_repair_pass: true,  // End-of-run coverage check, reported as warnings (no LLM call; key name kept from the old repair pass)
+    reformat_coverage_threshold: 0.5,   // Hidden/power-user — min fact-token recall per paragraph before the coverage check warns
     reformat_enable_linking_pass: false, // Second LLM pass linking entities across batches — doubles LLM calls per document
     reformat_single_pass: false,        // Whole document in one LLM call (2 tries), batches as the fallback
     reformat_reasoning_effort: '',      // '' = model default | 'low' | 'medium' | 'high'

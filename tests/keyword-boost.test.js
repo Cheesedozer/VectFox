@@ -34,6 +34,7 @@ import {
     getOverfetchAmount,
     keywordStemKey,
     dedupeKeywordsByStem,
+    matchChunkKeywords,
 } from '../core/keyword-boost.js';
 
 // ============================================================================
@@ -786,5 +787,48 @@ describe('getCombinedStopwords caching (via extractLorebookKeywords)', () => {
             const keywords = extractLorebookKeywords({ key: ['the', 'dragon', 'and'] }, {});
             expect(keywords).toEqual(['dragon']);
         }
+    });
+});
+
+// ============================================================================
+// matchChunkKeywords Tests (query-time tag matching, rearrangeChat STAGE 4.3)
+// ============================================================================
+
+describe('matchChunkKeywords', () => {
+    it('matches a one-word tag that is one of the query keywords', () => {
+        expect(matchChunkKeywords(['dragon', 'fire'], ['dragon'])).toEqual(['dragon']);
+        expect(matchChunkKeywords(['sword'], ['dragon'])).toEqual([]);
+    });
+
+    it('matches a multi-word tag found as a phrase in the query', () => {
+        const query = 'He walked into the Gentlewomen\'s Club in New York and asked about the Minerva Program.';
+        const tags = ['new york', 'minerva program', 'office of male wellness'];
+        expect(matchChunkKeywords(tags, ['gentlewomen', 'club', 'york'], query)).toEqual(['new york', 'minerva program']);
+    });
+
+    it('ignores case, punctuation and possessives in a phrase', () => {
+        expect(matchChunkKeywords(['claire whitcombe'], [], 'what did CLAIRE Whitcombe\'s files say?')).toEqual(['claire whitcombe']);
+        expect(matchChunkKeywords(['spec ops: the line'], [], 'She was playing Spec Ops - The Line again.')).toEqual(['spec ops: the line']);
+    });
+
+    it('only matches whole words', () => {
+        expect(matchChunkKeywords(['red state'], [], 'the hundred statements')).toEqual([]);
+        expect(matchChunkKeywords(['new york'], [], 'a new yorker')).toEqual([]);
+    });
+
+    it('matches an acronym written in capitals in the query', () => {
+        expect(matchChunkKeywords(['gama', 'gars'], [], 'Mara checked her GAMA app.')).toEqual(['gama']);
+        // an ordinary lowercase word is not an acronym
+        expect(matchChunkKeywords(['app'], [], 'Mara checked her GAMA app.')).toEqual([]);
+    });
+
+    it('does not match one-word tags against plain words in the query text', () => {
+        expect(matchChunkKeywords(['enforcement'], [], 'the enforcement was harsh')).toEqual([]);
+    });
+
+    it('handles empty input and reports each tag once', () => {
+        expect(matchChunkKeywords([], ['a'], 'a')).toEqual([]);
+        expect(matchChunkKeywords(null, ['a'], 'a')).toEqual([]);
+        expect(matchChunkKeywords(['dragon', 'dragon'], ['dragon'])).toEqual(['dragon']);
     });
 });

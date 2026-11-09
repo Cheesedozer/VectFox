@@ -12,8 +12,9 @@ import {
     validateReformattedChunk,
     computeNameVerification,
     computeKeywordVerification,
+    validateReformatExtension,
     buildReformatPrompt,
-    buildRepairPrompt,
+    buildLedgerText,
     buildStoredText,
     buildLinkingPrompt,
     computeBatchCoverage,
@@ -326,19 +327,35 @@ describe('buildReformatPrompt', () => {
         expect(buildReformatPrompt('x', { contentType: 'document' })).not.toMatch(/NOTE: This TEXT is a video transcript/);
     });
 
-    it('injects a continuation note listing already-extracted names', () => {
+    it('injects a continuation note for a batch that continues an oversized section', () => {
         const prompt = buildReformatPrompt('more text', {
-            batchContext: { sectionTitle: 'Notable US Hero Agencies', alreadyExtractedNames: ['Columbia', 'Bulwark'] },
+            batchContext: { sectionTitle: 'Notable US Hero Agencies' },
         });
         expect(prompt).toMatch(/continues section "Notable US Hero Agencies"/);
-        expect(prompt).toContain('Columbia, Bulwark');
     });
 
-    it('shows "(none yet)" when the continuation has no prior names', () => {
+    it('puts the ledger and the extend instructions in front of the text', () => {
         const prompt = buildReformatPrompt('more text', {
-            batchContext: { sectionTitle: 'The Daughters of the Awakening', alreadyExtractedNames: [] },
+            ledgerText: '- Bulwark [character]\nBulwark is the lead hero.',
         });
-        expect(prompt).toContain('(none yet)');
+        expect(prompt).toContain('ENTRIES WRITTEN SO FAR:\n- Bulwark [character]\nBulwark is the lead hero.');
+        expect(prompt).toContain('{"op": "extend"');
+        expect(prompt.indexOf('ENTRIES WRITTEN SO FAR')).toBeLessThan(prompt.lastIndexOf('TEXT:\nmore text'));
+    });
+
+    it("tells a model that sees names only to write the text in full", () => {
+        const full = buildReformatPrompt('more text', { ledgerText: '- Bulwark [character]\nBulwark leads.' });
+        const names = buildReformatPrompt('more text', { ledgerText: '- Bulwark [character]', ledgerDetail: 'names' });
+        expect(full).toContain('Never repeat a fact that an existing entry already states');
+        expect(names).not.toContain('Never repeat a fact');
+        expect(names).toContain('You cannot see what the existing entries already say');
+        expect(names).toContain('{"op": "extend"');
+    });
+
+    it('has no ledger note for the first batch', () => {
+        const prompt = buildReformatPrompt('first text', { headingPath: 'Doc' });
+        expect(prompt).not.toContain('ENTRIES WRITTEN SO FAR');
+        expect(prompt).not.toContain('"op"');
     });
 
     it('uses a customPrompt override instead of the default template', () => {
@@ -454,7 +471,22 @@ describe('buildLinkingPrompt', () => {
 // Coverage check (under-extraction guardrail)
 // ---------------------------------------------------------------------------
 
+describe('grounding of "<Subject>: Hidden truth" names', () => {
+    it('checks only the subject, since the suffix comes from the prompt', () => {
+        const source = 'Bulwark leads the agency. Her metal form is slowly killing her.';
+        const [grounded] = computeNameVerification([{ name: 'Bulwark: Hidden truth', aliases: [] }], source);
+        expect(grounded.nameGrounded).toBe(true);
+        const [invented] = computeNameVerification([{ name: 'Zarkon: Hidden truth', aliases: [] }], source);
+        expect(invented.nameGrounded).toBe(false);
+    });
+});
+
 describe('computeBatchCoverage', () => {
+    it('ignores "See also" / "Related" lines that only point at other articles', () => {
+        const text = '## Pythia\n\n*See also:* The Male Wellness Network; Developmental Arrest Theory; Gender Authentication Registry System.\n\nRelated: Federal Commission on the War Record, Daughters of the Victory, Office of Exceptional Talent';
+        expect(computeBatchCoverage(text, [], 0.5)).toEqual([]);
+    });
+
     // Mirrors the observed real-world failure: a 4-subsection organization
     // profile where the model's output covered only the first subsection.
     const batchText = [
@@ -533,41 +565,74 @@ describe('computeBatchCoverage', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Repair prompt
+// Ledger (entries written so far)
 // ---------------------------------------------------------------------------
-describe('buildRepairPrompt', () => {
-    const flagged = [
-        {
-            title: 'Social Stigmatization and Pejorative Terms',
-            text: '## Social Stigmatization and Pejorative Terms\n\nThe arsenal includes "male-lover" and "gender traitor".',
-            missingFacts: ['male-lover', 'gender traitor'],
-        },
+describe('buildLedgerText', () => {
+    const entries = [
+        { entry_type: 'character', name: 'Bulwark', aliases: ['Eleanor Graves'], hidden: false, body: 'Bulwark is the lead hero of Ironclad Agency. Her Spark turns her skin to metal.' },
+        { entry_type: 'organization', name: 'The Ashen Circle', aliases: [], hidden: false, body: 'The Ashen Circle is a cult. It meets at midnight.' },
+        { entry_type: 'character', name: 'Bulwark: Hidden truth', aliases: [], hidden: true, body: 'Her metal form is killing her.' },
     ];
 
-    it('rides the full extraction template with the repair note and flagged text', () => {
-        const prompt = buildRepairPrompt(flagged, { alreadyExtractedNames: ['Male Sympathizers'] });
-        expect(prompt).toContain('entry_type');
-        expect(prompt).toMatch(/missed some of its content/);
-        expect(prompt).toContain('Male Sympathizers');
-        expect(prompt).toContain('male-lover; gender traitor');
-        expect(prompt).toContain('The arsenal includes "male-lover" and "gender traitor".');
-        expect(prompt).not.toMatch(/\{\{(text|notes|continuationNote)\}\}/);
+    it('is empty when nothing has been written yet', () => {
+        expect(buildLedgerText([], 'any text')).toBe('');
     });
 
-    it('keeps the batch context notes', () => {
-        const prompt = buildRepairPrompt(flagged, { headingPath: 'Doc › Section', contentType: 'youtube' });
-        expect(prompt).toContain('comes from this place in the document: Doc › Section');
-        expect(prompt).toMatch(/NOTE: This TEXT is a video transcript/);
+    it('shows a mentioned entry in full and the others by first sentence', () => {
+        const text = buildLedgerText(entries, 'Later, the Ashen  Circle moved north.');
+        expect(text).toContain('- The Ashen Circle [organization]\nThe Ashen Circle is a cult. It meets at midnight.');
+        expect(text).toContain('- Bulwark [character] (also called: Eleanor Graves)\nBulwark is the lead hero of Ironclad Agency. […]');
+        expect(text).not.toContain('skin to metal');
     });
 
-    it('respects a customPrompt override', () => {
-        const prompt = buildRepairPrompt(flagged, { customPrompt: 'CUSTOM {{notes}}TEXT: {{text}}' });
-        expect(prompt).toMatch(/^CUSTOM NOTE: A previous extraction/);
-        expect(prompt).toContain('TEXT: ## Social Stigmatization');
+    it('matches on an alias', () => {
+        expect(buildLedgerText(entries, 'Eleanor Graves resigned.')).toContain('skin to metal');
     });
 
-    it('shows "(none)" when nothing was extracted yet', () => {
-        const prompt = buildRepairPrompt(flagged, {});
-        expect(prompt).toContain('Entries already extracted: (none)');
+    it('shows sub-entries of a mentioned parent in full', () => {
+        const text = buildLedgerText(entries, 'Bulwark resigned.');
+        expect(text).toContain('- Bulwark: Hidden truth [character, hidden]\nHer metal form is killing her.');
+    });
+
+    it('shows entries from the section being continued in full', () => {
+        const text = buildLedgerText(entries, 'It kept growing.', { alwaysFull: new Set([entries[1]]) });
+        expect(text).toContain('It meets at midnight.');
+    });
+
+    it("shows names, types and aliases only with detail 'names'", () => {
+        const text = buildLedgerText(entries, 'Bulwark and the Ashen Circle.', { detail: 'names', alwaysFull: new Set([entries[0]]) });
+        expect(text).toBe('- Bulwark [character] (also called: Eleanor Graves)\n\n- The Ashen Circle [organization]\n\n- Bulwark: Hidden truth [character, hidden]');
+    });
+
+    it('drops the first-sentence summaries once the ledger is very large', () => {
+        const many = Array.from({ length: 2000 }, (_, i) => ({ entry_type: 'item', name: `Relic ${i}`, aliases: [], body: `Relic ${i} is an artifact of the old world with a long and storied history. ${'x'.repeat(40)}` }));
+        const text = buildLedgerText(many, 'Nothing here names any of them.');
+        expect(text).toContain('- Relic 1999 [item]');
+        expect(text).not.toContain('is an artifact');
+    });
+});
+
+describe('validateReformatExtension', () => {
+    it('accepts an addition to an existing entry', () => {
+        const { ok, extension } = validateReformatExtension({ op: 'extend', name: ' Bulwark ', body: ' She retired in 2020. ', aliases: ['The Wall', 'bulwark'], keywords: ['retirement'], relationships: [{ target: 'Solaris', type: 'trained' }] });
+        expect(ok).toBe(true);
+        expect(extension).toEqual({
+            name: 'Bulwark',
+            aliases: ['The Wall'],
+            affiliation: '',
+            relationships: [{ target: 'Solaris', type: 'trained' }],
+            keywords: ['retirement'],
+            body: 'She retired in 2020.',
+        });
+    });
+
+    it('accepts an extension that only adds an alias', () => {
+        expect(validateReformatExtension({ op: 'extend', name: 'Bulwark', aliases: ['The Wall'] }).ok).toBe(true);
+    });
+
+    it('rejects an extension with no name or nothing to add', () => {
+        expect(validateReformatExtension({ op: 'extend', body: 'text' }).ok).toBe(false);
+        expect(validateReformatExtension({ op: 'extend', name: 'Bulwark', body: '  ' }).ok).toBe(false);
+        expect(validateReformatExtension('Bulwark').ok).toBe(false);
     });
 });

@@ -2,9 +2,10 @@
  * Unit tests for core/reformat-extractor.js
  *
  * Covers the parts that are risky to get wrong and aren't exercised by
- * reformat-schema.test.js: the oversized-section batching/continuation
- * packer, retry-vs-fatal-error provider-call behavior, and the
- * expandOversizedChunk() accept-time fallback. Mocks ST globals + fetch —
+ * reformat-schema.test.js: batching, the ledger of entries written so far
+ * (new entries vs. {"op": "extend"} additions), malformed-reply salvage,
+ * retry-vs-fatal-error provider-call behavior, the end-of-run coverage
+ * check, and the expandOversizedChunk() accept-time fallback. Mocks ST globals + fetch —
  * same convention as chunk-metadata-persistence.test.js.
  */
 
@@ -71,7 +72,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('reformatDocument — batching', () => {
-    it('splits an oversized section into continuation batches and threads already-extracted names forward', async () => {
+    it('splits an oversized section into continuation batches that see the entries written before them', async () => {
         const doc = [
             '# Intro',
             '',
@@ -101,13 +102,15 @@ describe('reformatDocument — batching', () => {
         expect(result.chunks.length).toBeGreaterThanOrEqual(2);
         expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-        // At least one call after the first must be a continuation carrying the
-        // "already extracted" note — proves the oversized-section splitter fired
-        // and threaded prior names forward instead of re-processing from scratch.
+        // At least one call after the first must be a continuation that shows
+        // the entries written so far — proves the oversized-section splitter
+        // fired and the earlier output was carried forward.
         const prompts = fetchMock.mock.calls.map(extractPrompt);
+        expect(prompts[0]).not.toContain('ENTRIES WRITTEN SO FAR');
         const continuationPrompts = prompts.filter(p => /continues section "## Roster"/.test(p));
         expect(continuationPrompts.length).toBeGreaterThanOrEqual(1);
-        expect(continuationPrompts[0]).toMatch(/already extracted from earlier parts of this section/i);
+        // entries from the earlier parts of the same section are shown in full
+        expect(continuationPrompts[continuationPrompts.length - 1]).toMatch(/ENTRIES WRITTEN SO FAR:[\s\S]*- Hero-\d+ \[character\]\nBody for call \d+\./);
         // every batch knows where it sits in the document
         expect(continuationPrompts[0]).toContain('comes from this place in the document: Intro › Roster');
 
@@ -377,28 +380,70 @@ describe('mergeDuplicateEntities', () => {
     });
 });
 
-describe('reformatDocument — duplicate merge integration', () => {
-    it('collapses the same entity extracted from two batches into one record and surfaces a warning', async () => {
-        const doc = [
-            '# Security Apparatus',
-            '',
-            'The Gestapo conducts political investigations. This sentence pads the section well past the tiny test budget so it must split into more than one batch for the test.',
-            '',
-            '# Legal System',
-            '',
-            'The Gestapo also appears here with different details entirely. This sentence pads the section well past the tiny test budget so it must split into more than one batch.',
-        ].join('\n');
+describe('reformatDocument — ledger of entries written so far', () => {
+    const doc = [
+        '# Security Apparatus',
+        '',
+        'The Gestapo conducts political investigations. This sentence pads the section well past the tiny test budget so it must split into more than one batch for the test.',
+        '',
+        '# Legal System',
+        '',
+        'The Gestapo also appears here with different details entirely. This sentence pads the section well past the tiny test budget so it must split into more than one batch.',
+    ].join('\n');
+    const gestapo = (body, extra = {}) => ({ entry_type: 'organization', name: 'Gestapo', aliases: [], affiliation: '', relationships: [], keywords: [], body, ...extra });
 
+    it('runs batches one at a time and shows each one the entries written before it', async () => {
+        let inFlight = 0;
+        let maxInFlight = 0;
+        const fetchMock = vi.fn(async (url, opts) => {
+            inFlight++;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise(r => setTimeout(r, 5));
+            inFlight--;
+            const prompt = JSON.parse(opts.body).messages[0].content;
+            return prompt.includes('ENTRIES WRITTEN SO FAR')
+                ? mockChatCompletionResponse([{ op: 'extend', name: 'Gestapo', body: 'The Gestapo also runs the courts.', aliases: ['Secret State Police'], keywords: ['courts'], relationships: [] }])
+                : mockChatCompletionResponse([gestapo('The Gestapo conducts political investigations.')]);
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_concurrency: 4 }) });
+
+        expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(maxInFlight).toBe(1);
+        // the second batch mentions the Gestapo, so its entry is shown in full
+        const second = extractPrompt(fetchMock.mock.calls[1]);
+        expect(second).toContain('- Gestapo [organization]\nThe Gestapo conducts political investigations.');
+
+        // the extension was folded into the one existing entry
+        expect(result.chunks).toHaveLength(1);
+        expect(result.chunks[0].body).toContain('conducts political investigations');
+        expect(result.chunks[0].body).toContain('also runs the courts');
+        expect(result.chunks[0].aliases).toContain('Secret State Police');
+        expect(result.chunks[0].keywords).toContain('courts');
+        // nothing had to be merged after the fact
+        expect(result.warnings.some(w => /Merged \d+ duplicate/i.test(w))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it("shows later batches only the names with reformat_ledger_detail: 'names'", async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([gestapo('The Gestapo conducts political investigations.')]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_ledger_detail: 'names' }) });
+
+        const second = extractPrompt(fetchMock.mock.calls[1]);
+        expect(second).toContain('ENTRIES WRITTEN SO FAR:\n- Gestapo [organization]\n\nTEXT:');
+
+        vi.unstubAllGlobals();
+    });
+
+    it('folds a repeated "new" entry into the existing one instead of duplicating it', async () => {
         let callCount = 0;
         const fetchMock = vi.fn(async () => {
             callCount++;
-            return mockChatCompletionResponse([
-                {
-                    entry_type: 'organization', name: 'Gestapo', aliases: [], affiliation: '',
-                    relationships: [], keywords: [],
-                    body: `Body from call ${callCount} with fact number ${callCount * 100}.`,
-                },
-            ]);
+            return mockChatCompletionResponse([gestapo(`Body from call ${callCount} with fact number ${callCount * 100}.`)]);
         });
         vi.stubGlobal('fetch', fetchMock);
 
@@ -408,19 +453,109 @@ describe('reformatDocument — duplicate merge integration', () => {
         expect(result.chunks).toHaveLength(1);
         expect(result.chunks[0].body).toContain('fact number 100');
         expect(result.chunks[0].body).toContain('fact number 200');
-        expect(result.warnings.some(w => /Merged \d+ duplicate/i.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('keeps an extension that names no existing entry as a new entry', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([
+            gestapo('The Gestapo conducts political investigations.'),
+            { op: 'extend', name: 'Kripo', entry_type: 'organization', body: 'The Kripo handles ordinary crime.' },
+            { op: 'extend', name: 'Nobody', aliases: ['No One'] }, // nothing to store without a body
+        ]));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: '# One\n\nThe Gestapo and the Kripo.', contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(result.chunks.map(c => c.name)).toEqual(['Gestapo', 'Kripo']);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('a failed batch is skipped and later batches still see the earlier entries', async () => {
+        let call = 0;
+        const fetchMock = vi.fn(async () => {
+            call++;
+            if (call === 1) return mockChatCompletionResponse([gestapo('The Gestapo conducts political investigations.')]);
+            return { ok: false, status: 400, statusText: 'bad request', text: async () => 'rejected' };
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings() });
+
+        expect(result.chunks).toHaveLength(1);
+        expect(result.batchesFailed).toBeGreaterThanOrEqual(1);
+        expect(result.warnings.some(w => /failed/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    }, 30000);
+});
+
+// ---------------------------------------------------------------------------
+// Malformed replies
+// ---------------------------------------------------------------------------
+
+describe('reformatDocument — malformed model replies', () => {
+    const entry = (name, extra = {}) => ({ entry_type: 'concept', name, aliases: [], affiliation: '', relationships: [{ target: 'Topic', type: 'is part of' }], keywords: ['a', 'b'], body: `${name} body.`, ...extra });
+    const rawReply = (content, finishReason = 'stop') => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content }, finish_reason: finishReason }] }) });
+    // One stray ")" inside the second entry makes the whole array invalid JSON
+    // (the shape of a real Claude Haiku reply that used to lose 25 of 26 entries).
+    const broken = '```json\n' + JSON.stringify([entry('Alpha'), entry('Beta'), entry('Gamma'), entry('Delta')], null, 0)
+        .replace('"name":"Beta","aliases":[]', '"name":"Beta","aliases":[])') + '\n```';
+    const doc = '# Topic\n\nAlpha, Beta, Gamma and Delta.';
+
+    it('asks again and uses the second reply when it is valid', async () => {
+        let call = 0;
+        const fetchMock = vi.fn(async () => (++call === 1
+            ? rawReply(broken)
+            : mockChatCompletionResponse([entry('Alpha'), entry('Beta'), entry('Gamma'), entry('Delta')])));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(result.chunks.map(c => c.name)).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta']);
+        expect(result.warnings.some(w => /malformed/.test(w))).toBe(false);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('salvages every readable entry and warns when the reply is malformed twice', async () => {
+        const fetchMock = vi.fn(async () => rawReply(broken));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        // only the entry holding the stray character is lost
+        expect(result.chunks.map(c => c.name)).toEqual(['Alpha', 'Gamma', 'Delta']);
+        expect(result.batchesFailed).toBe(0);
+        expect(result.warnings.some(w => /malformed twice; 3 entries were recovered/.test(w))).toBe(true);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('accepts an empty array from a batch that adds nothing', async () => {
+        const fetchMock = vi.fn(async () => rawReply('[]'));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(result.chunks).toEqual([]);
+        expect(result.batchesFailed).toBe(0);
 
         vi.unstubAllGlobals();
     });
 });
 
 // ---------------------------------------------------------------------------
-// Coverage repair pass (under-extraction guardrail)
+// Coverage check (under-extraction guardrail, report only)
 // ---------------------------------------------------------------------------
 
-describe('reformatDocument — coverage repair pass', () => {
-    // Miniature of the observed real-world failure: multi-subsection profile,
-    // model output covers only the first subsection.
+describe('reformatDocument — coverage check', () => {
+    // Mirrors the observed real-world failure: the model wrote up the first
+    // subsection and dropped the second.
     const doc = [
         '# Male Sympathizers',
         '',
@@ -438,78 +573,43 @@ describe('reformatDocument — coverage repair pass', () => {
         relationships: [], keywords: [],
         body: 'Male Sympathizers are a decentralized network of female citizens advocating equality. They communicate through encrypted messaging and library book marginalia.',
     };
-    const repairEntry = {
+    const fullEntry = {
         entry_type: 'concept', name: 'Male Sympathizers: Social Stigmatization and Pejorative Terms',
         aliases: [], affiliation: '',
         relationships: [{ target: 'Male Sympathizers', type: 'is part of' }], keywords: [],
         body: 'The linguistic arsenal against sympathizers includes "male-lover", "gender traitor", "softhead", and youth slang like "moid-simp" and "equality-pilled".',
     };
 
-    it('detects an under-captured section, issues one repair call, and appends its entries', async () => {
-        const fetchMock = vi.fn(async (url, opts) => {
-            const prompt = JSON.parse(opts.body).messages[0].content;
-            if (/missed some of its content/.test(prompt)) {
-                return mockChatCompletionResponse([repairEntry]);
-            }
-            return mockChatCompletionResponse([thinEntry]);
-        });
-        vi.stubGlobal('fetch', fetchMock);
-
-        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
-
-        expect(fetchMock).toHaveBeenCalledTimes(2); // extraction + one repair
-        const repairPrompt = fetchMock.mock.calls.map(extractPrompt).find(p => /missed some of its content/.test(p));
-        // the repair prompt names what was missed and carries the flagged section text
-        expect(repairPrompt).toContain('Social Stigmatization and Pejorative Terms');
-        expect(repairPrompt).toContain('male-lover');
-        expect(repairPrompt).toContain('Male Sympathizers'); // already-extracted names
-        // both the thin entry and the repaired sub-entry reach the caller
-        expect(result.chunks.map(c => c.name)).toEqual([
-            'Male Sympathizers',
-            'Male Sympathizers: Social Stigmatization and Pejorative Terms',
-        ]);
-        // repair succeeded → no residual under-capture warning
-        expect(result.warnings.some(w => /still under-captured/i.test(w))).toBe(false);
-
-        vi.unstubAllGlobals();
-    });
-
-    it('warns when coverage is still low after the repair call, without looping', async () => {
+    it('reports an under-covered paragraph as a warning without another LLM call', async () => {
         const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry]));
         vi.stubGlobal('fetch', fetchMock);
 
         const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
 
-        expect(fetchMock).toHaveBeenCalledTimes(2); // exactly one repair attempt, no loop
-        expect(result.warnings.some(w => /still under-captured/i.test(w) && /Social Stigmatization/.test(w))).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(result.chunks).toHaveLength(1);
+        const warning = result.warnings.find(w => /^Coverage check: 1 paragraph/.test(w));
+        expect(warning).toContain('"Social Stigmatization and Pejorative Terms"');
+        expect(warning).toContain('male-lover');
 
         vi.unstubAllGlobals();
     });
 
-    it('a failed repair call is a non-fatal warning and the original extraction survives', async () => {
-        let sawRepair = false;
-        const fetchMock = vi.fn(async (url, opts) => {
-            const prompt = JSON.parse(opts.body).messages[0].content;
-            if (/missed some of its content/.test(prompt)) {
-                sawRepair = true;
-                return { ok: false, status: 400, statusText: 'bad request', text: async () => 'model rejected prompt' };
-            }
-            return mockChatCompletionResponse([thinEntry]);
-        });
+    it('counts facts that a later batch put into any entry', async () => {
+        let call = 0;
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([++call === 1 ? thinEntry : fullEntry]));
         vi.stubGlobal('fetch', fetchMock);
 
-        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
+        // a small batch size puts the two subsections in different calls
+        const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 260 }) });
 
-        expect(sawRepair).toBe(true);
-        expect(result.chunks).toHaveLength(1); // extraction output intact
-        expect(result.batchesFailed).toBe(0);
-        expect(result.warnings.some(w => /repair call/i.test(w) && /failed/i.test(w))).toBe(true);
+        expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(result.warnings.some(w => /Coverage check/.test(w))).toBe(false);
 
         vi.unstubAllGlobals();
     });
 
-    it('can be disabled via reformat_enable_repair_pass: false — no coverage calls at all', async () => {
+    it('can be disabled via reformat_enable_repair_pass: false', async () => {
         const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry]));
         vi.stubGlobal('fetch', fetchMock);
 
@@ -520,20 +620,20 @@ describe('reformatDocument — coverage repair pass', () => {
         });
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
-        expect(result.chunks).toHaveLength(1);
-        expect(result.warnings.some(w => /under-captured/i.test(w))).toBe(false);
+        expect(result.warnings.some(w => /Coverage check/.test(w))).toBe(false);
 
         vi.unstubAllGlobals();
     });
 
-    it('spends no repair call when the extraction already covers every section', async () => {
-        const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry, repairEntry]));
+    it('says nothing when every paragraph is covered', async () => {
+        const fetchMock = vi.fn(async () => mockChatCompletionResponse([thinEntry, fullEntry]));
         vi.stubGlobal('fetch', fetchMock);
 
         const result = await reformatDocument({ text: doc, contentType: 'document', settings: baseSettings({ reformat_batch_chars: 6000 }) });
 
-        expect(fetchMock).toHaveBeenCalledTimes(1); // full coverage first try — no repair
+        expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(result.chunks).toHaveLength(2);
+        expect(result.warnings.some(w => /Coverage check/.test(w))).toBe(false);
 
         vi.unstubAllGlobals();
     });
