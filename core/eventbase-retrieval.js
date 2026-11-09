@@ -53,6 +53,52 @@ function _characterOverlap(a, b) {
 }
 
 /**
+ * Minimum word overlap for two events to count as the same event told twice.
+ * Measured on three real chats (347 events): unrelated events from one chat
+ * share 12–16% of their words (99th percentile 26%, they have the cast's
+ * names in common), and the one true duplicate shared 61%.
+ */
+const DUPLICATE_TEXT_SIMILARITY = 0.4;
+
+/**
+ * Words of an event's text for the duplicate check: lowercased runs of
+ * letters/digits of 3+ characters, plus character pairs for CJK text, which
+ * has no spaces to split on.
+ * @param {string} text
+ * @returns {Set<string>}
+ */
+function _textTokens(text) {
+    const tokens = new Set();
+    const lower = String(text || '').toLowerCase();
+    for (const m of lower.matchAll(/[^\s\p{P}\p{S}]+/gu)) {
+        const word = m[0];
+        if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/.test(word)) {
+            for (let i = 0; i < word.length - 1; i++) tokens.add(word.slice(i, i + 2));
+            if (word.length === 1) tokens.add(word);
+        } else if (word.length >= 3) {
+            tokens.add(word);
+        }
+    }
+    return tokens;
+}
+
+/**
+ * Share of words two events' texts have in common (Jaccard index), or null
+ * when either has no text to compare.
+ * @param {object} a
+ * @param {object} b
+ * @returns {number|null} 0..1
+ */
+function _textSimilarity(a, b) {
+    const tokensA = _textTokens(a?.summary || a?.text);
+    const tokensB = _textTokens(b?.summary || b?.text);
+    if (tokensA.size === 0 || tokensB.size === 0) return null;
+    let shared = 0;
+    for (const t of tokensA) if (tokensB.has(t)) shared++;
+    return shared / (tokensA.size + tokensB.size - shared);
+}
+
+/**
  * Recency bonus: exponential decay over the distance from the latest message.
  * Events whose source window ends near the current chat tail score higher.
  * @param {object} event
@@ -394,13 +440,24 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
 
     // 5. Duplicate suppression — same event_type + character overlap >= 60%
     //    AND temporal proximity (source windows within DUPLICATE_WINDOW_GAP messages)
+    //    AND the two texts say the same thing
     //    AND similarity score below DUPLICATE_SCORE_OVERRIDE.
     //
-    //    Three conditions ALL have to hold for a candidate to be suppressed:
+    //    ALL of these have to hold for a candidate to be suppressed:
     //      (a) Same event_type as an already-accepted event
     //      (b) Character overlap (Jaccard) >= 60%
     //      (c) Source windows within DUPLICATE_WINDOW_GAP messages
     //      (d) Candidate's raw similarity score below DUPLICATE_SCORE_OVERRIDE
+    //      (e) The two events' texts share >= DUPLICATE_TEXT_SIMILARITY of
+    //          their words
+    //
+    //    (e) exists because (a)+(b)+(c) describe "same kind of scene with the
+    //    same people around the same time", which in a chat with a small cast
+    //    is true of most neighbouring events whether or not they repeat each
+    //    other. In three real chats 16–33% of all events had such a partner,
+    //    and those pairs shared no more words than two random events did, so
+    //    distinct events were being dropped. An event with no text to compare
+    //    is still suppressed on (a)–(d) alone.
     //
     //    Why each condition:
     //      (a)+(b) catch the "same cast + same scene type" duplicate pattern that
@@ -463,6 +520,10 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
                 : true;  // unknown timing → treat as suspect (legacy safety)
 
             if (!withinWindow) continue;
+
+            // (e) Different wording means a different event, not a duplicate.
+            const textSimilarity = _textSimilarity(accepted, candidate);
+            if (textSimilarity !== null && textSimilarity < DUPLICATE_TEXT_SIMILARITY) continue;
 
             // Score-based escape hatch: high-similarity candidates survive dedup.
             // IMPORTANT: only apply on the JS path, where `score` is raw cosine /

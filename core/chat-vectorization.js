@@ -13,6 +13,7 @@ import { getCurrentChatId, is_send_press, setExtensionPrompt, substituteParams, 
 import { getContext } from '../../../../extensions.js';
 import { getStringHash as calculateHash } from '../../../../utils.js';
 import { extractChatKeywords, matchChunkKeywords } from './keyword-boost.js';
+import { stripKeywordTail, splitEntryKey, joinSplitEntries, dropRepeatedChunks, capChunks } from './chunk-assembly.js';
 import {
     getSavedHashes,
     queryCollection,
@@ -27,7 +28,7 @@ import { getChunkMetadata, getCollectionMeta } from './collection-metadata.js';
 import { createDebugData, setLastSearchDebug, addTrace, recordChunkFate } from '../ui/search-debug.js';
 import { LRUCache } from '../utils/data-structures.js';
 import { getIngestibleMessages } from './eventbase-store.js';
-import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE, RETRIEVAL_TIMEOUT_MS } from './constants.js';
+import { EXTENSION_PROMPT_TAG, HASH_CACHE_SIZE, RETRIEVAL_TIMEOUT_MS, DEFAULT_MAX_INJECTED_CHUNKS } from './constants.js';
 import AsyncUtils from '../utils/async-utils.js';
 import { log } from './log.js';
 // Import from collection-ids.js - single source of truth for collection ID operations
@@ -331,7 +332,7 @@ async function queryAndMergeCollections(activeCollections, queryText, settings, 
                 const hash = queryResults.hashes[idx];
 
                 // Prefer text from metadata (stored in vector DB)
-                let text = meta.text;
+                let text = stripKeywordTail(meta.text);
                 let textSource = 'metadata';
 
                 // Fallback: try to find in chat messages if not in metadata
@@ -390,7 +391,7 @@ async function queryAndMergeCollections(activeCollections, queryText, settings, 
 
     // Sort merged results by score (descending).
     // No global topK cap here — each collection already queried with effectiveTopK.
-    // Downstream stages (threshold, decay, dedup) handle final count.
+    // The overall limit (max_injected_chunks) is applied last, in limitInjectedChunks.
     chunksForVisualizer.sort((a, b) => b.score - a.score);
 
     return chunksForVisualizer;
@@ -475,7 +476,7 @@ async function expandSummaryChunks(chunks, activeCollections, settings, debugDat
                         const expandedChunk = {
                             ...summaryChunk,
                             hash: parentHash, // Use parent's hash for deduplication
-                            text: parentData.text || parentData.mes || '(parent text not found)',
+                            text: stripKeywordTail(parentData.text) || parentData.mes || '(parent text not found)',
                             metadata: {
                                 ...parentData,
                                 expandedFromSummary: true,
@@ -725,7 +726,7 @@ async function fetchForceLinkedChunks(missingHashes, targetCollection, settings)
                 fetched.push({
                     hash,
                     metadata: meta,
-                    text: meta.text || meta.mes || '(force-linked text not found)',
+                    text: stripKeywordTail(meta.text) || meta.mes || '(force-linked text not found)',
                     score: 1.0,
                     originalScore: meta.score,
                     similarity: 1.0,
@@ -739,6 +740,97 @@ async function fetchForceLinkedChunks(missingHashes, targetCollection, settings)
         }
     }
     return fetched;
+}
+
+/**
+ * Stage 8.7: Join the parts of split Auto-Reformat entries.
+ *
+ * An entry longer than "Max Entry Size" is stored as several chunks so each
+ * part is embedded and searchable, but a part on its own is half an entry: a
+ * later part lacks the definition and only the first carries the
+ * relationships. When any part is retrieved, the whole entry is read from the
+ * collection and injected once, in order. Several retrieved parts of one
+ * entry collapse into one chunk (the best-scoring part's score is kept).
+ *
+ * The stored parts are found by the fields they share (see splitEntryKey), so
+ * this also works for collections vectorized before it existed. If the
+ * collection can't be read (or the backend keeps no metadata), the retrieved
+ * parts are joined on their own.
+ *
+ * @param {object[]} chunks
+ * @param {object} settings VECTFOX settings
+ * @param {object} debugData Debug tracking object
+ * @returns {Promise<object[]>}
+ */
+async function joinSplitEntriesStage(chunks, settings, debugData) {
+    const collections = new Set(chunks.filter(c => splitEntryKey(c.metadata, c.collectionId)).map(c => c.collectionId));
+    if (collections.size === 0) return chunks;
+
+    /** @type {Map<string, Array<{text: string, metadata: object}>>} entry key → stored parts */
+    const storedParts = new Map();
+    for (const collectionId of collections) {
+        try {
+            const data = await getSavedHashes(collectionId, settings, true);
+            for (const meta of data?.metadata || []) {
+                const key = splitEntryKey(meta, collectionId);
+                if (!key || typeof meta?.text !== 'string') continue;
+                if (!storedParts.has(key)) storedParts.set(key, []);
+                storedParts.get(key).push({ text: meta.text, metadata: meta });
+            }
+        } catch (error) {
+            log.warn(`VectFox: Could not read ${collectionId} to join split entries (using the retrieved parts only):`, error.message);
+        }
+    }
+
+    const result = joinSplitEntries(chunks, key => storedParts.get(key) || null);
+    for (const entry of result.joined) {
+        recordChunkFate(debugData, entry.hash, 'entry_parts', 'passed', `Whole entry injected (${entry.parts} parts joined)`, { parts: entry.parts });
+        for (const hash of entry.absorbed) {
+            recordChunkFate(debugData, hash, 'entry_parts', 'dropped', `Part of an entry already injected whole via #${entry.hash}`, { joinedInto: entry.hash });
+        }
+    }
+    if (result.joined.length > 0) {
+        addTrace(debugData, 'entry_parts', `Joined ${result.joined.length} split entr${result.joined.length === 1 ? 'y' : 'ies'} into whole entries`, {
+            before: chunks.length,
+            after: result.chunks.length,
+        });
+        log.verbose(`VectFox: Joined ${result.joined.length} split Auto-Reformat entries into whole entries (${chunks.length} → ${result.chunks.length} chunks)`);
+    }
+    return result.chunks;
+}
+
+/**
+ * Stage 9.5: Drop chunks whose text repeats another chunk's, then keep the
+ * best `max_injected_chunks` overall. Top K is per collection, so without the
+ * cap the injected total grows with every enabled collection.
+ * @param {object[]} chunks Chunks about to be injected, best first
+ * @param {object} settings VECTFOX settings
+ * @param {object} debugData Debug tracking object
+ * @returns {object[]}
+ */
+function limitInjectedChunks(chunks, settings, debugData) {
+    const repeats = dropRepeatedChunks(chunks);
+    for (const chunk of repeats.dropped) {
+        recordChunkFate(debugData, chunk.hash, 'injection', 'dropped', 'Same text as a better-scoring chunk from another collection', { score: chunk.score, collectionId: chunk.collectionId });
+    }
+
+    const maxChunks = settings.max_injected_chunks ?? DEFAULT_MAX_INJECTED_CHUNKS;
+    const capped = capChunks(repeats.kept, maxChunks);
+    for (const chunk of capped.dropped) {
+        recordChunkFate(debugData, chunk.hash, 'injection', 'dropped', `Over the overall limit of ${maxChunks} injected chunks`, { score: chunk.score, collectionId: chunk.collectionId });
+    }
+
+    if (repeats.dropped.length > 0 || capped.dropped.length > 0) {
+        addTrace(debugData, 'injection', 'Overall limit applied', {
+            before: chunks.length,
+            repeatedText: repeats.dropped.length,
+            overLimit: capped.dropped.length,
+            limit: maxChunks,
+            after: capped.kept.length,
+        });
+        log.verbose(`VectFox: ${repeats.dropped.length} chunk(s) with repeated text and ${capped.dropped.length} over the limit of ${maxChunks} were not injected`);
+    }
+    return capped.kept;
 }
 
 /**
@@ -1423,11 +1515,17 @@ export async function rearrangeChat(chat, settings, type, { dryRun = false, test
         };
         log.verbose(`VectFox: Stored ${chunks.length} chunks for visualizer`);
 
+        // === STAGE 8.7: Join the parts of split Auto-Reformat entries ===
+        chunks = await joinSplitEntriesStage(chunks, settings, debugData);
+
         // === STAGE 9: Deduplicate ===
         log.verbose(`[VECTFOX Deduplication] Starting with ${chunks.length} chunks before deduplication`);
         log.verbose(`[VECTFOX Deduplication] Current chat has ${chat.length} messages`);
 
-        const { toInject: chunksToInject, skipped: skippedDuplicates } = deduplicateChunks(chunks, chat, settings, debugData);
+        const { toInject: notInChat, skipped: skippedDuplicates } = deduplicateChunks(chunks, chat, settings, debugData);
+
+        // === STAGE 9.5: Repeated text and the overall limit ===
+        const chunksToInject = limitInjectedChunks(notInChat, settings, debugData);
 
         log.verbose(`[VECTFOX Deduplication] After deduplication: ${chunksToInject.length} to inject, ${skippedDuplicates.length} skipped`);
         if (skippedDuplicates.length > 0) {

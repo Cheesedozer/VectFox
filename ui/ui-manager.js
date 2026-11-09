@@ -697,7 +697,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Max Entry Size: <span id="VectFox_reformat_max_body_chars_val">2000</span> chars</small>
                             </label>
                             <input type="range" id="VectFox_reformat_max_body_chars" class="vectfox-slider" min="500" max="5000" step="250" />
-                            <small class="VectFox_hint">Entries longer than this are sub-chunked with the same adaptive splitter used elsewhere, so one oversized entity doesn't become one giant chunk.</small>
+                            <small class="VectFox_hint">Entries longer than this are stored in parts, so every part of a long entry can be found by search. When any part is retrieved, the whole entry is put back together and injected once.</small>
 
                             <label for="VectFox_reformat_name_fuzzy_threshold" style="margin-top:10px; display:block;">
                                 <small>Hallucination Guard Sensitivity: <span id="VectFox_reformat_name_fuzzy_threshold_val">0.8</span></small>
@@ -739,6 +739,11 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <label for="VectFox_topk" style="margin:0; white-space:nowrap;"><small>Top K</small></label>
                                 <input id="VectFox_topk" type="number" class="vectfox-input" min="1" style="width:90px;" />
                                 <small class="VectFox_hint" style="margin-left:8px;">Up to this many results per collection (may be fewer after filtering/dedup)</small>
+                            </div>
+                            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                                <label for="VectFox_max_injected_chunks" style="margin:0; white-space:nowrap;"><small>Max Injected</small></label>
+                                <input id="VectFox_max_injected_chunks" type="number" class="vectfox-input" min="0" style="width:90px;" />
+                                <small class="VectFox_hint" style="margin-left:8px;">Most chunks injected per message across all collections together. Top K applies to each collection separately, so this keeps the total from growing with every collection you enable. 0 = no limit.</small>
                             </div>
 
                             <!-- Retrieval Gating (ChunkBase-only) -->
@@ -3111,6 +3116,16 @@ function bindSettingsEvents(settings, callbacks) {
             const value = parseInt($(this).val());
             const safeValue = isNaN(value) ? (settings.insert || 3) : value;
             settings.top_k = safeValue;
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    // Max Injected - overall limit on injected ChunkBase chunks (0 = no limit)
+    $('#VectFox_max_injected_chunks')
+        .val(settings.max_injected_chunks ?? 20)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            settings.max_injected_chunks = isNaN(value) || value < 0 ? 20 : value;
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

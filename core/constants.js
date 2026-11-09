@@ -44,6 +44,14 @@ export const VECTOR_LIST_LIMIT = 10000;
  */
 export const RETRIEVAL_TIMEOUT_MS = 15000;
 
+/**
+ * Default for settings.max_injected_chunks: the most ChunkBase chunks injected
+ * per generation across all collections. Top K (default 10) applies to each
+ * collection separately, so one or two collections are unaffected and more
+ * than that no longer multiply the injected text. 0 turns the limit off.
+ */
+export const DEFAULT_MAX_INJECTED_CHUNKS = 20;
+
 // =============================================================================
 // RETRY CONFIGURATION
 // =============================================================================

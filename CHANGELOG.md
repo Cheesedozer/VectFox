@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Retrieval
+
+- **Long Auto-Reformat entries are injected whole.** An entry over Max Entry
+  Size is still stored in parts so each part can be found, but when any part
+  is retrieved the whole entry is now read back, joined in order and injected
+  once (name once, relationships at the end). Before, a later part could be
+  injected without the part that says what the entry is. Works on collections
+  that are already vectorized.
+- **The " [KEYWORDS: …]" tail no longer reaches the chat prompt.** Qdrant
+  stores it on the chunk text for search; it is now removed from injected
+  chunks and lorebook entries.
+- **New: Max Injected** (ChunkBase → Query, default 20, 0 = no limit). Top K
+  applies to each collection separately, so the injected total used to grow
+  with every enabled collection. Chunks whose text is identical to a
+  better-scoring chunk (the same file in two collections) are dropped first.
+- **EventBase: different events are no longer dropped as duplicates.** Two
+  retrieved events of the same type, with mostly the same characters, within
+  10 messages of each other were treated as one event told twice. In a chat
+  with a small cast that describes most neighbouring events: in three real
+  chats 16–33% of events had such a partner, and those pairs shared no more
+  words than two random events. A pair now also has to share at least 40% of
+  its words.
+
 ### Auto-Reformat: batches build on each other
 
 - **Batches now see the entries already written.** A long document is still
