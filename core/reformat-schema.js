@@ -2,8 +2,8 @@
  * ============================================================================
  * AUTO-REFORMAT SCHEMA
  * ============================================================================
- * Record shape, validator, prompt builders, stored-text builder and the
- * grounding/coverage guardrails for Auto-Reformat (Document/URL/Wiki/YouTube).
+ * Record shape, validators, prompt builders (including the ledger of entries
+ * written so far), stored-text builder and the grounding/coverage guardrails for Auto-Reformat (Document/URL/Wiki/YouTube).
  *
  * Pure, no ST dependencies, so it can be unit-tested without mocks.
  *
@@ -25,6 +25,7 @@ export const REFORMAT_ENTRY_TYPES = Object.freeze([
     'concept',
     'location',
     'item',
+    'event',
     'other',
 ]);
 
@@ -244,6 +245,37 @@ export function validateReformattedChunk(raw) {
     return { ok: true, errors, chunk };
 }
 
+/**
+ * Coerces an {"op": "extend"} item: an addition to an entry written from an
+ * earlier part of the document. Only `name` is required; the body may be
+ * empty when the addition is just an alias, keyword or relationship.
+ * @param {unknown} raw
+ * @returns {{ ok: boolean, errors: string[], extension?: object }}
+ */
+export function validateReformatExtension(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { ok: false, errors: ['Extension is not an object'] };
+    }
+    const r = /** @type {any} */ (raw);
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    if (!name) return { ok: false, errors: ['extension has no name'] };
+
+    const errors = [];
+    const extension = {
+        name,
+        aliases: ensureStringArray(r.aliases, 'aliases', errors)
+            .filter(a => a.toLowerCase() !== name.toLowerCase()),
+        affiliation: typeof r.affiliation === 'string' ? r.affiliation.trim() : '',
+        relationships: ensureRelationships(r.relationships, errors),
+        keywords: ensureStringArray(r.keywords, 'keywords', errors),
+        body: typeof r.body === 'string' ? r.body.trim() : '',
+    };
+    const empty = !extension.body && !extension.aliases.length && !extension.keywords.length
+        && !extension.relationships.length && !extension.affiliation;
+    if (empty) return { ok: false, errors: ['extension adds nothing'] };
+    return { ok: true, errors, extension };
+}
+
 // ---------------------------------------------------------------------------
 // Stored text
 // ---------------------------------------------------------------------------
@@ -334,8 +366,10 @@ function isNameGroundedInSource(name, sourceText, threshold) {
     // Compound sub-entry names ("The Ashen Circle: Membership") are grounded
     // when each component is. Split on ":", em/en dashes and spaced hyphens
     // only; intra-name hyphens ("Jean-Luc") must not split.
-    const compoundParts = String(name || '').split(/\s*(?::|—|–|\s-\s)\s*/).map(p => p.trim()).filter(Boolean);
-    if (compoundParts.length > 1) {
+    const allParts = String(name || '').split(/\s*(?::|—|–|\s-\s)\s*/).map(p => p.trim()).filter(Boolean);
+    // "Hidden truth" is the suffix the prompt itself asks for, not source text.
+    const compoundParts = allParts.filter((p, i) => !(i > 0 && /^hidden truth$/i.test(p)));
+    if (compoundParts.length > 1 || compoundParts.length < allParts.length) {
         return compoundParts.every(part => isNameGroundedInSource(part, sourceText, threshold));
     }
 
@@ -419,21 +453,25 @@ export function computeKeywordVerification(chunks, sourceText, threshold = 0.7) 
 const DEFAULT_REFORMAT_PROMPT = `You are converting reference material (a lore document, world bible, wiki export, web page or video transcript) into self-contained entries for an AI roleplay memory system. Each entry is retrieved on its own, so it must make sense without the rest of the document.
 
 Read the TEXT and split it into entries. An entry is either:
-- a named thing: a character, organization, location or item; or
-- a topic: a system, law, event, period, custom or other subject that is not one named thing.
+- a named thing: a character, organization, location, item or event; or
+- a topic: a system, law, period, custom or other subject that is not one named thing.
 
-Skip sections written for the author or the site rather than about the world: writing settings (voice, tone, options turned on or off), canon logs and lists of established facts, change logs, open questions, to-do lists, tagging rules, upload notes, navigation and site announcements. Their facts are covered where the document states them.
+Skip sections written for the author or the site rather than about the world: writing settings (voice, tone, options turned on or off), canon logs and lists of established facts, change logs, open questions, to-do lists, tagging rules, upload notes, navigation, "Related" or "See also" lists of other articles, and site announcements. Their facts are covered where the document states them.
 
-Give every named thing the TEXT describes its own entry, under its own name: people, groups, institutions, places, laws, programs, systems and objects with a proper name. "Describes" means the TEXT says what the thing is: its nature, purpose, members, abilities, appearance or rules. This applies even when the description sits inside a larger section, in a list, or only in bold. For example, a section that describes an ID registry, a tracking app and two agencies gives an entry for each of those four plus one for the section itself, which can mention them by name. A thing that only takes part in events (someone the subject meets, fights or travels with) gets no entry of its own; those events belong in the subject's entries. When a topic section has several parts that are each discussed at length (a paragraph or more), give each part its own entry named "<Section name>: <Part title>". Short parts stay in the section's entry.
+Which entries to write:
+- Give every named thing the TEXT describes its own entry, under its own name: people, groups, institutions, places, laws, programs, systems, events and objects with a proper name. "Describes" means the TEXT says what the thing is: its nature, purpose, members, abilities, appearance or rules. This applies even when the description sits inside a larger section, in a list, or only in bold. A thing that only takes part in events (someone the subject meets, fights or travels with) gets no entry of its own; those events belong in the subject's entries.
+- A topic section gets an entry. When it has several parts that are each discussed at length (a paragraph or more), give each part its own entry named "<Section name>: <Part title>". Short parts stay in the section's entry.
+- One entry per thing. A thing has exactly one entry, under one name; its other names go in "aliases".
+- Each fact has one home: the entry it is mainly about. Other entries may mention that thing by name in a clause, but do not retell its details. For example, a section that describes an ID registry and a tracking app gives an entry for each, plus one for the section that says what the section adds and refers to the registry and the app by name.
 
 Output a JSON array. Each element has exactly these fields:
 {
-  "entry_type": "character" | "organization" | "concept" | "location" | "item" | "other",
+  "entry_type": "character" | "organization" | "concept" | "location" | "item" | "event" | "other",
   "name": the entry's name, in the source's wording,
   "aliases": other names for this same thing (a full name, an acronym, a title); never the name of a related group or place,
   "affiliation": the group this entry belongs to, or "",
   "relationships": for a named thing, [{"target": the name of another named thing in the TEXT, "type": a short verb phrase that reads as "<name> <type> <target>", such as "is the mentor of", "is located in" or "enforces"}]; for a topic, [],
-  "keywords": an array of search terms someone might use to find this entry,
+  "keywords": an array of short search terms (one to three words each) someone might type to find this entry: names and terms as the document writes them,
   "hidden": true for content from a section the document marks as spoilers, secrets or hidden truths, otherwise false,
   "body": the entry's content
 }
@@ -443,7 +481,7 @@ Writing the body:
 - Write clear third-person prose. Fix spelling and grammar and replace pronouns with names, but keep the source's own words for names, terms, quotations and specific details.
 - Keep quotations word for word, together with who said them.
 - Keep attribution. When the TEXT presents something as the claim, belief or official position of a person or group, say whose it is ("According to the Daughters of the Victory, ..."). A claim stays a claim and a fact stays a fact.
-- Describe the world, not the document. If a note aimed at editors or the author contains a fact about the world, state the fact and drop the note.
+- Describe the world, not the document. If a note aimed at editors or the author contains a fact about the world, state the fact and drop the note. Never write that something is "mentioned in" or "listed in" the document.
 - Put hidden content in its own entries with "hidden": true, and keep it out of public entries. Name each one "<Subject>: Hidden truth", where the subject is the thing the secret is about, not the section it appears in.
 
 Example input:
@@ -458,11 +496,11 @@ Its founder described the agency's motto as "We hold the line."
 ## Spoilers
 Bulwark's metal form is slowly killing her."
 
-Example output (the Settings section is a writing setting for the author, so it is skipped; Solaris is only mentioned, so it gets no entry):
+Example output (the Settings section is a writing setting for the author, so it is skipped; Solaris is only mentioned, so it gets no entry; Bulwark's details are in her own entry, not the agency's):
 [
-  {"entry_type":"organization","name":"Ironclad Agency","aliases":[],"affiliation":"","relationships":[{"target":"New York City","type":"is based in"}],"keywords":["hero agency","New York City","We hold the line"],"hidden":false,"body":"Ironclad Agency is a hero agency based in New York City. Its lead hero is Bulwark. According to its founder, the agency's motto is \\"We hold the line.\\""},
-  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","relationships":[{"target":"Ironclad Agency","type":"is the lead hero of"},{"target":"Solaris","type":"is the mentor of"}],"keywords":["Fortress","Spark","metal skin"],"hidden":false,"body":"Bulwark, whose real name is Eleanor Graves, is the lead hero of Ironclad Agency. Her Spark, Fortress, turns her skin to metal. Bulwark mentors Solaris."},
-  {"entry_type":"character","name":"Bulwark: Hidden truth","aliases":[],"affiliation":"","relationships":[{"target":"Bulwark","type":"is a secret about"}],"keywords":["Fortress","metal form"],"hidden":true,"body":"Bulwark's metal form is slowly killing her."}
+  {"entry_type":"organization","name":"Ironclad Agency","aliases":[],"affiliation":"","relationships":[{"target":"New York City","type":"is based in"}],"keywords":["Ironclad Agency","hero agency","We hold the line"],"hidden":false,"body":"Ironclad Agency is a hero agency based in New York City. Its lead hero is Bulwark. According to its founder, the agency's motto is \\"We hold the line.\\""},
+  {"entry_type":"character","name":"Bulwark","aliases":["Eleanor Graves"],"affiliation":"Ironclad Agency","relationships":[{"target":"Ironclad Agency","type":"is the lead hero of"},{"target":"Solaris","type":"is the mentor of"}],"keywords":["Bulwark","Fortress","Spark","metal skin"],"hidden":false,"body":"Bulwark, whose real name is Eleanor Graves, is the lead hero of Ironclad Agency. Her Spark, Fortress, turns her skin to metal. Bulwark mentors Solaris."},
+  {"entry_type":"character","name":"Bulwark: Hidden truth","aliases":[],"affiliation":"","relationships":[{"target":"Bulwark","type":"is a secret about"}],"keywords":["Bulwark","Fortress","metal form"],"hidden":true,"body":"Bulwark's metal form is slowly killing her."}
 ]
 
 {{notes}}TEXT:
@@ -490,15 +528,85 @@ function _fillTemplate(template, notes, text) {
     return out;
 }
 
+/** Ledger size above which entries the batch doesn't mention are listed by name only. */
+const LEDGER_FULL_DETAIL_CHARS = 120000;
+
+/**
+ * Lookup keys for finding an entry's names in a batch: lowercased, a leading
+ * "the" dropped, and for "<Parent>: <Part>" names the parent only.
+ * @param {object} entry
+ * @returns {string[]}
+ */
+function _mentionKeys(entry) {
+    return [entry?.name, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
+        .map(n => String(n || '').toLowerCase().split(':')[0].replace(/^the\s+/, '').replace(/\s+/g, ' ').trim())
+        .filter(k => k.length > 2);
+}
+
+/**
+ * Renders the entries written so far (the "ledger") for one batch's prompt.
+ *
+ * detail 'full' (default): entries the batch mentions by name or alias, and
+ * those in `alwaysFull` (the earlier parts of a section this batch
+ * continues), are shown with their whole body, so the model can see which
+ * facts already exist; the rest are shown by name and first sentence. This
+ * keeps the prompt size tied to what a batch talks about rather than to the
+ * document's length.
+ *
+ * detail 'names': every entry is shown by name, type and aliases only. The
+ * model then reuses names (no duplicate entries) but cannot tell which facts
+ * exist, so it writes each batch in full and more sentences end up restated
+ * across entries. Small models need this: shown the bodies, Gemini 3.5 Flash
+ * Lite treated the document as already covered and dropped detail (88% of a
+ * test checklist against 98.5% with names only), while Claude Haiku 5.5 kept
+ * 97–100% either way and restated 12–18% of sentences with bodies (two
+ * runs) against 27%. The two details come with different instructions (see
+ * _buildNotes): with the bodies shown and the "write everything" wording,
+ * Haiku restated 23% in the one run that tried it.
+ *
+ * @param {object[]} entries - Entries written from earlier batches
+ * @param {string} batchText
+ * @param {object} [options]
+ * @param {Set<object>} [options.alwaysFull]
+ * @param {'full'|'names'} [options.detail]
+ * @returns {string} '' when there are no entries yet
+ */
+export function buildLedgerText(entries, batchText, { alwaysFull = new Set(), detail = 'full' } = {}) {
+    const list = Array.isArray(entries) ? entries : [];
+    if (list.length === 0) return '';
+    const haystack = String(batchText || '').toLowerCase().replace(/\s+/g, ' ');
+    const firstSentence = body => {
+        const first = String(body || '').split(/(?<=[.!?。！？])\s/)[0] || '';
+        return first.length > 200 ? `${first.slice(0, 200)}…` : first;
+    };
+    const header = e => {
+        const tags = [e.entry_type, e.hidden ? 'hidden' : ''].filter(Boolean).join(', ');
+        const aliases = e.aliases?.length ? ` (also called: ${e.aliases.join(', ')})` : '';
+        return `- ${e.name} [${tags}]${aliases}`;
+    };
+    const isFull = e => detail !== 'names' && (alwaysFull.has(e) || _mentionKeys(e).some(k => haystack.includes(k)));
+
+    const render = withSummaries => list.map(e => {
+        if (isFull(e)) return `${header(e)}\n${String(e.body || '').trim()}`;
+        return withSummaries ? `${header(e)}\n${firstSentence(e.body)} […]` : header(e);
+    }).join('\n\n');
+
+    if (detail === 'names') return render(false);
+    const text = render(true);
+    return text.length > LEDGER_FULL_DETAIL_CHARS ? render(false) : text;
+}
+
 /**
  * Per-batch notes placed in the prompt's {{notes}} slot.
  * @param {object} [ctx]
  * @param {string} [ctx.headingPath] - "Doc › Section › Subsection" for this batch
  * @param {string} [ctx.contentType] - 'document' | 'url' | 'wiki' | 'youtube'
- * @param {{sectionTitle: string, alreadyExtractedNames: string[]}} [ctx.continuation]
+ * @param {{sectionTitle: string}} [ctx.continuation] - Set when the batch continues an oversized section
+ * @param {string} [ctx.ledgerText] - buildLedgerText() output; '' for the first batch
+ * @param {'full'|'names'} [ctx.ledgerDetail] - The detail ledgerText was built with
  * @returns {string}
  */
-function _buildNotes({ headingPath = '', contentType = '', continuation = null } = {}) {
+function _buildNotes({ headingPath = '', contentType = '', continuation = null, ledgerText = '', ledgerDetail = 'full' } = {}) {
     const notes = [];
     if (headingPath) {
         notes.push(`NOTE: This TEXT comes from this place in the document: ${headingPath}. Use it for context only; entry names stay short. When a section title is generic (such as "History" or "Abilities"), name its entry after its subject, like "History of <subject>" or "<Subject>: Abilities".`);
@@ -507,10 +615,29 @@ function _buildNotes({ headingPath = '', contentType = '', continuation = null }
         notes.push('NOTE: This TEXT is a video transcript: spoken words, often without punctuation or speaker labels. Leave out filler words, false starts, and requests to like, subscribe or visit sponsors. Organize entries by the subjects discussed, and attribute statements to the speaker when the transcript makes clear who is speaking.');
     }
     if (continuation?.sectionTitle) {
-        const names = continuation.alreadyExtractedNames?.length
-            ? continuation.alreadyExtractedNames.join(', ')
-            : '(none yet)';
-        notes.push(`NOTE: This TEXT continues section "${continuation.sectionTitle}", which was split because it is long. Entries already extracted from earlier parts of this section: ${names}. Do not repeat them; extract only what this part adds.`);
+        notes.push(`NOTE: This TEXT continues section "${continuation.sectionTitle}", which was split because it is long.`);
+    }
+    if (ledgerText && ledgerDetail === 'names') {
+        // Names only: the model cannot see what the entries say, so it is told
+        // to write the TEXT in full and only reuse the names.
+        notes.push(`NOTE: This TEXT is a later part of a document you are working through part by part. ENTRIES WRITTEN SO FAR lists, by name only, every entry made from the earlier parts.
+
+Write up this TEXT as completely as if it were the whole document: every fact in it must end up in an entry. Earlier parts are often only a summary of what this TEXT tells in detail, so expect most of its numbers, names, quotations, rules and examples to be new. The list changes only where the facts go:
+- A thing or topic with no entry yet gets a new entry, as described above.
+- A thing that already has an entry keeps that one entry. Never write a second entry for it under any name. Add to it with {"op": "extend", "name": the existing entry's exact name, "body": everything this TEXT says about it, written as prose that can be added to the end of it, "aliases": [], "keywords": [], "relationships": []}. A long passage about an existing entry gives a long extension.
+- You cannot see what the existing entries already say, so do not leave anything out on the assumption that it is covered. Leaving a fact out loses it for good.
+
+ENTRIES WRITTEN SO FAR:
+${ledgerText}`);
+    } else if (ledgerText) {
+        notes.push(`NOTE: This TEXT is a later part of a document you are working through part by part. ENTRIES WRITTEN SO FAR lists every entry made from the earlier parts. An entry ending in […] is shown shortened because this TEXT does not mention it.
+- For a thing or topic that has no entry yet, write a new entry as described above.
+- For a thing that already has an entry, never write a second entry. Output this instead: {"op": "extend", "name": the existing entry's exact name, "body": only the facts from this TEXT that the entry does not already state, written as prose that can be added to the end of it, "aliases": [], "keywords": [], "relationships": []}. Leave it out entirely when this TEXT adds nothing to that entry.
+- Never repeat a fact that an existing entry already states, in an extension or in a new entry; refer to the existing entry by its name.
+- If this TEXT adds nothing new at all, output [].
+
+ENTRIES WRITTEN SO FAR:
+${ledgerText}`);
     }
     return notes.length ? notes.join('\n') + '\n\n' : '';
 }
@@ -523,13 +650,14 @@ function _buildNotes({ headingPath = '', contentType = '', continuation = null }
  * @param {string} [options.customPrompt] - settings.reformat_custom_prompt
  * @param {string} [options.headingPath]
  * @param {string} [options.contentType]
- * @param {{sectionTitle: string, alreadyExtractedNames: string[]}} [options.batchContext] -
- *        Set for continuation batches of an oversized section
+ * @param {{sectionTitle: string}} [options.batchContext] - Set for continuation batches of an oversized section
+ * @param {string} [options.ledgerText] - Entries written from earlier batches (see buildLedgerText)
+ * @param {'full'|'names'} [options.ledgerDetail] - The detail ledgerText was built with
  * @returns {string}
  */
-export function buildReformatPrompt(text, { customPrompt = '', headingPath = '', contentType = '', batchContext = null } = {}) {
+export function buildReformatPrompt(text, { customPrompt = '', headingPath = '', contentType = '', batchContext = null, ledgerText = '', ledgerDetail = 'full' } = {}) {
     const template = (customPrompt && customPrompt.trim()) ? customPrompt : DEFAULT_REFORMAT_PROMPT;
-    const notes = _buildNotes({ headingPath, contentType, continuation: batchContext });
+    const notes = _buildNotes({ headingPath, contentType, continuation: batchContext, ledgerText, ledgerDetail });
     return _fillTemplate(template, notes, text);
 }
 
@@ -569,14 +697,17 @@ Output only the JSON array.`;
 }
 
 // ---------------------------------------------------------------------------
-// Coverage check + repair prompt (under-extraction guardrail)
+// Coverage check (under-extraction guardrail)
 // ---------------------------------------------------------------------------
 
 // A section with fewer distinctive fact tokens than this is too small to
-// score reliably — treat it as covered rather than generating noisy repairs.
+// score reliably, so it is treated as covered.
 const COVERAGE_MIN_FACT_TOKENS = 3;
-// Cap the missing-facts list per section so the repair prompt stays bounded.
+// Cap the missing-facts list per section so warnings stay readable.
 const COVERAGE_MAX_REPORTED_FACTS = 20;
+// "Related: A, B, C" lines point at other articles; the prompt tells the
+// model to skip them, so they must not count as dropped content.
+const CROSS_REFERENCE_LINE = /^[*_]*(?:related(?: articles| pages| topics)?|see also)[*_]*\s*:/i;
 
 /** Same header pattern as core/chunking.js's `section` strategy. */
 const COVERAGE_HEADER_REGEX = /^(#{1,6})\s+(.+)$/gm;
@@ -615,6 +746,7 @@ function _splitCoverageSections(text) {
         const sectionTitle = shorten(firstLine.replace(/^#{1,6}\s+/, '').replace(/\*+/g, '').trim());
         for (const para of section.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)) {
             if (isHeader && para === firstLine) continue;
+            if (CROSS_REFERENCE_LINE.test(para)) continue;
             const label = para.match(/^\*\*([^*\n]{2,80}?)[.:]?\*\*/);
             units.push({ title: label ? `${sectionTitle} › ${label[1].trim()}` : sectionTitle, text: para });
         }
@@ -666,8 +798,11 @@ function _extractFactTokens(text) {
  * distinctive content landed in the extracted entries, and returns the
  * sections below `threshold`.
  *
- * @param {string} batchText
- * @param {object[]} entries - Validated entries extracted so far for this batch/chain
+ * Run once at the end of a reformat over the whole document and every final
+ * entry; the result is reported as warnings (no follow-up LLM call).
+ *
+ * @param {string} batchText - Source text
+ * @param {object[]} entries - Final entries
  * @param {number} [threshold=0.5] - Minimum covered-token ratio per section
  * @returns {Array<{title: string, text: string, coverage: number, missingFacts: string[]}>}
  */
@@ -709,34 +844,4 @@ export function computeBatchCoverage(batchText, entries, threshold = 0.5) {
         }
     }
     return flagged;
-}
-
-/**
- * Builds the one-shot repair prompt for sections computeBatchCoverage
- * flagged. Reuses the full extraction template (calls are stateless).
- *
- * @param {Array<{title: string, text: string, missingFacts: string[]}>} flaggedSections
- * @param {object} [options]
- * @param {string} [options.customPrompt]
- * @param {string[]} [options.alreadyExtractedNames]
- * @param {string} [options.headingPath]
- * @param {string} [options.contentType]
- * @returns {string}
- */
-export function buildRepairPrompt(flaggedSections, { customPrompt = '', alreadyExtractedNames = [], headingPath = '', contentType = '' } = {}) {
-    const sections = Array.isArray(flaggedSections) ? flaggedSections : [];
-    const namesList = alreadyExtractedNames.length ? alreadyExtractedNames.join(', ') : '(none)';
-    const missingLines = sections
-        .map(s => `- "${s.title}": ${s.missingFacts?.length ? s.missingFacts.join('; ') : '(most of the section)'}`)
-        .join('\n');
-
-    const repairNote = `NOTE: A previous extraction of this TEXT missed some of its content. Entries already extracted: ${namesList}. These details are in no existing entry:
-${missingLines}
-Extract entries that cover what is missing. You may add entries named "<Existing entry's name>: <Part title>" for parts of an existing entry. Do not repeat content the existing entries already have.
-
-`;
-
-    const template = (customPrompt && customPrompt.trim()) ? customPrompt : DEFAULT_REFORMAT_PROMPT;
-    const text = sections.map(s => s.text).join('\n\n');
-    return _fillTemplate(template, _buildNotes({ headingPath, contentType }) + repairNote, text);
 }

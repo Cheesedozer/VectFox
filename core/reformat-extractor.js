@@ -10,19 +10,34 @@
  * are wrapped in AsyncUtils.retry(), since losing a large batch call costs
  * more than losing one small EventBase window.
  *
+ * The document is split into header-aligned batches that are processed ONE
+ * AFTER ANOTHER. Each call is shown the entries written from the earlier
+ * batches (the "ledger", see buildLedgerText) and answers with new entries
+ * plus {"op": "extend"} additions to existing ones, so a thing described in
+ * several sections ends up with one entry instead of one per batch. Measured
+ * on a 89k-character world bible with Claude Haiku 5.5: independent batches
+ * produced 274 records of which 105 were duplicates to merge afterwards, and
+ * a third of all sentences restated another entry; the ledger produced
+ * 131–134 entries with none to merge, 12–18% restated sentences and the same
+ * fact recall, for about the same cost. The
+ * price is that batches can no longer run in parallel.
+ * settings.reformat_ledger_detail ('full' | 'names') sets how much of each
+ * earlier entry a batch is shown; see buildLedgerText for when 'names' is
+ * the better choice.
+ *
  * Optional whole-document mode (settings.reformat_single_pass) sends the
- * document to the model in ONE call, so every entry is written with the full
- * document in view. That call is tried twice; if both fail (or the document
- * can't fit the model's context/output limits) the run falls back to the
- * batched path below. It is off by default because it depends on the model:
- * measured on a 31k-character world bible, Claude Haiku 5.5 (medium effort)
- * kept 99% of the source's facts in one reply with no duplicate entries,
- * while Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%, against ~98%
- * for Flash Lite in batches).
+ * document to the model in ONE call. That call is tried twice; if both fail
+ * (or the document can't fit the model's context/output limits) the run
+ * falls back to the batched path. It is off by default because long replies
+ * lose detail (95% recall on the same document) and it depends on the model.
  *
  * settings.reformat_reasoning_effort ('' = model default) sets the thinking
  * level. Thinking tokens count against the output limit, so with an effort
  * set every call gets more output room and a longer timeout.
+ *
+ * After extraction a coverage check (settings.reformat_enable_repair_pass)
+ * compares the document's distinctive facts with the final entries and
+ * reports under-covered paragraphs as warnings. It makes no LLM call.
  *
  * Returns { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode }.
  * Throws ReformatFatalError for config/auth failures (aborts the whole run).
@@ -39,9 +54,10 @@ import {
     ReformatExtractionError,
     ReformatFatalError,
     validateReformattedChunk,
+    validateReformatExtension,
     buildReformatPrompt,
+    buildLedgerText,
     buildLinkingPrompt,
-    buildRepairPrompt,
     computeBatchCoverage,
     computeNameVerification,
     computeKeywordVerification,
@@ -57,9 +73,12 @@ const DEFAULT_MAX_TOKENS = 16000;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TIMEOUT_MS = 90000;
 const DEFAULT_BATCH_CHARS = 6000;
+// Parallel calls for the linking pass (extraction runs one batch at a time).
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_NAME_FUZZY_THRESHOLD = 0.8;
 const DEFAULT_COVERAGE_THRESHOLD = 0.5;
+// Under-covered paragraphs named in the coverage warning; the rest are counted.
+const COVERAGE_MAX_REPORTED_SECTIONS = 10;
 // Whole-document mode: one generation can run for minutes on a long document.
 const DEFAULT_SINGLE_PASS_TIMEOUT_MS = 600000;
 const SINGLE_PASS_ATTEMPTS = 2;
@@ -220,9 +239,11 @@ async function _callProviderWithRetry(prompt, settings, batchIndex, callOptions 
  * @param {number} [batchIndex]
  * @param {string[]} [keyFields] - An array candidate is accepted when its first
  *        item has ANY of these keys. The linking pass passes ['source', 'target'].
- * @returns {unknown[]}
+ * @returns {{items: unknown[], clean: boolean}} `clean` is false when the reply
+ *        was not valid JSON and the items were salvaged from it, in which case
+ *        some may be missing.
  */
-function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'name', 'body']) {
+function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'name', 'body', 'op']) {
     let text = (raw || '').trim();
 
     if (text.startsWith('```')) {
@@ -236,9 +257,11 @@ function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'n
     /** @type {unknown[][]} */
     const candidates = [];
 
-    // 1) Direct parse first.
+    // 1) Direct parse first. `clean` records that the reply was valid JSON.
+    let clean = false;
     try {
         const direct = JSON.parse(text);
+        clean = true;
         if (Array.isArray(direct)) candidates.push(direct);
         if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
             if (Object.keys(direct).length === 0) candidates.push([]);
@@ -318,7 +341,12 @@ function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'n
         if (!first || typeof first !== 'object' || Array.isArray(first)) return false;
         return keyFields.some(key => Object.prototype.hasOwnProperty.call(first, key));
     };
-    const chosen = candidates.find(isReformatArray) ?? candidates.find(arr => Array.isArray(arr) && arr.length === 0);
+    // The candidate with the most entries wins. Taking the first match used
+    // to return a small array nested inside a malformed reply (one entry out
+    // of 26 in a real run) while the object-stream salvage held the rest.
+    const matching = candidates.filter(isReformatArray);
+    const chosen = matching.reduce((best, arr) => (!best || arr.length > best.length ? arr : best), null)
+        ?? candidates.find(arr => Array.isArray(arr) && arr.length === 0);
 
     if (!chosen) {
         const sample = candidates[0];
@@ -336,7 +364,7 @@ function _parseReformatArray(raw, batchIndex = -1, keyFields = ['entry_type', 'n
         );
     }
 
-    return chosen;
+    return { items: chosen, clean };
 }
 
 // ---------------------------------------------------------------------------
@@ -487,145 +515,192 @@ async function _buildBatches(text, targetChars, sourceName = '') {
     return { batches, skippedSections };
 }
 
+// ---------------------------------------------------------------------------
+// Batch processing (ledger)
+// ---------------------------------------------------------------------------
+
 /**
- * Groups batches into ordered "chains": a continuation batch runs after the
- * batch it continues (so it can be told which names were already
- * extracted); independent chains run concurrently.
- * @param {Array<{text: string, continuation: object|null}>} batches
- * @returns {Array<Array<object>>}
+ * Finds the ledger entry an extension or a repeated name refers to: by name
+ * first, then by alias. `hidden` (when known) restricts the match, since a
+ * hidden truth and its public entry are separate entries.
+ * @param {object[]} ledger
+ * @param {string} name
+ * @param {boolean|null} hidden
+ * @returns {object|undefined}
  */
-function _groupIntoChains(batches) {
-    const chains = [];
-    let current = null;
-    for (const b of batches) {
-        if (b.continuation && current) {
-            current.push(b);
-        } else {
-            current = [b];
-            chains.push(current);
-        }
-    }
-    return chains;
+function _findLedgerEntry(ledger, name, hidden = null) {
+    const keys = _nameKeys(name);
+    if (keys.length === 0) return undefined;
+    const visible = e => hidden === null || Boolean(e.hidden) === hidden;
+    return ledger.find(e => visible(e) && _nameKeys(e.name).some(k => keys.includes(k)))
+        || ledger.find(e => visible(e) && _entityKeys(e).some(k => keys.includes(k)));
 }
 
-// ---------------------------------------------------------------------------
-// Chain processing
-// ---------------------------------------------------------------------------
-
 /**
- * Parses, validates, and grounding-checks one LLM reply, appending the
- * surviving records to `results` and their names to `alreadyExtractedNames`.
- * @returns {number} How many records were appended
+ * Parses, validates and grounding-checks one LLM reply and applies it to the
+ * ledger: new entries are appended, {"op": "extend"} items (and new entries
+ * that repeat an existing entry's name) are folded into the entry they name.
+ * @returns {{added: number, extended: number, clean: boolean, itemCount: number}}
  */
-function _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel }) {
+function _applyReply(reply, batch, { ledger, settings, batchIndex, batchLabel }) {
     const threshold = settings.reformat_name_fuzzy_threshold ?? DEFAULT_NAME_FUZZY_THRESHOLD;
+    const { items, clean } = _parseReformatArray(reply, batchIndex);
+    let added = 0;
+    let extended = 0;
 
-    const rawArray = _parseReformatArray(reply, chainIndex);
-    const validatedForBatch = [];
-    for (let j = 0; j < rawArray.length; j++) {
-        const { ok, errors, chunk } = validateReformattedChunk(rawArray[j]);
+    const grounding = record => {
+        const [names] = computeNameVerification([record], batch.text, threshold);
+        const [keywords] = computeKeywordVerification([record], batch.text);
+        return {
+            _nameGrounded: names?.nameGrounded ?? true,
+            _ungroundedAliases: names?.ungroundedAliases ?? [],
+            _ungroundedKeywords: keywords?.ungroundedKeywords ?? [],
+        };
+    };
+
+    items.forEach((raw, j) => {
+        const item = /** @type {any} */ (raw);
+        const isExtend = typeof item?.op === 'string' && item.op.trim().toLowerCase() === 'extend';
+
+        if (isExtend) {
+            const { ok, errors, extension } = validateReformatExtension(item);
+            if (!ok) {
+                log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: extension skipped — ${errors.join('; ')}`);
+                return;
+            }
+            const hidden = typeof item.hidden === 'boolean' ? item.hidden : null;
+            const target = _findLedgerEntry(ledger, extension.name, hidden);
+            if (target) {
+                // The target's name was grounded when it was created.
+                _absorbRecord(target, { ...extension, hidden: target.hidden, ...grounding(extension), _nameGrounded: true });
+                extended++;
+                return;
+            }
+            // The model extended something that has no entry: keep the content as a new entry.
+            log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: extension names "${extension.name}", which has no entry — stored as a new entry`);
+        }
+
+        const { ok, errors, chunk } = validateReformattedChunk(item);
         if (!ok) {
             log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: validation failed — ${errors.join('; ')} — skipped`);
-            continue;
+            return;
         }
         if (errors.length > 0) {
             log.warn(`[Auto-Reformat] ${batchLabel}, item ${j}: coercion warnings — ${errors.join('; ')}`);
         }
-        validatedForBatch.push(chunk);
-    }
+        const record = { ...chunk, ...grounding(chunk) };
 
-    const verification = computeNameVerification(validatedForBatch, batch.text, threshold);
-    const keywordVerification = computeKeywordVerification(validatedForBatch, batch.text);
-    validatedForBatch.forEach((chunk, j) => {
-        results.push({
-            ...chunk,
-            _nameGrounded: verification[j]?.nameGrounded ?? true,
-            _ungroundedAliases: verification[j]?.ungroundedAliases ?? [],
-            _ungroundedKeywords: keywordVerification[j]?.ungroundedKeywords ?? [],
-        });
-        alreadyExtractedNames.push(chunk.name);
+        // A "new" entry under a name that already has one is an extension in disguise.
+        const existing = ledger.find(e => Boolean(e.hidden) === Boolean(record.hidden)
+            && _nameKeys(e.name).some(k => _nameKeys(record.name).includes(k)));
+        if (existing) {
+            _absorbRecord(existing, record);
+            extended++;
+        } else {
+            ledger.push(record);
+            added++;
+        }
     });
-    return validatedForBatch.length;
+
+    return { added, extended, clean, itemCount: items.length };
 }
 
 /**
- * Processes one chain sequentially. After each batch, computeBatchCoverage
- * checks that the batch's distinctive facts landed in the records; flagged
- * sections get ONE repair call. Repair failures are non-fatal.
+ * Processes the batches in document order against one shared ledger.
+ *
+ * A reply that is not valid JSON is salvaged (see _parseReformatArray) and
+ * the batch is asked for once more; the second reply is used when it parses
+ * cleanly, otherwise the salvaged entries are kept and a warning says some
+ * may be missing.
  *
  * With `strict` (the whole-document call), an extraction failure or a reply
  * cut off by the output limit is thrown instead of recorded, so the caller
  * can retry or fall back to batches.
+ *
+ * @returns {Promise<{results: object[], failedCount: number}>}
  */
-async function _processChain(chain, settings, chainIndex, warnings, contentType, { callOptions = {}, strict = false } = {}) {
-    const results = [];
+async function _processBatches(batches, settings, warnings, contentType, { callOptions = {}, strict = false, abortSignal = null, onBatchDone = null } = {}) {
+    const ledger = [];
     let failedCount = 0;
-    let repairCalls = 0;
-    const alreadyExtractedNames = [];
-    const repairEnabled = settings.reformat_enable_repair_pass !== false;
-    const coverageThreshold = settings.reformat_coverage_threshold ?? DEFAULT_COVERAGE_THRESHOLD;
+    const ledgerDetail = settings.reformat_ledger_detail === 'names' ? 'names' : 'full';
+    /** Entries written from the earlier parts of the section being continued. */
+    let sectionEntries = new Set();
 
-    for (let i = 0; i < chain.length; i++) {
-        const batch = chain[i];
-        const batchLabel = chain.length > 1 ? `chain ${chainIndex} part ${i + 1}/${chain.length}` : `batch ${chainIndex}`;
-        const batchContext = batch.continuation
-            ? { sectionTitle: batch.continuation.sectionTitle, alreadyExtractedNames: [...alreadyExtractedNames] }
-            : null;
+    for (let i = 0; i < batches.length; i++) {
+        if (abortSignal?.aborted) {
+            const err = new Error('Auto-Reformat stopped by user');
+            err.name = 'AbortError';
+            throw err;
+        }
+        const batch = batches[i];
+        const batchLabel = `batch ${i}`;
+        if (!batch.continuation) sectionEntries = new Set();
+        const before = new Set(ledger);
+
         const prompt = buildReformatPrompt(batch.text, {
             customPrompt: settings.reformat_custom_prompt,
             headingPath: batch.headingPath,
             contentType,
-            batchContext,
+            batchContext: batch.continuation ? { sectionTitle: batch.continuation.sectionTitle } : null,
+            ledgerText: buildLedgerText(ledger, batch.text, { alwaysFull: sectionEntries, detail: ledgerDetail }),
+            ledgerDetail,
         });
 
-        try {
-            const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, chainIndex, callOptions);
+        const callOnce = async () => {
+            const { reply, finishReason } = await _callProviderWithRetry(prompt, settings, i, callOptions);
             if (strict && finishReason === 'length') {
                 throw new ReformatTruncatedError('the response was cut off by the model\'s output limit');
+            }
+            return { reply, finishReason };
+        };
+
+        try {
+            let { reply, finishReason } = await callOnce();
+            // Apply to a copy first, so a malformed reply can be replaced by a retry.
+            let trial = ledger.map(e => ({ ...e }));
+            let outcome = _applyReply(reply, batch, { ledger: trial, settings, batchIndex: i, batchLabel });
+
+            if (!outcome.clean && finishReason !== 'length') {
+                log.warn(`[Auto-Reformat] ${batchLabel}: reply was not valid JSON (${outcome.itemCount} entries salvaged) — asking again`);
+                try {
+                    const second = await callOnce();
+                    const retryTrial = ledger.map(e => ({ ...e }));
+                    const retryOutcome = _applyReply(second.reply, batch, { ledger: retryTrial, settings, batchIndex: i, batchLabel });
+                    if (retryOutcome.clean || retryOutcome.itemCount > outcome.itemCount) {
+                        ({ reply, finishReason } = second);
+                        trial = retryTrial;
+                        outcome = retryOutcome;
+                    }
+                } catch (retryErr) {
+                    if (retryErr instanceof ReformatFatalError) throw retryErr;
+                    log.warn(`[Auto-Reformat] ${batchLabel}: second attempt failed (${retryErr?.message || retryErr}) — keeping the salvaged entries`);
+                }
+                if (!outcome.clean) {
+                    if (strict) throw new ReformatExtractionError('the response was not valid JSON', i);
+                    warnings.push(`${batchLabel}: the model's reply was malformed twice; ${outcome.itemCount} entries were recovered from it, but some from this section may be missing.`);
+                }
             }
             if (finishReason === 'length') {
                 warnings.push(`${batchLabel}: response was truncated by the model's output limit — some entries from this section may be missing. Consider lowering "Batch size (chars)" in Auto-Reformat settings.`);
             }
 
-            _ingestReply(reply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel });
+            ledger.length = 0;
+            ledger.push(...trial);
         } catch (err) {
             if (err instanceof ReformatFatalError || strict) throw err;
             failedCount++;
             warnings.push(`${batchLabel} failed: ${err?.message || err} — skipped, other batches continue.`);
             log.warn(`[Auto-Reformat] ${batchLabel} failed:`, err?.message || err);
-            continue;
         }
 
-        if (!repairEnabled) continue;
-        const flagged = computeBatchCoverage(batch.text, results, coverageThreshold);
-        if (flagged.length === 0) continue;
-
-        const flaggedTitles = flagged.map(s => `"${s.title}"`).join(', ');
-        log.lifecycle(`[Auto-Reformat] ${batchLabel}: ${flagged.length} under-captured section(s) (${flaggedTitles}) — issuing repair call`);
-        try {
-            const repairPrompt = buildRepairPrompt(flagged, {
-                customPrompt: settings.reformat_custom_prompt,
-                alreadyExtractedNames: [...alreadyExtractedNames],
-                headingPath: batch.headingPath,
-                contentType,
-            });
-            const { reply: repairReply } = await _callProviderWithRetry(repairPrompt, settings, chainIndex, { ...callOptions, maxAttempts: undefined });
-            repairCalls++;
-            const added = _ingestReply(repairReply, batch, { results, alreadyExtractedNames, settings, chainIndex, batchLabel: `${batchLabel} (repair)` });
-            log.lifecycle(`[Auto-Reformat] ${batchLabel}: repair call added ${added} record(s)`);
-
-            const stillFlagged = computeBatchCoverage(batch.text, results, coverageThreshold);
-            if (stillFlagged.length > 0) {
-                warnings.push(`${batchLabel}: section(s) still under-captured after a repair pass: ${stillFlagged.map(s => `"${s.title}"`).join(', ')} — review these entries for missing detail.`);
-            }
-        } catch (err) {
-            if (err instanceof ReformatFatalError) throw err;
-            warnings.push(`${batchLabel}: repair call for under-captured section(s) ${flaggedTitles} failed: ${err?.message || err} — the original extraction is kept.`);
-            log.warn(`[Auto-Reformat] ${batchLabel} repair call failed:`, err?.message || err);
-        }
+        // Entries are copied on every batch, so track this section's by name.
+        const sectionNames = new Set([...sectionEntries].map(e => e.name));
+        const beforeNames = new Set([...before].map(e => e.name));
+        sectionEntries = new Set(ledger.filter(e => sectionNames.has(e.name) || !beforeNames.has(e.name)));
+        onBatchDone?.(i + 1);
     }
 
-    return { results, failedCount, repairCalls };
+    return { results: ledger, failedCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -765,8 +840,8 @@ function _unionStrings(a, b) {
 }
 
 /**
- * Merges duplicate records produced by independent chains (the per-chain
- * "already extracted" list can't see across chains).
+ * Merges duplicate records that got past the ledger (the model writing a
+ * second entry under a different spelling, or whole-document replies).
  *
  * Two records merge when their names match after normalization (see
  * _nameKeys), whatever their entry_type, or when a name or alias matches
@@ -972,7 +1047,7 @@ async function _runLinkingPass({ batches, records, settings, warnings, concurren
         try {
             const prompt = buildLinkingPrompt(batch.text, catalog);
             const { reply } = await _callProviderWithRetry(prompt, settings, i, callOptions);
-            const triples = _parseReformatArray(reply, i, ['source', 'target']);
+            const { items: triples } = _parseReformatArray(reply, i, ['source', 'target']);
 
             for (const t of triples) {
                 const source = resolve((/** @type {any} */ (t))?.source);
@@ -1100,7 +1175,7 @@ function _batchCallOptions(settings, limits) {
  * Max Output Tokens setting don't apply: max_tokens is the model's own
  * output limit. Returns null when both attempts fail or the reply was cut
  * off, so the caller falls back to batches.
- * @returns {Promise<{results: object[], repairCalls: number}|null>}
+ * @returns {Promise<{results: object[]}|null>}
  */
 async function _runWholeDocument({ batch, settings, warnings, contentType, onProgress, abortSignal }) {
     const limits = await _getModelLimits(settings);
@@ -1126,10 +1201,10 @@ async function _runWholeDocument({ batch, settings, warnings, contentType, onPro
         onProgress?.(attempt, SINGLE_PASS_ATTEMPTS, 'whole');
         const attemptWarnings = [];
         try {
-            const { results, repairCalls } = await _processChain([batch], settings, 0, attemptWarnings, contentType, { callOptions, strict: true });
+            const { results } = await _processBatches([batch], settings, attemptWarnings, contentType, { callOptions, strict: true, abortSignal });
             warnings.push(...attemptWarnings);
             log.lifecycle(`[Auto-Reformat] Whole-document attempt ${attempt} succeeded: ${results.length} entries`);
-            return { results, repairCalls };
+            return { results };
         } catch (err) {
             if (err instanceof ReformatFatalError || err?.name === 'AbortError') throw err;
             failures.push(`attempt ${attempt}: ${err?.message || err}`);
@@ -1149,9 +1224,11 @@ async function _runWholeDocument({ batch, settings, warnings, contentType, onPro
 /**
  * Restructures source text into entries.
  *
- * Whole-document mode (settings.reformat_single_pass, off by default) sends
- * the document in one call and tries it twice; when both fail, or the
- * document can't fit the model, it falls back to header-aligned batches.
+ * Header-aligned batches are processed in order against a shared ledger of
+ * the entries written so far. Whole-document mode
+ * (settings.reformat_single_pass, off by default) sends the document in one
+ * call and tries it twice; when both fail, or the document can't fit the
+ * model, it falls back to the batches.
  *
  * @param {object} params
  * @param {string} params.text - Full prepared source text
@@ -1177,7 +1254,6 @@ export async function reformatDocument({ text, contentType, settings, sourceName
     let skippedSections = [];
     let batchesProcessed = 0;
     let batchesFailed = 0;
-    let totalRepairCalls = 0;
     let batchCallOptions = {};
 
     if (settings.reformat_single_pass === true) {
@@ -1193,7 +1269,6 @@ export async function reformatDocument({ text, contentType, settings, sourceName
         const outcome = await _runWholeDocument({ batch: wholeBatch, settings, warnings, contentType, onProgress, abortSignal });
         if (outcome) {
             rawChunks = outcome.results;
-            totalRepairCalls = outcome.repairCalls;
             batches = whole.batches;
             batchesProcessed = 1;
             mode = 'whole';
@@ -1207,25 +1282,19 @@ export async function reformatDocument({ text, contentType, settings, sourceName
             return { chunks: [], warnings: ['No content found to reformat.'], batchesProcessed: 0, batchesFailed: 0, totalBatches: 0, mode };
         }
 
-        const chains = _groupIntoChains(batches);
         batchCallOptions = _batchCallOptions(settings, _resolveReasoningEffort(settings) ? await _getModelLimits(settings) : null);
-        log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${batches.length} batch(es) in ${chains.length} chain(s), concurrency=${concurrency}${linkingEnabled ? ', linking pass enabled' : ''}`);
+        log.lifecycle(`[Auto-Reformat] Starting: ${contentType}, ${batches.length} batch(es), one after another${linkingEnabled ? ', linking pass enabled' : ''}`);
 
-        const chainFns = chains.map((chain, chainIndex) => async () => {
-            if (abortSignal?.aborted) {
-                const err = new Error('Auto-Reformat stopped by user');
-                err.name = 'AbortError';
-                throw err;
-            }
-            const { results, failedCount, repairCalls } = await _processChain(chain, settings, chainIndex, warnings, contentType, { callOptions: batchCallOptions });
-            batchesProcessed += chain.length;
-            batchesFailed += failedCount;
-            totalRepairCalls += repairCalls;
-            onProgress?.(batchesProcessed, batches.length, 'extract');
-            return results;
+        const outcome = await _processBatches(batches, settings, warnings, contentType, {
+            callOptions: batchCallOptions,
+            abortSignal,
+            onBatchDone: done => {
+                batchesProcessed = done;
+                onProgress?.(done, batches.length, 'extract');
+            },
         });
-
-        rawChunks = (await AsyncUtils.parallel(chainFns, concurrency)).flat();
+        rawChunks = outcome.results;
+        batchesFailed = outcome.failedCount;
     }
 
     const totalBatches = batches.length;
@@ -1235,7 +1304,7 @@ export async function reformatDocument({ text, contentType, settings, sourceName
 
     const chunks = mergeDuplicateEntities(rawChunks);
     if (chunks.length < rawChunks.length) {
-        warnings.push(`Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was extracted from multiple document sections.`);
+        warnings.push(`Merged ${rawChunks.length - chunks.length} duplicate entries (${rawChunks.length} → ${chunks.length} records) — the same entity was written under more than one name or type.`);
     }
     linkSubEntriesToParents(chunks);
 
@@ -1258,7 +1327,21 @@ export async function reformatDocument({ text, contentType, settings, sourceName
         });
     }
 
-    log.lifecycle(`[Auto-Reformat] Complete (${mode}): ${chunks.length} entries extracted from ${totalBatches} batch(es), ${totalRepairCalls} coverage repair call(s), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
+    // Coverage check: which paragraphs' distinctive facts are in no entry?
+    // Reported for the user to review; it makes no LLM call.
+    if (settings.reformat_enable_repair_pass !== false && chunks.length > 0) {
+        const threshold = settings.reformat_coverage_threshold ?? DEFAULT_COVERAGE_THRESHOLD;
+        const flagged = computeBatchCoverage(batches.map(b => b.text).join('\n\n'), chunks, threshold);
+        if (flagged.length > 0) {
+            const shown = flagged.slice(0, COVERAGE_MAX_REPORTED_SECTIONS)
+                .map(f => `"${f.title}"${f.missingFacts.length ? ` (not found: ${f.missingFacts.slice(0, 5).join('; ')})` : ''}`);
+            const more = flagged.length > shown.length ? `, and ${flagged.length - shown.length} more` : '';
+            warnings.push(`Coverage check: ${flagged.length} paragraph(s) may be missing detail — ${shown.join(', ')}${more}. Compare these sections with their entries before accepting.`);
+        }
+        log.lifecycle(`[Auto-Reformat] Coverage check: ${flagged.length} under-covered paragraph(s)`);
+    }
+
+    log.lifecycle(`[Auto-Reformat] Complete (${mode}): ${chunks.length} entries extracted from ${totalBatches} batch(es), ${batchesFailed} batch failure(s), ${warnings.length} warning(s)`);
 
     return { chunks, warnings, batchesProcessed, batchesFailed, totalBatches, mode };
 }

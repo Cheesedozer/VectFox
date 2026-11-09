@@ -662,7 +662,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="VectFox_hint">How much the model thinks before writing entries (models without thinking ignore it). Thinking counts against the output limit, so with an effort set each batch gets the model's full output limit and at least a 5-minute timeout. More thinking is not always better: Gemini 3.5 Flash Lite kept fewer facts on medium than on its default.</small>
                             </div>
 
-                            <label class="checkbox_label" style="margin-bottom:6px;" title="Sends the whole document to the model in one call, with the model's own output limit instead of Max Output Tokens and no Batch Size, so every entry is written with the whole document in view (fewer duplicate entries). If that call fails it is tried once more; if it fails again, or the document is too long for the model's output limit (about 2.5–3 tokens of entries per token of source, plus thinking), the document is processed in batches as usual. Use a model that keeps detail over long replies: Claude Haiku 5.5 on medium effort kept 99% of a test document's facts this way; Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88%) and are better in batches.">
+                            <label class="checkbox_label" style="margin-bottom:6px;" title="Sends the whole document to the model in one call, with the model's own output limit instead of Max Output Tokens and no Batch Size. If that call fails it is tried once more; if it fails again, or the document is too long for the model's output limit (about 2.5–3 tokens of entries per token of source, plus thinking), the document is processed in batches as usual. Faster and cheaper than batches, but long replies lose detail: on an 89k-character test document Claude Haiku 5.5 kept 95% of the checked details this way against 97–99% in batches, and Gemini 3.5 Flash Lite and 3.8 Flash summarized (~88% on a shorter one). Batches now avoid duplicate entries on their own, so leave this off unless speed matters more.">
                                 <input type="checkbox" id="VectFox_reformat_single_pass" />
                                 <small>Whole Document in One Response (fallback: batches)</small>
                             </label>
@@ -676,7 +676,16 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Batch Size: <span id="VectFox_reformat_batch_chars_val">6000</span> chars</small>
                             </label>
                             <input type="range" id="VectFox_reformat_batch_chars" class="vectfox-slider" min="2000" max="12000" step="500" />
-                            <small class="VectFox_hint">Target input size per LLM call. Long documents are split into multiple batches at header boundaries; lower this if a section is so dense the model truncates its output.</small>
+                            <small class="VectFox_hint">Target input size per LLM call. Long documents are split into batches at header boundaries and processed one after another; each batch is shown the entries already written, so it adds to them instead of writing duplicates. Lower this if a section is so dense the model truncates its output.</small>
+
+                            <div style="margin-top:10px;">
+                                <label for="VectFox_reformat_ledger_detail"><small>Earlier Entries Shown to Each Batch</small></label>
+                                <select id="VectFox_reformat_ledger_detail" class="vectfox-select">
+                                    <option value="full">Names and text (fewest repeated facts)</option>
+                                    <option value="names">Names only (for small models)</option>
+                                </select>
+                                <small class="VectFox_hint">Either choice stops duplicate entries. With "Names and text" the model also sees what earlier entries already say, so it repeats less: best for Claude Haiku 5.5 and stronger models. Small models such as Gemini 3.5 Flash Lite start skipping detail when shown the text (88% of a test document's details kept, against 98.5% with names only), so use "Names only" for them.</small>
+                            </div>
 
                             <label for="VectFox_reformat_max_output_tokens" style="margin-top:10px; display:block;">
                                 <small>Max Output Tokens: <span id="VectFox_reformat_max_output_tokens_val">16000</span></small>
@@ -697,22 +706,22 @@ export function renderSettings(containerId, settings, callbacks) {
                             <small class="VectFox_hint">Minimum name-match confidence before the review screen flags an entry as possibly invented by the model. Higher = stricter (more flags, some false positives on close paraphrases).</small>
 
                             <label for="VectFox_reformat_concurrency" style="margin-top:10px; display:block;">
-                                <small>Parallel Batches: <span id="VectFox_reformat_concurrency_val">2</span></small>
+                                <small>Parallel Linking Calls: <span id="VectFox_reformat_concurrency_val">2</span></small>
                             </label>
                             <input type="range" id="VectFox_reformat_concurrency" class="vectfox-slider" min="1" max="6" step="1" />
-                            <small class="VectFox_hint">How many LLM calls run at once when a document needs multiple batches.</small>
+                            <small class="VectFox_hint">How many LLM calls the Relationship Linking Pass runs at once. Entry extraction always runs one batch at a time, because each batch builds on the entries written before it.</small>
 
                             <label for="VectFox_reformat_timeout_ms" style="margin-top:10px; display:block;">
                                 <small>Timeout (ms)</small>
                             </label>
                             <input id="VectFox_reformat_timeout_ms" type="number" class="vectfox-input" min="10000" step="1000" style="width:140px;" />
 
-                            <label class="checkbox_label" style="margin-top:10px;" title="After each extraction batch, a deterministic coverage check verifies the source's distinctive facts (figures, quoted terms, named laws, section headers) actually landed in the extracted entries. Under-captured sections get ONE follow-up LLM call asking the model to cover specifically what it dropped. Extra calls are only spent when loss is detected.">
+                            <label class="checkbox_label" style="margin-top:10px;" title="After extraction, checks that each paragraph's distinctive facts (figures, quoted terms, named laws) appear somewhere in the entries, and lists the paragraphs that look under-covered as warnings on the review screen. It makes no extra LLM calls and changes no entries.">
                                 <input type="checkbox" id="VectFox_reformat_enable_repair_pass" />
-                                <small>Coverage Repair Pass (recommended)</small>
+                                <small>Coverage Check (recommended)</small>
                             </label>
 
-                            <label class="checkbox_label" style="margin-top:10px;" title="Runs a second LLM pass over the document that cross-references every extracted entry against every section, backfilling relationships the single-pass extraction missed (entities mentioned in each other's sections but extracted separately). Doubles the number of LLM calls per document.">
+                            <label class="checkbox_label" style="margin-top:10px;" title="Runs a second LLM pass over the document that cross-references every extracted entry against every section, backfilling relationships the extraction missed. Doubles the number of LLM calls per document.">
                                 <input type="checkbox" id="VectFox_reformat_enable_linking_pass" />
                                 <small>Relationship Linking Pass (2x LLM calls)</small>
                             </label>
@@ -2601,6 +2610,14 @@ function bindSettingsEvents(settings, callbacks) {
         .val(settings.reformat_reasoning_effort || '')
         .on('change', function () {
             settings.reformat_reasoning_effort = String($(this).val());
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#VectFox_reformat_ledger_detail')
+        .val(settings.reformat_ledger_detail === 'names' ? 'names' : 'full')
+        .on('change', function () {
+            settings.reformat_ledger_detail = $(this).val() === 'names' ? 'names' : 'full';
             Object.assign(extension_settings.vectfox, settings);
             saveSettingsDebounced();
         });

@@ -58,6 +58,8 @@ function resolveChunkKeywords(chunk) {
  * which is impractical to mock in a unit test. The real function also gets
  * an end-to-end check via diagnostics/production-tests.js's
  * '[PROD] Keyword Boosting' self-test — keep both in sync if STAGE 4.3 changes.
+ * This mirror only covers one-word tags; which tags a query hits (multi-word
+ * tags, acronyms) is matchChunkKeywords, tested in keyword-boost.test.js.
  */
 function boostChunksByQueryKeywords(chunks, queryKeywordTexts) {
     let boostedCount = 0;

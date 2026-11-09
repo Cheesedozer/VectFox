@@ -41,20 +41,58 @@ Two rules still apply:
   `collection-loader.js` `cacheKey = registryKey`.
 - **`core/keyword-boost.js:~82`** — comment *"for some reason, bigger value
   speed up retrival"* above `= 5000`; the constant's rationale is unknown.
-- **Auto Reformat** can still produce near-duplicate entries whose names differ
-  by a suffix (e.g. "GAMA" vs "GAMA app"); merge only unifies exact name/alias
-  keys.
-- **Auto Reformat whole-document mode depends on the model**, so
-  `reformat_single_pass` defaults off. On a 31k-char world bible (mean
-  per-paragraph fact recall): Claude Haiku 5.5 medium effort 99%, no
-  duplicates; Gemini 3.5 Flash Lite (any effort) and 3.8 Flash high ~88% —
-  they summarize long replies, and a length target in the prompt didn't help.
-  Batched Flash Lite (default effort) 98%; batched Haiku 99% but ~35 duplicate
-  records merged and near-duplicates left. Replies ran ~2.5 output tokens per
-  source token plus thinking, so one 128k-output reply fits ~40k source
-  tokens. Batches that also carry the whole document as read-only context
-  kept batched-level coverage with fewer duplicates at ~4× the input tokens
-  (quadratic in document length); not implemented.
+- **Auto Reformat batches run in sequence against a ledger** of the entries
+  written so far (`buildLedgerText`); a batch answers with new entries and
+  `{"op": "extend"}` additions. On an 89k-char world bible, Claude Haiku 5.5,
+  one run each, 200-detail checklist judged by Sonnet 5.5: independent
+  batches (the old default) 274 records → 105 merged, ~9 near-duplicates
+  left, 33% of sentences restating another entry, 99.5% details, 7 judged
+  errors; whole-document 94 entries, 12% restated, 95%, 1 error; ledger (as
+  shipped, two runs) 131–134 entries, 0 merged, 12–18% restated, 96.5–97.5%,
+  0–1 errors, about the same cost, ~2× the time. Prototypes that also put the whole document in every call
+  scored no better than the ledger alone, and an outline-first variant
+  (plan entries, then fill groups in parallel) removed duplicate entries but
+  restated more (35%) with 12 errors. Run-to-run noise is a few points of
+  recall and about six points of restated sentences.
+- **The ledger's detail is a setting because models differ**
+  (`reformat_ledger_detail`). Shown entry bodies ('full'), Gemini 3.5 Flash
+  Lite wrote half as many entries and kept 88% of the checklist (old
+  independent batches: 99%); with names only ('names') it kept 99%. Haiku on
+  'names' kept 100% but restated 27% of sentences. Each detail has its own
+  note in `_buildNotes`: with the completeness-first wording that 'names'
+  needs, Haiku on 'full' restated 23% in one run (12–18% with its own note),
+  which is inside what noise could explain.
+  The default is 'full', so a small model on default settings loses detail
+  until the user switches; nothing detects the model.
+- **Auto Reformat is not tested on documents longer than ~30 pages.** The
+  ledger lists every unmentioned entry by name and first sentence, and drops
+  to names only above 120k characters; nothing bounds it beyond that.
+- **Whole-document mode still depends on the model**, so
+  `reformat_single_pass` defaults off. On a 31k-char world bible: Claude
+  Haiku 5.5 medium effort 99%; Gemini 3.5 Flash Lite (any effort) and 3.8
+  Flash high ~88% — they summarize long replies. `estimateTokens` (chars/4)
+  under-counted the 89k-char document by ~30% (22k vs 29k real tokens).
+- **The coverage check is report-only.** The per-batch repair call was
+  removed: with it off, recall was unchanged, and its "missing facts" were
+  mostly "See also" lines and paraphrased words, which produced junk and
+  duplicate entries. Its fact tokens still include any lowercase word of 8+
+  letters, so a faithful paraphrase can lower a paragraph's score.
+- **Keyword tag weights are decorative.** `applyQueryKeywordBoost` sets a
+  matched chunk's score to 1.0 whatever the tag's weight, and the header of
+  `keyword-boost.js` still describes additive weights. One-word tags only
+  match words `extractChatKeywords` returns (capitalised, mid-sentence).
+- **Entries over `reformat_max_body_chars` are split** into "part N of M"
+  chunks that share one name and tag list; a later part can be retrieved
+  without the first, and only the first carries the relationships.
+- **Qdrant stores `text` with a ` [KEYWORDS: …]` suffix** (`backends/qdrant.js`)
+  and nothing strips it before injection, so it reaches the chat prompt.
+- **ChunkBase retrieval has no overall cap or cross-chunk dedup:** each
+  enabled collection contributes up to `top_k` chunks, and two collections
+  made from the same file inject the same lore twice.
+- **EventBase (read from code, not tested live):** the top-K events are always
+  injected with no relevance floor (45% of the default score ignores the
+  query), and duplicate suppression (same type, ≥60% shared cast, within 10
+  messages) can drop distinct events in one-on-one chats.
 - **JSON schema (`response_format`) for Auto Reformat** was measured and not
   adopted: no completeness gain, lower recall for Flash Lite, and no parse
   failures to fix. Through ST's proxy it would have to be sent as
