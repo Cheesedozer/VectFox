@@ -1092,6 +1092,12 @@ export function renderSettings(containerId, settings, callbacks) {
                             </div>
 
                             <div class="vectfox-form-group">
+                                <label class="vectfox-label">Min Similarity for Retrieval <span id="VectFox_eventbase_min_similarity_val">Off</span></label>
+                                <input type="range" id="VectFox_eventbase_min_similarity" min="0" max="0.9" step="0.01" class="vectfox-range" />
+                                <small class="VectFox_hint">Events less similar to the current messages than this are not injected, so a message unrelated to anything in memory injects no events instead of the "best" ten anyway. Off (0) by default, because the right value depends on your embedding model. Measured on real chats: with google/gemini-embedding-2 unrelated messages scored up to 0.59 and related ones from 0.67 (try 0.60); with qwen/qwen3-embedding-8b up to 0.41 and from 0.55 (try 0.45). Set it too high and no events are injected at all. On Qdrant this needs Similharity plugin 3.3.5 or newer; older plugins ignore it.</small>
+                            </div>
+
+                            <div class="vectfox-form-group">
                                 <label class="vectfox-label">Injection Format</label>
                                 <select id="VectFox_eventbase_injection_format" class="vectfox-select">
                                     <option value="jsonarray">JSONArray</option>
@@ -3739,6 +3745,19 @@ function bindSettingsEvents(settings, callbacks) {
     _bindEventBaseRange('max_events_per_window', 'eventbase_max_events_per_window', 'max_events_per_window');
     _bindEventBaseRange('retrieval_top_k', 'eventbase_retrieval_top_k', 'retrieval_top_k');
     _bindEventBaseRange('retrieval_min_importance', 'eventbase_retrieval_min_importance', 'retrieval_min_importance');
+
+    // Min similarity (relevance floor): a fraction, so not _bindEventBaseRange (integers).
+    const _showMinSimilarity = v => $('#VectFox_eventbase_min_similarity_val').text(v > 0 ? v.toFixed(2) : 'Off');
+    $('#VectFox_eventbase_min_similarity')
+        .val(Number(settings.eventbase_min_similarity) || 0)
+        .on('input', function() {
+            const v = Math.max(0, Math.min(0.9, parseFloat($(this).val()) || 0));
+            settings.eventbase_min_similarity = v;
+            _showMinSimilarity(v);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+    _showMinSimilarity(Number(settings.eventbase_min_similarity) || 0);
 
     $('#VectFox_eventbase_injection_format')
         .val(settings.eventbase_injection_format || 'densetext')

@@ -196,6 +196,46 @@ describe('retrieveEvents', () => {
     });
 
     // -----------------------------------------------------------------------
+    // Relevance floor (eventbase_min_similarity)
+    // -----------------------------------------------------------------------
+    describe('relevance floor', () => {
+        const run = async (metadata, minSimilarity) => {
+            queryCollectionMock.mockResolvedValue({ hashes: metadata.map(m => m.event_id), metadata });
+            const { events } = await retrieveEvents({
+                searchText: 'q', keywordQuery: 'q', chatLength: 200,
+                settings: { ...baseSettings, eventbase_min_similarity: minSimilarity },
+                liveCollectionIds: ['standard:vf_eventbase_x'], additionalCandidates: [], skipLiveQuery: false,
+            });
+            return events.map(e => e.event_id).sort();
+        };
+        const events = () => [makeEvent(1, { score: 0.72 }), makeEvent(2, { score: 0.41 }), makeEvent(3, { score: 0.58 })];
+
+        it('is off by default', async () => {
+            expect(await run(events(), undefined)).toEqual(['evt_1', 'evt_2', 'evt_3']);
+            expect(await run(events(), 0)).toEqual(['evt_1', 'evt_2', 'evt_3']);
+        });
+
+        it('drops events less similar to the query than the floor', async () => {
+            expect(await run(events(), 0.6)).toEqual(['evt_1']);
+            expect(await run(events(), 0.5)).toEqual(['evt_1', 'evt_3']);
+        });
+
+        it('injects nothing when no event reaches the floor', async () => {
+            expect(await run(events(), 0.9)).toEqual([]);
+        });
+
+        it('uses the raw cosine when hybrid fusion replaced the score', async () => {
+            const fused = [
+                makeEvent(1, { score: 0.03, vectorScore: 0.7, hybridSearch: true }),
+                makeEvent(2, { score: 0.03, vectorScore: 0.4, hybridSearch: true }),
+                // fused score only: similarity unknown, so the event is kept
+                makeEvent(3, { score: 0.02, hybridSearch: true }),
+            ];
+            expect(await run(fused, 0.6)).toEqual(['evt_1', 'evt_3']);
+        });
+    });
+
+    // -----------------------------------------------------------------------
     // Duplicate suppression (step 5)
     // -----------------------------------------------------------------------
     describe('duplicate suppression', () => {

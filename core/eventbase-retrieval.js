@@ -143,6 +143,31 @@ function _resolveAnchorBoostAmount(settings) {
 }
 
 /**
+ * Resolve the relevance floor from settings: the minimum cosine similarity
+ * between the query and an event for the event to be injected. 0 = off (the
+ * default: the useful value depends on the embedding model).
+ */
+function _resolveMinSimilarity(settings) {
+    const value = Number(settings.eventbase_min_similarity);
+    return Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0;
+}
+
+/**
+ * Relevance floor for the JS path (Standard backend, archive events, the
+ * fallback when native rerank is unavailable). Native-rerank candidates were
+ * filtered by the plugin. A candidate whose cosine similarity is not known
+ * passes: with hybrid fusion `score` is a fused rank score, not a cosine,
+ * and comparing it to the floor would drop everything.
+ */
+function _passesSimilarityFloor(meta, minSimilarity) {
+    if (meta._rerankApplied) return true;
+    const cosine = typeof meta.vectorScore === 'number'
+        ? meta.vectorScore
+        : (!meta.hybridSearch && typeof meta.score === 'number' ? meta.score : null);
+    return cosine === null || cosine >= minSimilarity;
+}
+
+/**
  * Anchor boost for a single event: a flat bonus when one of its keywords
  * appears verbatim in the user's last message.
  */
@@ -233,6 +258,7 @@ async function _runOneLiveQuery({
 export async function retrieveEvents({ searchText, keywordQuery, chatLength, settings, liveCollectionIds, additionalCandidates, skipLiveQuery, skipContextDedup = false }) {
     const topK = (settings.eventbase_retrieval_top_k || 8) * 2; // overfetch for re-rank
     const minImportance = settings.eventbase_retrieval_min_importance || 1;
+    const minSimilarity = _resolveMinSimilarity(settings);
 
     // EventBase always uses its own keyword scoring key so that ChunkBase's
     // keyword_scoring_method setting never accidentally switches EventBase into
@@ -287,6 +313,9 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
         minImportance,
         visibleThreshold: visibleThresholdForFilter,
         applyContextDedupFilter: !skipContextDedup,
+        // Relevance floor, applied server-side by Similharity 3.3.5+ (older
+        // plugins ignore the field). See _passesSimilarityFloor for the JS path.
+        minSimilarity,
     };
 
     if (log.enabled('lifecycle')) {
@@ -380,6 +409,14 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
 
     log.verbose(`[EventBase] After importance filter (>=${minImportance}): ${importanceFiltered.length} candidates`);
 
+    // 3b. Relevance floor for candidates the server did not already filter.
+    const candidates = minSimilarity > 0
+        ? importanceFiltered.filter(m => _passesSimilarityFloor(m, minSimilarity))
+        : importanceFiltered;
+    if (candidates.length < importanceFiltered.length) {
+        log.verbose(`[EventBase] Relevance floor (>=${minSimilarity}) removed ${importanceFiltered.length - candidates.length} candidate(s)`);
+    }
+
     // 3. Build weights from settings
     const rawWeights = {
         cosine: settings.eventbase_rerank_w_cosine ?? DEFAULT_WEIGHTS.cosine,
@@ -403,7 +440,7 @@ export async function retrieveEvents({ searchText, keywordQuery, chatLength, set
     // message, not tokenized any-of). Configurable via `eventbase_anchor_boost`.
     const anchorBoostAmount = _resolveAnchorBoostAmount(settings);
 
-    const scored = importanceFiltered.map(meta => {
+    const scored = candidates.map(meta => {
         const anchorBoost = _anchorBoostFor(meta, anchorText, anchorBoostAmount);
 
         if (meta._rerankApplied) {

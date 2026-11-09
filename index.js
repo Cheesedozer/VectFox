@@ -218,6 +218,7 @@ const defaultSettings = {
     eventbase_max_events_per_window: 3,           // Hard cap on events returned per LLM call
     eventbase_retrieval_top_k: 10,                // Events to retrieve per generation
     eventbase_retrieval_min_importance: 1,        // Minimum importance for retrieval
+    eventbase_min_similarity: 0,                  // Relevance floor: min cosine similarity between query and event (0 = off; depends on the embedding model)
     eventbase_injection_format: 'densetext',      // Injection format: 'densetext' or 'jsonarray'
     eventbase_retrieval_filters_enabled: true,
     eventbase_autosync_popup: true,               // Show popup toast when auto-sync extraction runs

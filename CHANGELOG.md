@@ -24,6 +24,13 @@
   chats 16–33% of events had such a partner, and those pairs shared no more
   words than two random events. A pair now also has to share at least 40% of
   its words.
+- **New: Min Similarity for Retrieval** (EventBase → Retrieval, off by
+  default). Events less similar to the current messages than this are not
+  injected, so an unrelated message no longer pulls in the ten "best" events
+  anyway. The right value depends on the embedding model: on real chats,
+  unrelated messages scored up to 0.59 with google/gemini-embedding-2 (related
+  from 0.67) and up to 0.41 with qwen/qwen3-embedding-8b (related from 0.55).
+  On Qdrant it needs Similharity plugin 3.3.5; older plugins ignore it.
 
 ### Auto-Reformat: batches build on each other
 

@@ -95,12 +95,17 @@ Two rules still apply:
   is a constant and ranking is relevance + recency + a little importance
   (mostly 7–9). The extraction examples all show `true`, and ephemeral events
   tend to fall under `eventbase_min_importance_store` anyway.
-- **EventBase has no absolute relevance floor on Qdrant.** The native rerank
-  (plugin `hybridQueryNativeWithRerank`) scores candidates by RRF rank, which
-  is ~1.0 for the top hit of any query, so an unrelated message still injects
-  top-K events. Candidates are limited to the 40 best-ranked, so this is not
-  "important events crowd out relevant ones" as first reported. A floor needs
-  a dense `score_threshold` in the plugin's prefetch (other branch).
+- **EventBase's relevance floor is off by default**
+  (`eventbase_min_similarity`). The native rerank scores candidates by RRF
+  rank (~1.0 for the top hit of any query), so with the floor off an
+  unrelated message still injects top-K events. The floor is a dense
+  `score_threshold` in the plugin (Similharity 3.3.5,
+  `rerankParams.minSimilarity`; older plugins ignore it silently) and a
+  cosine filter on the JS path, where candidates with only a fused score
+  pass. It stays off because the value is model-specific: single-sentence
+  queries against real events scored, unrelated / related, ≤0.59 / ≥0.67 on
+  google/gemini-embedding-2 and ≤0.41 / ≥0.55 on qwen/qwen3-embedding-8b.
+  Not measured with the multi-message query text retrieval actually sends.
 - **EventBase duplicate suppression compares wording**
   (`DUPLICATE_TEXT_SIMILARITY` = 0.4 word Jaccard). Calibrated on English
   events only; the CJK path (character pairs) is unit-tested, not measured.
