@@ -81,18 +81,34 @@ Two rules still apply:
   matched chunk's score to 1.0 whatever the tag's weight, and the header of
   `keyword-boost.js` still describes additive weights. One-word tags only
   match words `extractChatKeywords` returns (capitalised, mid-sentence).
-- **Entries over `reformat_max_body_chars` are split** into "part N of M"
-  chunks that share one name and tag list; a later part can be retrieved
-  without the first, and only the first carries the relationships.
-- **Qdrant stores `text` with a ` [KEYWORDS: …]` suffix** (`backends/qdrant.js`)
-  and nothing strips it before injection, so it reaches the chat prompt.
-- **ChunkBase retrieval has no overall cap or cross-chunk dedup:** each
-  enabled collection contributes up to `top_k` chunks, and two collections
-  made from the same file inject the same lore twice.
-- **EventBase (read from code, not tested live):** the top-K events are always
-  injected with no relevance floor (45% of the default score ignores the
-  query), and duplicate suppression (same type, ≥60% shared cast, within 10
-  messages) can drop distinct events in one-on-one chats.
+- **Split Auto-Reformat entries are rejoined at retrieval**
+  (`joinSplitEntriesStage`, `core/chunk-assembly.js`): parts are found in the
+  `/chunks/list` listing by `reformatRunId` + name + hidden + part count. On a
+  backend whose listing has no payload `text`, only the retrieved parts are
+  joined. A part edited by hand is used as edited, without its header removed.
+- **`max_injected_chunks` (default 20) caps ChunkBase chunks only**, after the
+  chat dedup; lorebook (WI) entries and EventBase events have their own
+  limits. Cross-collection dedup is exact text only, so two Auto-Reformat runs
+  of one file (different wording) still both inject.
+- **EventBase `should_persist` is true on every stored event** in the three
+  real chats checked (347 of 347; two extraction models), so its 15% weight
+  is a constant and ranking is relevance + recency + a little importance
+  (mostly 7–9). The extraction examples all show `true`, and ephemeral events
+  tend to fall under `eventbase_min_importance_store` anyway.
+- **EventBase's relevance floor is off by default**
+  (`eventbase_min_similarity`). The native rerank scores candidates by RRF
+  rank (~1.0 for the top hit of any query), so with the floor off an
+  unrelated message still injects top-K events. The floor is a dense
+  `score_threshold` in the plugin (Similharity 3.3.5,
+  `rerankParams.minSimilarity`; older plugins ignore it silently) and a
+  cosine filter on the JS path, where candidates with only a fused score
+  pass. It stays off because the value is model-specific: single-sentence
+  queries against real events scored, unrelated / related, ≤0.59 / ≥0.67 on
+  google/gemini-embedding-2 and ≤0.41 / ≥0.55 on qwen/qwen3-embedding-8b.
+  Not measured with the multi-message query text retrieval actually sends.
+- **EventBase duplicate suppression compares wording**
+  (`DUPLICATE_TEXT_SIMILARITY` = 0.4 word Jaccard). Calibrated on English
+  events only; the CJK path (character pairs) is unit-tested, not measured.
 - **JSON schema (`response_format`) for Auto Reformat** was measured and not
   adopted: no completeness gain, lower recall for Flash Lite, and no parse
   failures to fix. Through ST's proxy it would have to be sent as

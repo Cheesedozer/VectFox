@@ -105,6 +105,7 @@ const defaultSettings = {
     min_chat_length: 0, // Minimum number of messages in chat before injection starts (0 = no minimum)
     // Number of top results to retrieve from vector DB (top-K)
     top_k: 10,
+    max_injected_chunks: 20,   // Most ChunkBase chunks injected per generation across all collections (0 = no limit)
     retrieval_popup_on_start: true,    // Show popup when retrieval starts
     retrieval_popup_on_result: true,   // Show popup with number of retrieved results
     query: 2,
@@ -217,6 +218,7 @@ const defaultSettings = {
     eventbase_max_events_per_window: 3,           // Hard cap on events returned per LLM call
     eventbase_retrieval_top_k: 10,                // Events to retrieve per generation
     eventbase_retrieval_min_importance: 1,        // Minimum importance for retrieval
+    eventbase_min_similarity: 0,                  // Relevance floor: min cosine similarity between query and event (0 = off; depends on the embedding model)
     eventbase_injection_format: 'densetext',      // Injection format: 'densetext' or 'jsonarray'
     eventbase_retrieval_filters_enabled: true,
     eventbase_autosync_popup: true,               // Show popup toast when auto-sync extraction runs

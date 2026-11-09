@@ -194,4 +194,110 @@ describe('retrieveEvents', () => {
         // Only the importance-9 event survives the >=5 filter.
         expect(debug.afterImportanceFilter).toBe(1);
     });
+
+    // -----------------------------------------------------------------------
+    // Relevance floor (eventbase_min_similarity)
+    // -----------------------------------------------------------------------
+    describe('relevance floor', () => {
+        const run = async (metadata, minSimilarity) => {
+            queryCollectionMock.mockResolvedValue({ hashes: metadata.map(m => m.event_id), metadata });
+            const { events } = await retrieveEvents({
+                searchText: 'q', keywordQuery: 'q', chatLength: 200,
+                settings: { ...baseSettings, eventbase_min_similarity: minSimilarity },
+                liveCollectionIds: ['standard:vf_eventbase_x'], additionalCandidates: [], skipLiveQuery: false,
+            });
+            return events.map(e => e.event_id).sort();
+        };
+        const events = () => [makeEvent(1, { score: 0.72 }), makeEvent(2, { score: 0.41 }), makeEvent(3, { score: 0.58 })];
+
+        it('is off by default', async () => {
+            expect(await run(events(), undefined)).toEqual(['evt_1', 'evt_2', 'evt_3']);
+            expect(await run(events(), 0)).toEqual(['evt_1', 'evt_2', 'evt_3']);
+        });
+
+        it('drops events less similar to the query than the floor', async () => {
+            expect(await run(events(), 0.6)).toEqual(['evt_1']);
+            expect(await run(events(), 0.5)).toEqual(['evt_1', 'evt_3']);
+        });
+
+        it('injects nothing when no event reaches the floor', async () => {
+            expect(await run(events(), 0.9)).toEqual([]);
+        });
+
+        it('uses the raw cosine when hybrid fusion replaced the score', async () => {
+            const fused = [
+                makeEvent(1, { score: 0.03, vectorScore: 0.7, hybridSearch: true }),
+                makeEvent(2, { score: 0.03, vectorScore: 0.4, hybridSearch: true }),
+                // fused score only: similarity unknown, so the event is kept
+                makeEvent(3, { score: 0.02, hybridSearch: true }),
+            ];
+            expect(await run(fused, 0.6)).toEqual(['evt_1', 'evt_3']);
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // Duplicate suppression (step 5)
+    // -----------------------------------------------------------------------
+    describe('duplicate suppression', () => {
+        const scene = (i, text, overrides = {}) => makeEvent(i, {
+            event_type: 'dialogue_significant',
+            characters: ['Aria', 'Leon'],
+            source_window_end: 40 + i,
+            // below DUPLICATE_SCORE_OVERRIDE (0.75), which exempts a candidate from suppression
+            score: 0.6 - i * 0.01,
+            text,
+            ...overrides,
+        });
+        const run = async (metadata) => {
+            queryCollectionMock.mockResolvedValue({ hashes: metadata.map(m => m.event_id), metadata });
+            const { events } = await retrieveEvents({
+                searchText: 'q', keywordQuery: 'q', chatLength: 200, settings: baseSettings,
+                liveCollectionIds: ['standard:vf_eventbase_x'], additionalCandidates: [], skipLiveQuery: false,
+            });
+            return events.map(e => e.event_id);
+        };
+
+        it('keeps different events with the same type and cast a few messages apart', async () => {
+            // The shape of most neighbouring events in a one-on-one chat: before
+            // the wording check the second and third were dropped as duplicates.
+            const ids = await run([
+                scene(1, 'Aria admits to Leon that she forged the commander\'s signature on the supply order.'),
+                scene(2, 'Leon tells Aria about his brother who vanished in the northern mines years ago.'),
+                scene(3, 'Aria and Leon argue over whether to warn the village before the patrol arrives.'),
+            ]);
+            expect(ids).toEqual(['evt_1', 'evt_2', 'evt_3']);
+        });
+
+        it('suppresses the same event told twice by overlapping windows', async () => {
+            const ids = await run([
+                scene(1, 'Aria admits to Leon that she forged the commander\'s signature on the supply order.'),
+                scene(2, 'Aria admits to Leon that she forged the signature of the commander on the supply order.'),
+            ]);
+            expect(ids).toEqual(['evt_1']);
+        });
+
+        it('compares CJK text by character pairs', async () => {
+            const same = await run([
+                scene(1, '師傅承諾幫梅拉尋找失蹤的父親暗影之翼。'),
+                scene(2, '師傅承諾幫助梅拉尋找她失蹤的父親暗影之翼。'),
+            ]);
+            expect(same).toEqual(['evt_1']);
+            const different = await run([
+                scene(1, '師傅承諾幫梅拉尋找失蹤的父親暗影之翼。'),
+                scene(2, '梅拉在市場偷走了商人的地圖並逃進小巷。'),
+            ]);
+            expect(different).toEqual(['evt_1', 'evt_2']);
+        });
+
+        it('still suppresses on type, cast and timing alone when there is no text to compare', async () => {
+            const ids = await run([scene(1, ''), scene(2, '')]);
+            expect(ids).toEqual(['evt_1']);
+        });
+
+        it('never treats events far apart in the chat as duplicates', async () => {
+            const text = 'Aria admits to Leon that she forged the commander\'s signature.';
+            const ids = await run([scene(1, text), scene(2, text, { source_window_end: 120 })]);
+            expect(ids.sort()).toEqual(['evt_1', 'evt_2']);
+        });
+    });
 });

@@ -16,6 +16,7 @@ import { resolveBackendForCollection } from './collection-ids.js';
 import { getCollectionListing, getCollectionRegistry } from './collection-loader.js';
 import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate, getCharacterLockKey } from './collection-metadata.js';
 import { LOREBOOK_PROMPT_TAG, RETRIEVAL_TIMEOUT_MS } from './constants.js';
+import { stripKeywordTail } from './chunk-assembly.js';
 import { isFatbodyOwnedBook } from './fatbody-guard.js';
 import { detectLorebookRenames, showLorebookRenameModal, openDatabaseBrowserForRename } from './lorebook-rename-detector.js';
 // Lorebook collection ID lookup uses registry scan (see _findLorebookRegistryEntry below);
@@ -163,7 +164,7 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
                     const entry = {
                         uid: meta.uid || meta.hash,
                         key: meta.keywords || meta.entryName || [],
-                        content: meta.text || '',
+                        content: stripKeywordTail(meta.text) || '',
                         score,
                         lorebookName: collection.name,
                         collectionId: rawCollectionId,

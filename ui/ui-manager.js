@@ -697,7 +697,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Max Entry Size: <span id="VectFox_reformat_max_body_chars_val">2000</span> chars</small>
                             </label>
                             <input type="range" id="VectFox_reformat_max_body_chars" class="vectfox-slider" min="500" max="5000" step="250" />
-                            <small class="VectFox_hint">Entries longer than this are sub-chunked with the same adaptive splitter used elsewhere, so one oversized entity doesn't become one giant chunk.</small>
+                            <small class="VectFox_hint">Entries longer than this are stored in parts, so every part of a long entry can be found by search. When any part is retrieved, the whole entry is put back together and injected once.</small>
 
                             <label for="VectFox_reformat_name_fuzzy_threshold" style="margin-top:10px; display:block;">
                                 <small>Hallucination Guard Sensitivity: <span id="VectFox_reformat_name_fuzzy_threshold_val">0.8</span></small>
@@ -739,6 +739,11 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <label for="VectFox_topk" style="margin:0; white-space:nowrap;"><small>Top K</small></label>
                                 <input id="VectFox_topk" type="number" class="vectfox-input" min="1" style="width:90px;" />
                                 <small class="VectFox_hint" style="margin-left:8px;">Up to this many results per collection (may be fewer after filtering/dedup)</small>
+                            </div>
+                            <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                                <label for="VectFox_max_injected_chunks" style="margin:0; white-space:nowrap;"><small>Max Injected</small></label>
+                                <input id="VectFox_max_injected_chunks" type="number" class="vectfox-input" min="0" style="width:90px;" />
+                                <small class="VectFox_hint" style="margin-left:8px;">Most chunks injected per message across all collections together. Top K applies to each collection separately, so this keeps the total from growing with every collection you enable. 0 = no limit.</small>
                             </div>
 
                             <!-- Retrieval Gating (ChunkBase-only) -->
@@ -1084,6 +1089,12 @@ export function renderSettings(containerId, settings, callbacks) {
                             <div class="vectfox-form-group">
                                 <label class="vectfox-label">Min Importance for Retrieval <span id="VectFox_eventbase_retrieval_min_importance_val">1</span></label>
                                 <input type="range" id="VectFox_eventbase_retrieval_min_importance" min="1" max="10" step="1" class="vectfox-range" />
+                            </div>
+
+                            <div class="vectfox-form-group">
+                                <label class="vectfox-label">Min Similarity for Retrieval <span id="VectFox_eventbase_min_similarity_val">Off</span></label>
+                                <input type="range" id="VectFox_eventbase_min_similarity" min="0" max="0.9" step="0.01" class="vectfox-range" />
+                                <small class="VectFox_hint">Events less similar to the current messages than this are not injected, so a message unrelated to anything in memory injects no events instead of the "best" ten anyway. Off (0) by default, because the right value depends on your embedding model. Measured on real chats: with google/gemini-embedding-2 unrelated messages scored up to 0.59 and related ones from 0.67 (try 0.60); with qwen/qwen3-embedding-8b up to 0.41 and from 0.55 (try 0.45). Set it too high and no events are injected at all. On Qdrant this needs Similharity plugin 3.3.5 or newer; older plugins ignore it.</small>
                             </div>
 
                             <div class="vectfox-form-group">
@@ -3115,6 +3126,16 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
+    // Max Injected - overall limit on injected ChunkBase chunks (0 = no limit)
+    $('#VectFox_max_injected_chunks')
+        .val(settings.max_injected_chunks ?? 20)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            settings.max_injected_chunks = isNaN(value) || value < 0 ? 20 : value;
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+
     // Auto-sync popup toggle
     $('#VectFox_autosync_popup')
         .prop('checked', settings.eventbase_autosync_popup !== false)
@@ -3724,6 +3745,19 @@ function bindSettingsEvents(settings, callbacks) {
     _bindEventBaseRange('max_events_per_window', 'eventbase_max_events_per_window', 'max_events_per_window');
     _bindEventBaseRange('retrieval_top_k', 'eventbase_retrieval_top_k', 'retrieval_top_k');
     _bindEventBaseRange('retrieval_min_importance', 'eventbase_retrieval_min_importance', 'retrieval_min_importance');
+
+    // Min similarity (relevance floor): a fraction, so not _bindEventBaseRange (integers).
+    const _showMinSimilarity = v => $('#VectFox_eventbase_min_similarity_val').text(v > 0 ? v.toFixed(2) : 'Off');
+    $('#VectFox_eventbase_min_similarity')
+        .val(Number(settings.eventbase_min_similarity) || 0)
+        .on('input', function() {
+            const v = Math.max(0, Math.min(0.9, parseFloat($(this).val()) || 0));
+            settings.eventbase_min_similarity = v;
+            _showMinSimilarity(v);
+            Object.assign(extension_settings.vectfox, settings);
+            saveSettingsDebounced();
+        });
+    _showMinSimilarity(Number(settings.eventbase_min_similarity) || 0);
 
     $('#VectFox_eventbase_injection_format')
         .val(settings.eventbase_injection_format || 'densetext')
