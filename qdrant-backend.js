@@ -1009,7 +1009,7 @@ class QdrantBackend {
      * @param {{indices:number[], values:number[]}} sparseVector
      * @param {number} topK - Final outer limit (typically finalTopK × 2 to give dedup overfetch room)
      * @param {object} rerankParams - { weights:{cosine,importance,persist,recency} (pre-normalized),
-     *                                  chatLength, halfLife, minImportance, visibleThreshold,
+     *                                  chatLength, halfLife, minImportance, visibleThreshold, minSimilarity,
      *                                  applyContextDedupFilter, rrfScoreScale? }
      * @param {object} options - { prefetchLimit, eventbaseDebug, debugQuery }
      * @param {object} filters - { type, sourceId, ... } — tenant/content filters
@@ -1036,7 +1036,19 @@ class QdrantBackend {
             // initial 40× estimate was based on the un-normalized RRF formula
             // (1/(60+rank)); the measured behavior is normalized.
             rrfScoreScale = 1.0,
+            // Relevance floor: minimum cosine similarity between the query and an
+            // event for the event to be a candidate at all. The formula's relevance
+            // term is the RRF fused score, which is rank-based (~1.0 for the best
+            // hit of ANY query), so without a floor a message unrelated to every
+            // event still returns topK of them. 0 = off. The useful value depends
+            // on the embedding model: unrelated messages scored up to 0.59 against
+            // real events with google/gemini-embedding-2 and up to 0.41 with
+            // qwen/qwen3-embedding-8b, related ones from 0.67 and 0.55.
+            minSimilarity = 0,
         } = rerankParams;
+        const similarityFloor = typeof minSimilarity === 'number' && minSimilarity > 0 && minSimilarity <= 1
+            ? minSimilarity
+            : 0;
 
         const prefetchLimit = options.prefetchLimit || topK * 4;
         const hybridLimit = Math.max(topK, prefetchLimit / 2);
@@ -1070,6 +1082,21 @@ class QdrantBackend {
         const densePrefetch  = { query: denseVector,  limit: prefetchLimit };
         const sparsePrefetch = { query: sparseVector, using: 'text_sparse', limit: prefetchLimit };
         if (tenantFilter) { densePrefetch.filter = tenantFilter; sparsePrefetch.filter = tenantFilter; }
+        if (similarityFloor > 0) {
+            // Dense leg: drop candidates under the floor.
+            densePrefetch.score_threshold = similarityFloor;
+            // Sparse leg: keyword matches would otherwise bring in events under
+            // the floor (a message that only shares a character's name with an
+            // event). Rank by sparse score among the events that pass the floor:
+            // an inner dense prefetch selects them, the sparse query re-scores them.
+            const floorPrefetch = {
+                query: denseVector,
+                limit: Math.max(prefetchLimit * 4, 256),
+                score_threshold: similarityFloor,
+            };
+            if (tenantFilter) floorPrefetch.filter = tenantFilter;
+            sparsePrefetch.prefetch = floorPrefetch;
+        }
 
         const body = {
             prefetch: [{
@@ -1110,7 +1137,7 @@ class QdrantBackend {
                 .join(', ');
             console.log(`[Qdrant-debug] hybridQueryNativeWithRerank: collection=${collectionName}, topK=${topK}, prefetchLimit=${prefetchLimit}, hybridLimit=${hybridLimit}`);
             console.log(`[Qdrant-debug] weights: cosine=${weights.cosine?.toFixed(3)} importance=${weights.importance?.toFixed(3)} persist=${weights.persist?.toFixed(3)} recency=${weights.recency?.toFixed(3)} rrfScoreScale=${rrfScoreScale}`);
-            console.log(`[Qdrant-debug] recency: origin=${chatLength}, halfLife=${halfLife}; filter: minImportance=${minImportance}, visibleThreshold=${applyContextDedupFilter ? visibleThreshold : '(disabled)'}`);
+            console.log(`[Qdrant-debug] recency: origin=${chatLength}, halfLife=${halfLife}; filter: minImportance=${minImportance}, visibleThreshold=${applyContextDedupFilter ? visibleThreshold : '(disabled)'}, minSimilarity=${similarityFloor || '(off)'}`);
             if (options.debugQuery) {
                 console.log(`[Qdrant-debug] Query text: "${String(options.debugQuery).slice(0, 200)}"`);
             }
